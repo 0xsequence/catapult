@@ -1,9 +1,9 @@
 import { Action } from './actions'
-import { Check } from './checks'
+import { Condition } from './conditions'
 
 export interface Task {
   name: string
   description?: string
   action: Action
-  checks: Check[]
+  checks: Condition[]
 } 
