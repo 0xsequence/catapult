@@ -13,7 +13,7 @@
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
     "prepare": "npm run build",
-    "test": "jest",
+    "test": "jest --runInBand --detectOpenHandles",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix"
   },
