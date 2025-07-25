@@ -1,0 +1,57 @@
+
+name: "sequence-v1"
+version: "1.0.0"
+description: "The Sequence v1 contracts"
+
+actions:
+  - name: "factory"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      creationCode: "{{creationCode(sequence/v1/factory)}}"
+      salt: "0"
+
+  - name: "main-module"
+    template: "sequence-universal-deployer-2"
+    depends_on: ["factory"]
+    arguments:
+      salt: "0"
+      creationCode:
+        type: "constructor-encode"
+        arguments:
+          - "{{creationCode(sequence/v1/main-module)}}"
+          - "{{factory.address}}"
+
+  - name: "main-module-upgradeable"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      salt: "0"
+      creationCode: "{{creationCode(sequence/v1/main-module-upgradeable)}}"
+
+  - name: "guest-module"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      salt: "0"
+      creationCode: "{{creationCode(sequence/v1/guest-module)}}"
+
+  - name: "sequence-utils"
+    template: "sequence-universal-deployer-2"
+    depends_on: ["factory", "main-module"]
+    arguments:
+      salt: "0"
+      creationCode:
+        type: "constructor-encode"
+        arguments:
+          - "{{creationCode(sequence/v1/sequence-utils)}}"
+          - "{{factory.address}}"
+          - "{{main-module.address}}"
+
+  - name: "require-fresh-signer-lib"
+    template: "sequence-universal-deployer-2"
+    depends_on: ["sequence-utils"]
+    arguments:
+      salt: "0"
+      creationCode:
+        type: "constructor-encode"
+        arguments:
+          - "{{creationCode(sequence/v1/require-fresh-signer-lib)}}"
+          - "{{sequence-utils.address}}"

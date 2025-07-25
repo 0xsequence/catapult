@@ -1,0 +1,48 @@
+name: "nano-universal-deployer"
+
+arguments:
+  creationCode:
+    type: "bytes"
+
+returns:
+  address:
+    type: "address"
+
+setup:
+  skip_condition:
+    - type: "contract-exists"
+      arguments:
+        address: "0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0"
+  actions:
+    - type: "min-balance"
+      arguments:
+        address: "0x9c5a87452d4FAC0cbd53BDCA580b20A45526B3AB"
+        balance: "21700000000140000"
+    - type: "send-signed-transaction"
+      arguments:
+        transaction: |
+          0xf9010880852416b84e01830222e08080b8b66080604052348015600f57600080fd5b50609980601d6000396000f3fe60a06020601f369081018290049091028201604052608081815260009260609284918190838280828437600092018290525084519495509392505060208401905034f5604080516001600160a01b0383168152905191935081900360200190a0505000fea26469706673582212205a310755225e3c740b2f013fb6343f4c205e7141fcdf15947f5f0e0e818727fb64736f6c634300060a00331ca01820182018201820182018201820182018201820182018201820182018201820a01820182018201820182018201820182018201820182018201820182018201820
+
+actions:
+  - type: "send-transaction"
+    arguments:
+      to: "0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0"
+      data: "{{creationCode}}"
+
+skip_condition:
+  - type: "contract-exists"
+    arguments:
+      address:
+        type: "compute-create2"
+        arguments:
+          deployerAddress: "0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0"
+          salt: "0x0000000000000000000000000000000000000000000000000000000000000000"
+          initCode: "{{creationCode}}"
+
+outputs:
+  address:
+    type: "compute-create2"
+    arguments:
+      deployerAddress: "0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0"
+      salt: "0x0000000000000000000000000000000000000000000000000000000000000000"
+      initCode: "{{creationCode}}"

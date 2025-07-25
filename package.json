@@ -1,0 +1,51 @@
+{
+  "name": "deployito",
+  "version": "1.0.0",
+  "description": "Ethereum contract deployment CLI tool",
+  "main": "dist/index.js",
+  "bin": {
+    "deployito": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepare": "npm run build",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix"
+  },
+  "keywords": [
+    "ethereum",
+    "deployment",
+    "cli",
+    "smart-contracts",
+    "blockchain",
+    "typescript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "dotenv": "^16.3.0",
+    "ethers": "^6.8.0",
+    "ox": "^0.8.5",
+    "yaml": "^2.8.0"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

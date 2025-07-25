@@ -1,0 +1,59 @@
+name: "sequence-v1-seq-0001-patch"
+version: "0001"
+description: "Sequence v1/v2 patch (SEQ-0001) for addressing guard signer takeover"
+depends_on: ["sequence-v1", "sequence-v2", "guards-v1"]
+
+actions:
+  - name: "main-module-upgradeable-duo-v1"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      salt: "0"
+      creationCode: "{{creationCode(f5b239d7b2e88a5adae55dea68f83bad)}}"
+
+  - name: "main-module-upgradeable-duo-v2"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      salt: "0"
+      creationCode: "{{creationCode(10326ce5047a2d596161984f678926c8)}}"
+
+  # Ommited as sending the transaction deploys the migrator contracts
+  # - name: "migrator-v1"
+  #   template: "sequence-universal-deployer-2"
+  #   arguments:
+  #     salt: "0"
+  #     creationCode:
+  #       type: "constructor-encode"
+  #       arguments:
+  #         - "{{221a4273dd7bb761ca6f3275c28e1d35}}"
+  #         - "0x596aF90CecdBF9A768886E771178fd5561dD27Ab"
+  #         - "0x5ca5d4cb6696df530c26b130a8fd86276a111f6696b3a8f2e76ff5edf94a2d84"
+  #         - "0xc99c1ab359199e4dcbd4603e9b2956d5681241ceb286359cf6a647ca56e6e128"
+
+  # - name: "migrator-v2"
+  #   template: "sequence-universal-deployer-2"
+  #   arguments:
+  #     salt: "0"
+  #     creationCode:
+  #       type: "constructor-encode"
+  #       arguments:
+  #         - "{{7abcec3e347c6024794220b96a854a4e}}"
+  #         - "0x761f5e29944D79d76656323F106CF2efBF5F09e9"
+  #         - "0xacb659ac7f85fbbce197005235ced2d040c7b02942a9dfae647582393d5a4e83"
+  #         - "0x6e2f52838722eda7d569b52db277d0d87d36991a6aa9b9657ef9d8f09b0c33f4"
+
+  - name: "patch-guard-v1-prod"
+    template: "send-transaction"
+    skip_condition:
+      - type: "basic-arithmetic"
+        arguments:
+          operation: "eq"
+          values:
+            - type: "call"
+              arguments:
+                signature: "readNonce(uint256)"
+                values:
+                  - "100"
+            - "1"
+    arguments:
+      to: "{{guards-v1.guard-v1-prod.address}}"
+      data: "{{patches/seq-0001/guard-v1-prod}}"

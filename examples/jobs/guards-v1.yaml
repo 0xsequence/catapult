@@ -1,0 +1,17 @@
+name: "guards-v1"
+version: "1"
+description: "Deploy both prod and dev guards for Sequence v1"
+depends_on: ["sequence-v1"]
+
+actions:
+  - name: "guard-v1-prod"
+    template: "sequence-factory-v1"
+    arguments:
+      salt: "0xc99c1ab359199e4dcbd4603e9b2956d5681241ceb286359cf6a647ca56e6e128"
+      implementation: "{{sequence-v1.main-module.address}}"
+
+  - name: "guard-v1-dev"
+    template: "sequence-factory-v1"
+    arguments:
+      salt: "6af209e2a5cca04bfdb4839aba939f715b1840930508af89e7692b21ddecd9b6"
+      implementation: "{{sequence-v1.main-module.address}}"

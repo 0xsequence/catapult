@@ -1,0 +1,55 @@
+name: "sequence-factory-v1"
+
+arguments:
+  implementation:
+    type: "address"
+  salt:
+    type: "bytes32"
+
+returns:
+  address:
+    type: "address"
+
+setup:
+  - type: "job-completed"
+    arguments:
+      job: "sequence-v1"
+      action: "factory"
+
+actions:
+  - type: "send-transaction"
+    arguments:
+      to: "{{sequence-v1.factory.address}}"
+      data:
+        type: "abi-encode"
+        arguments:
+          signature: "deploy(address,address)"
+          values:
+            - "{{implementation}}"
+            - "{{salt}}"
+
+skip_condition:
+  - type: "contract-exists"
+    arguments:
+      address:
+        type: "compute-create2"
+        arguments:
+          deployerAddress: "{{sequence-v1.factory.address}}"
+          salt: "{{salt}}"
+          initCode:
+            type: "constructor-encode"
+            arguments:
+              - "0x603a600e3d39601a805130553df3363d3d373d3d3d363d30545af43d82803e903d91601857fd5bf3"
+              - "{{implementation}}"
+
+outputs:
+  address:
+    type: "compute-create2"
+    arguments:
+      deployerAddress: "{{sequence-v1.factory.address}}"
+      salt: "{{salt}}"
+      initCode:
+        type: "constructor-encode"
+        arguments:
+          - "0x603a600e3d39601a805130553df3363d3d373d3d3d363d30545af43d82803e903d91601857fd5bf3"
+          - "{{implementation}}"
