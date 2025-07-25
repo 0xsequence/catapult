@@ -3,17 +3,38 @@ import { ValueResolver } from '../resolver'
 import { ExecutionContext } from '../context'
 import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, CallValue } from '../../types'
 
+// Helper function to wait for blockchain connection
+async function waitForConnection(provider: ethers.JsonRpcProvider, maxRetries = 10, delayMs = 1000): Promise<void> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      await provider.getNetwork()
+      return // Connection successful
+    } catch (error) {
+      if (i === maxRetries - 1) {
+        throw new Error(`Failed to connect to blockchain after ${maxRetries} attempts: ${error}`)
+      }
+      console.log(`Connection attempt ${i + 1}/${maxRetries} failed, retrying in ${delayMs}ms...`)
+      await new Promise(resolve => setTimeout(resolve, delayMs))
+    }
+  }
+}
+
 describe('ValueResolver', () => {
   let resolver: ValueResolver
   let context: ExecutionContext
   let mockNetwork: Network
 
-  beforeEach(() => {
+  beforeEach(async () => {
     resolver = new ValueResolver()
-    mockNetwork = { name: 'testnet', chainId: 999, rpcUrl: 'http://localhost:8545' }
+    // Allow configuring RPC URL via environment variable for CI
+    const rpcUrl = process.env.RPC_URL || 'http://localhost:8545'
+    mockNetwork = { name: 'testnet', chainId: 999, rpcUrl }
     // A dummy private key is fine as these tests don't send transactions
     const mockPrivateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
     context = new ExecutionContext(mockNetwork, mockPrivateKey)
+    
+    // Wait for connection to be established
+    await waitForConnection(context.provider as ethers.JsonRpcProvider)
   })
 
   describe('basic-arithmetic', () => {
@@ -126,6 +147,10 @@ describe('ValueResolver', () => {
 
     beforeEach(async () => {
       anvilProvider = context.provider as ethers.JsonRpcProvider
+      
+      // Ensure connection is still active
+      await waitForConnection(anvilProvider)
+      
       // Reset balances before each test
       await anvilProvider.send('anvil_setBalance', [testAddress, '0x0'])
       await anvilProvider.send('anvil_setBalance', [testAddress2, '0x0'])
@@ -722,6 +747,9 @@ describe('ValueResolver', () => {
 
     beforeEach(async () => {
       anvilProvider = context.provider as ethers.JsonRpcProvider
+
+      // Ensure connection is still active
+      await waitForConnection(anvilProvider)
 
       // Set the Mini contract bytecode directly to an address using anvil_setCode
       // This contract has: 

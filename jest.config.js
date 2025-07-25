@@ -19,5 +19,7 @@ module.exports = {
     'text',
     'lcov',
     'html'
-  ]
+  ],
+  // Increase timeout for blockchain tests
+  testTimeout: 30000
 }; 

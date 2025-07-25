@@ -152,7 +152,26 @@ jobs:
     - name: Start Anvil
       run: |
         anvil --host 0.0.0.0 --accounts 10 --balance 1000 &
-        sleep 2
+        # Wait for Anvil to be ready by checking if it responds to requests
+        echo "Waiting for Anvil to be ready..."
+        for i in {1..30}; do
+          if curl -s -X POST -H "Content-Type: application/json" \
+             --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' \
+             http://localhost:8545 > /dev/null 2>&1; then
+            echo "Anvil is ready!"
+            break
+          fi
+          echo "Attempt $i/30: Anvil not ready yet, waiting 1 second..."
+          sleep 1
+        done
+        
+        # Final check to ensure Anvil is responding
+        if ! curl -s -X POST -H "Content-Type: application/json" \
+           --data '{"jsonrpc":"2.0","method":"web3_clientVersion","params":[],"id":1}' \
+           http://localhost:8545 > /dev/null 2>&1; then
+          echo "ERROR: Anvil failed to start properly!"
+          exit 1
+        fi
       env:
         ANVIL_IP_ADDR: 0.0.0.0
 
