@@ -11,7 +11,7 @@ describe('ValueResolver', () => {
   beforeEach(async () => {
     resolver = new ValueResolver()
     // Allow configuring RPC URL via environment variable for CI
-    const rpcUrl = process.env.RPC_URL || 'http://localhost:8545'
+    const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545'
     mockNetwork = { name: 'testnet', chainId: 999, rpcUrl }
     // A dummy private key is fine as these tests don't send transactions
     const mockPrivateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
