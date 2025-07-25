@@ -1,82 +1,54 @@
-import { Backlink } from './backlink'
+import { AddressValue, BytesValue, Uint256Value, Value } from './values'
+import { Condition } from './conditions'
 
-export type GenericAction = {
-  arguments: Record<string, Backlink>
-  returns: Record<string, Backlink>
-}
+// --- Primitive Actions ---
+// These are the basic building blocks that interact with the blockchain.
 
-export type SendTransactionAction = GenericAction & {
-  type: 'send-transaction'
+export interface SendTransactionAction {
+  type: 'send-transaction';
   arguments: {
-    to: Backlink
-    value?: Backlink
-    data?: Backlink
-  }
-  returns: {
-    transactionHash: Backlink
-    success: Backlink
-  }
+    to: AddressValue;
+    value?: Uint256Value;
+    data?: BytesValue;
+  };
 }
 
-export type SendPresignedTransactionAction = GenericAction & {
-  type: 'send-presigned-transaction'
+export interface SendSignedTransactionAction {
+  type: 'send-signed-transaction';
   arguments: {
-    presignedTransaction: Backlink
-  }
-  returns: {
-    success: Backlink
-  }
+    transaction: BytesValue;
+  };
 }
 
-export type AbiEncodeAction = GenericAction & {
-  type: 'abi-encode'
-  arguments: {
-    signature: Backlink
-    values: Backlink[]
-  }
-  returns: {
-    encoded: Backlink
-  }
+// A union of all primitive action types.
+export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction;
+
+// --- Template Call Action ---
+// In your YAML, using another template as an action is done by specifying its name
+// in the 'type' field (e.g., `type: 'min-balance'`). This type captures that pattern.
+
+export interface TemplateCallAction {
+  /**
+   * The name of the template to call, e.g., 'min-balance'.
+   * This property acts as a discriminator.
+   */
+  type: string;
+  arguments: Record<string, Value<any>>;
 }
 
-export type ConstantAction = GenericAction & {
-  type: 'constant'
-  value: string
-  returns: {
-    result: Backlink
-  }
-}
-
-export type ComputeCreate2Action = GenericAction & {
-  type: 'compute-create2'
-  arguments: {
-    deployerAddress: Backlink
-    salt: Backlink
-    initCode: Backlink
-  }
-  returns: {
-    address: Backlink
-  }
-}
-
-export type TemplatedAction<T extends ActionTemplate = ActionTemplate> = {
-  type: 'templated'
-  template: T
-  arguments: Record<T['arguments'][number], Backlink>
-  returns: Record<T['returns'][number], Backlink>
-}
-
-export type Action = SendTransactionAction | SendPresignedTransactionAction | AbiEncodeAction | ConstantAction | ComputeCreate2Action | TemplatedAction
-
-export interface ActionTemplate {
-  /** The unique name of the template (e.g., 'universal-deployer-v2') */
-  name: string
-  /** A list of named inputs that this template accepts */
-  arguments: string[]
-  /** A list of named outputs that this template returns */
-  returns: string[]
-  /** The sequence of actions to be executed */
-  actions: Action[]
-  /** A backlink that defines the final output of the template */
-  outputs: Record<string, Backlink>
-}
+/**
+ * An Action is what appears in a `actions` array in your YAML.
+ * It's either a primitive action or a call to another template.
+ *
+ * The `type` field is used to discriminate. Your parser will need to have a list
+ * of known primitive action types (`send-transaction`, etc.) to distinguish them
+ * from template names.
+ */
+export type Action = (PrimitiveAction | TemplateCallAction) & {
+  /** An optional name for the action, allowing its outputs to be referenced. */
+  name?: string;
+  /** A list of conditions that, if any are met, will cause this action to be skipped. */
+  skip_condition?: Condition[];
+  /** A list of action names within the same job/template that must complete first. */
+  depends_on?: string[];
+};

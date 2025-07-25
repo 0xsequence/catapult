@@ -1,9 +1,6 @@
 // Export all types
 export * from './types'
 
-// Export all modifiers
-export * as modifiers from './modifiers'
-
 // Export all parsers
 export * as parsers from './parsers'
 

@@ -18,8 +18,9 @@ actions:
       creationCode:
         type: "constructor-encode"
         arguments:
-          - "{{creationCode(sequence/v1/main-module)}}"
-          - "{{factory.address}}"
+          creationCode: "{{creationCode(sequence/v1/main-module)}}"
+          types: ["address"]
+          values: ["{{factory.address}}"]
 
   - name: "main-module-upgradeable"
     template: "sequence-universal-deployer-2"
@@ -41,9 +42,9 @@ actions:
       creationCode:
         type: "constructor-encode"
         arguments:
-          - "{{creationCode(sequence/v1/sequence-utils)}}"
-          - "{{factory.address}}"
-          - "{{main-module.address}}"
+          creationCode: "{{creationCode(sequence/v1/sequence-utils)}}"
+          types: ["address", "address"]
+          values: ["{{factory.address}}", "{{main-module.address}}"]
 
   - name: "require-fresh-signer-lib"
     template: "sequence-universal-deployer-2"
@@ -53,5 +54,6 @@ actions:
       creationCode:
         type: "constructor-encode"
         arguments:
-          - "{{creationCode(sequence/v1/require-fresh-signer-lib)}}"
-          - "{{sequence-utils.address}}"
+          creationCode: "{{creationCode(sequence/v1/require-fresh-signer-lib)}}"
+          types: ["address"]
+          values: ["{{sequence-utils.address}}"]
