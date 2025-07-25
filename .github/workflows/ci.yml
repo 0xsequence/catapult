@@ -21,7 +21,7 @@ jobs:
     - name: Install pnpm
       uses: pnpm/action-setup@v2
       with:
-        version: 8
+        version: 9
 
     - name: Cache pnpm store
       uses: actions/cache@v4
@@ -57,7 +57,7 @@ jobs:
     - name: Install pnpm
       uses: pnpm/action-setup@v2
       with:
-        version: 8
+        version: 9
 
     - name: Restore node_modules cache
       uses: actions/cache@v4
@@ -94,7 +94,7 @@ jobs:
     - name: Install pnpm
       uses: pnpm/action-setup@v2
       with:
-        version: 8
+        version: 9
 
     - name: Restore node_modules cache
       uses: actions/cache@v4
@@ -125,7 +125,7 @@ jobs:
     - name: Install pnpm
       uses: pnpm/action-setup@v2
       with:
-        version: 8
+        version: 9
 
     - name: Restore node_modules cache
       uses: actions/cache@v4
