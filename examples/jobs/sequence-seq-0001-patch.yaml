@@ -1,7 +1,7 @@
 name: "sequence-v1-seq-0001-patch"
 version: "0001"
 description: "Sequence v1/v2 patch (SEQ-0001) for addressing guard signer takeover"
-depends_on: ["sequence-v1", "sequence-v2", "guards-v1"]
+depends_on: ["sequence-v1", "guards-v1"]
 
 actions:
   - name: "main-module-upgradeable-duo-v1"

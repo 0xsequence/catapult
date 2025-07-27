@@ -65,8 +65,10 @@ export function parseTemplate(yamlContent: string): Template {
   if (!rawObject.actions || !Array.isArray(rawObject.actions)) {
     throw new Error(`Invalid template "${rawObject.name}": "actions" field is required and must be an array.`)
   }
-  if (!rawObject.outputs || typeof rawObject.outputs !== 'object' || Array.isArray(rawObject.outputs)) {
-    throw new Error(`Invalid template "${rawObject.name}": "outputs" field is required and must be an object.`)
+  
+  // Allow 'outputs' to be optional. If it exists, it must be an object.
+  if (rawObject.outputs && (typeof rawObject.outputs !== 'object' || Array.isArray(rawObject.outputs))) {
+    throw new Error(`Invalid template "${rawObject.name}": "outputs" field must be an object if provided.`)
   }
 
   // --- Construct the base template object ---
@@ -77,7 +79,11 @@ export function parseTemplate(yamlContent: string): Template {
     returns: rawObject.returns,
     actions: rawObject.actions as Action[],
     skip_condition: rawObject.skip_condition as Condition[],
-    outputs: rawObject.outputs as Record<string, Value<any>>,
+  }
+
+  // Only include outputs if it was provided in the YAML
+  if (rawObject.outputs) {
+    template.outputs = rawObject.outputs as Record<string, Value<any>>
   }
 
   // --- Handle the 'setup' block which can have multiple formats ---

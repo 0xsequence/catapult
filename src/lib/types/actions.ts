@@ -23,6 +23,26 @@ export interface SendSignedTransactionAction {
 // A union of all primitive action types.
 export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction;
 
+const primitiveActionTypes = [
+  'send-transaction',
+  'send-signed-transaction',
+] as const;
+
+/**
+ * A set of all built-in primitive action types.
+ * This is useful for efficiently checking if an action type is a primitive.
+ */
+export const PRIMITIVE_ACTION_TYPES = new Set<string>(primitiveActionTypes);
+
+/**
+ * A type guard to check if a given action `type` corresponds to a primitive action.
+ * @param type The action type string.
+ * @returns `true` if the type is a primitive action type.
+ */
+export function isPrimitiveActionType(type: string): type is (typeof primitiveActionTypes)[number] {
+  return PRIMITIVE_ACTION_TYPES.has(type);
+}
+
 // --- Template Call Action ---
 // In your YAML, using another template as an action is done by specifying its name
 // in the 'type' field (e.g., `type: 'min-balance'`). This type captures that pattern.

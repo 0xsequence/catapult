@@ -20,7 +20,7 @@ export interface Template {
     };
     actions: Action[];
     skip_condition?: Condition[];
-    outputs: Record<string, Value<any>>;
+    outputs?: Record<string, Value<any>>;
 }
 
 // --- Job Definition ---
