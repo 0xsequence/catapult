@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 
-import { ProjectLoader } from './core/loader'
+import { ProjectLoader, ProjectLoaderOptions } from './core/loader'
 import { DependencyGraph } from './core/graph'
 import { ExecutionEngine } from './core/engine'
 import { ExecutionContext } from './core/context'
@@ -29,6 +29,9 @@ export interface DeployerOptions {
   
   /** Optional: Custom event emitter instance. If not provided, uses the global singleton. */
   eventEmitter?: DeploymentEventEmitter
+  
+  /** Optional: Project loader options (e.g., whether to load standard templates). */
+  loaderOptions?: ProjectLoaderOptions
 }
 
 /**
@@ -48,7 +51,7 @@ export class Deployer {
 
   constructor(options: DeployerOptions) {
     this.options = options
-    this.loader = new ProjectLoader(options.projectRoot)
+    this.loader = new ProjectLoader(options.projectRoot, options.loaderOptions)
     this.events = options.eventEmitter || deploymentEvents
   }
 

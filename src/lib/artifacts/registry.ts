@@ -3,6 +3,7 @@ import * as path from 'path'
 import { createHash } from 'crypto'
 import { parseArtifact } from '../parsers/artifact'
 import { Artifact } from '../types'
+import { deploymentEvents } from '../events'
 
 export class ArtifactRegistry {
   private artifacts: Artifact[] = []
@@ -45,8 +46,6 @@ export class ArtifactRegistry {
 
     // Populate lookup maps, handling potential collisions.
     if (this.byName.has(artifact.contractName)) {
-      // Import events here to avoid circular dependency
-      const { deploymentEvents } = require('../events')
       deploymentEvents.emitEvent({
         type: 'duplicate_artifact_warning',
         level: 'warn',
@@ -63,6 +62,13 @@ export class ArtifactRegistry {
     }
     this.byHash.set(artifact._hash, artifact)
     this.byPath.set(artifact._path, artifact)
+  }
+
+  /**
+   * Returns a read-only list of all registered artifacts.
+   */
+  public getAll(): readonly Artifact[] {
+    return this.artifacts
   }
 
   /**

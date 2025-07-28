@@ -1,6 +1,8 @@
 import { Command } from 'commander'
+import { makeRunCommand, makeDryRunCommand, makeListCommand } from './commands'
 
 export function setupCommands(program: Command): void {
-  // Commands will be added here
-  // Example: program.addCommand(deployCommand);
-} 
+  program.addCommand(makeRunCommand())
+  program.addCommand(makeDryRunCommand())
+  program.addCommand(makeListCommand())
+}

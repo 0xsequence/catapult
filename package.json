@@ -7,9 +7,10 @@
     "deployito": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r src/lib/std dist/lib/",
     "dev": "ts-node src/index.ts",
     "start": "node dist/index.js",
+    "start:dev": "npm run build && npm run start",
     "watch": "tsc --watch",
     "clean": "rm -rf dist",
     "prepare": "npm run build",

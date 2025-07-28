@@ -4,12 +4,19 @@ import { parseJob, parseTemplate } from '../parsers'
 import { Job, Template } from '../types'
 import { ArtifactRegistry } from '../artifacts/registry'
 
+export interface ProjectLoaderOptions {
+  loadStdTemplates?: boolean
+}
+
 export class ProjectLoader {
   public jobs: Map<string, Job> = new Map()
   public templates: Map<string, Template> = new Map()
   public readonly artifactRegistry: ArtifactRegistry
 
-  constructor(private readonly projectRoot: string) {
+  constructor(
+    private readonly projectRoot: string,
+    private readonly options: ProjectLoaderOptions = {}
+  ) {
     this.artifactRegistry = new ArtifactRegistry()
   }
 
@@ -17,9 +24,13 @@ export class ProjectLoader {
     // Load all artifacts from the project root first.
     await this.artifactRegistry.loadFrom(this.projectRoot)
 
-    // Load standard library templates
-    const stdTemplatePath = path.resolve(__dirname, '..', 'std', 'templates')
-    await this.loadTemplatesFromDir(stdTemplatePath)
+    // Load standard library templates (unless disabled)
+    if (this.options.loadStdTemplates !== false) {
+      const stdTemplatePath = path.resolve(__dirname, '..', 'std', 'templates')
+      if (await this.pathExists(stdTemplatePath)) {
+        await this.loadTemplatesFromDir(stdTemplatePath)
+      }
+    }
     
     // Load user-defined templates
     const userTemplatePath = path.join(this.projectRoot, 'templates')
