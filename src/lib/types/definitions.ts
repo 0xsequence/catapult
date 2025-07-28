@@ -39,4 +39,6 @@ export interface Job {
     description?: string;
     depends_on?: string[]; // Names of other jobs this job depends on
     actions: JobAction[];
+    only_networks?: number[]
+    skip_networks?: number[]
 }

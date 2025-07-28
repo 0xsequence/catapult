@@ -64,6 +64,8 @@ export function parseJob(yamlContent: string): Job {
     depends_on: rawObject.depends_on,
     // We've validated the necessary parts, so a cast is reasonable here.
     actions: rawObject.actions as JobAction[],
+    only_networks: rawObject.only_networks,
+    skip_networks: rawObject.skip_networks,
   }
 
   return job

@@ -31,4 +31,8 @@ export class ExecutionContext {
     }
     return this.outputs.get(key)
   }
+
+  public getOutputs(): Map<string, any> {
+    return this.outputs
+  }
 }
