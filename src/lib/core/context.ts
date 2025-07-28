@@ -1,18 +1,22 @@
-// src/lib/core/context.ts
 import { ethers } from 'ethers'
 import { Network } from '../types'
-import { Artifact } from '../types/artifacts'
+import { ArtifactRegistry } from '../artifacts/registry'
 
 export class ExecutionContext {
   public readonly provider: ethers.Provider
   public readonly signer: ethers.Signer
+  public readonly artifactRegistry: ArtifactRegistry
 
   private readonly outputs: Map<string, any> = new Map()
-  private readonly artifacts: Map<string, Artifact> = new Map()
 
-  constructor(network: Network, privateKey: string) {
+  constructor(
+    network: Network, 
+    privateKey: string, 
+    artifactRegistry: ArtifactRegistry
+  ) {
     this.provider = new ethers.JsonRpcProvider(network.rpcUrl)
     this.signer = new ethers.Wallet(privateKey, this.provider)
+    this.artifactRegistry = artifactRegistry
   }
 
   // To store results like `{{sequence-v1.factory.address}}`
@@ -21,21 +25,10 @@ export class ExecutionContext {
   }
 
   // To retrieve results
-  public getOutput(key: string): any {
+  public getOutput(key:string): any {
     if (!this.outputs.has(key)) {
       throw new Error(`Output for key "${key}" not found in context. Check dependencies.`)
     }
     return this.outputs.get(key)
-  }
-
-  public setArtifact(key: string, artifact: Artifact): void {
-    this.artifacts.set(key, artifact)
-  }
-
-  public getArtifact(key: string): Artifact {
-    if (!this.artifacts.has(key)) {
-      throw new Error(`Artifact for key "${key}" not found in context. Check dependencies.`)
-    }
-    return this.artifacts.get(key)!
   }
 }

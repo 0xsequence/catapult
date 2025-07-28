@@ -1,16 +1,22 @@
-// src/lib/core/loader.ts
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { parseJob, parseTemplate } from '../parsers'
 import { Job, Template } from '../types'
+import { ArtifactRegistry } from '../artifacts/registry'
 
 export class ProjectLoader {
   public jobs: Map<string, Job> = new Map()
   public templates: Map<string, Template> = new Map()
+  public readonly artifactRegistry: ArtifactRegistry
 
-  constructor(private readonly projectRoot: string) {}
+  constructor(private readonly projectRoot: string) {
+    this.artifactRegistry = new ArtifactRegistry()
+  }
 
   async load() {
+    // Load all artifacts from the project root first.
+    await this.artifactRegistry.loadFrom(this.projectRoot)
+
     // Load standard library templates
     const stdTemplatePath = path.resolve(__dirname, '..', 'std', 'templates')
     await this.loadTemplatesFromDir(stdTemplatePath)

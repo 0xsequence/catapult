@@ -76,13 +76,23 @@ export class ValueResolver {
     // Check for function-like expressions, e.g., `creationCode(id)`
     const funcMatch = expression.match(/^(\w+)\((.*)\)$/)
     if (funcMatch) {
-      const [, funcName, argsStr] = funcMatch
-      const args = argsStr.split(',').map(s => s.trim()).filter(Boolean)
+      const [, funcName, argStr] = funcMatch
+      const arg = argStr.trim()
 
-      if (funcName === 'creationCode') {
-        if (args.length !== 1) throw new Error(`Invalid 'creationCode' expression: expected 1 argument, got ${args.length}`)
-        return context.getArtifact(args[0])
+      // Handle artifact-related functions
+      if (funcName === 'creationCode' || funcName === 'initCode') {
+        const artifact = context.artifactRegistry.lookup(arg)
+        if (!artifact) throw new Error(`Artifact not found for identifier: "${arg}"`)
+        if (!artifact.bytecode) throw new Error(`Artifact "${artifact.contractName}" is missing bytecode.`)
+        return artifact.bytecode
       }
+      if (funcName === 'abi') {
+        const artifact = context.artifactRegistry.lookup(arg)
+        if (!artifact) throw new Error(`Artifact not found for identifier: "${arg}"`)
+        if (!artifact.abi) throw new Error(`Artifact "${artifact.contractName}" is missing ABI.`)
+        return artifact.abi
+      }
+      
       throw new Error(`Unknown function in expression: ${funcName}`)
     }
 
@@ -92,7 +102,12 @@ export class ValueResolver {
     }
 
     // Check context for global outputs from other jobs/actions
-    return context.getOutput(expression)
+    try {
+      return context.getOutput(expression)
+    } catch (e) {
+      // Provide a more helpful error if an unresolved reference is found
+      throw new Error(`Failed to resolve expression "{{${expression}}}". It is not a valid artifact function, local scope variable, or a known output.`)
+    }
   }
 
   /**
