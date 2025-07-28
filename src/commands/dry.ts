@@ -28,6 +28,18 @@ export function makeDryRunCommand(): Command {
       const fullOrder = graph.getExecutionOrder()
       console.log(chalk.green('   - Dependency graph built successfully.'))
       
+      console.log(chalk.blue('\nValidating artifact references...'))
+      const artifactErrors = loader.validateArtifactReferences()
+      
+      if (artifactErrors.length > 0) {
+        console.log(chalk.red('   - Found missing artifact references:'))
+        for (const error of artifactErrors) {
+          console.log(chalk.red(`     ✗ ${error.location}: ${error.message}`))
+        }
+        throw new Error(`Found ${artifactErrors.length} missing artifact reference(s). Please ensure all referenced artifacts exist.`)
+      }
+      console.log(chalk.green('   - All artifact references validated successfully.'))
+      
       const runJobs = jobs.length > 0 ? jobs : undefined
       const runOnNetworks = options.network?.map(Number)
 

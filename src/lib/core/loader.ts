@@ -3,6 +3,7 @@ import * as path from 'path'
 import { parseJob, parseTemplate } from '../parsers'
 import { Job, Template } from '../types'
 import { ArtifactRegistry } from '../artifacts/registry'
+import { ArtifactReferenceValidator, ArtifactReferenceError } from '../validation/artifact-references'
 
 export interface ProjectLoaderOptions {
   loadStdTemplates?: boolean
@@ -66,6 +67,15 @@ export class ProjectLoader {
         this.jobs.set(job.name, job)
       }
     }
+  }
+
+  /**
+   * Validates that all artifact references in jobs and templates exist in the registry.
+   * @returns Array of validation errors (empty if all references are valid)
+   */
+  public validateArtifactReferences(): ArtifactReferenceError[] {
+    const validator = new ArtifactReferenceValidator(this.artifactRegistry)
+    return validator.validateAll(this.jobs, this.templates)
   }
 
   private async pathExists(p: string): Promise<boolean> {
