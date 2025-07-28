@@ -889,16 +889,18 @@ describe('ValueResolver', () => {
           .rejects.toThrow('Failed to resolve expression "{{creationCode TestContract}}"')
       })
 
-      it('should return artifact for empty function calls (due to endsWith behavior)', async () => {
-        // Empty string matches all paths via endsWith(""), so returns first artifact
-        const result = await resolver.resolve('{{creationCode()}}', context)
-        expect(result).toBe('0x608060405234801561000f575f5ffd5b50602a5f526020601ff3')
+      it('should throw error for empty function calls', async () => {
+        // Empty string should not match any artifact and should throw an error
+        await expect(resolver.resolve('{{creationCode()}}', context)).rejects.toThrow(
+          'Artifact not found for identifier: ""'
+        )
       })
 
-      it('should return artifact for function calls with whitespace only (due to endsWith behavior)', async () => {
-        // Whitespace-only string gets trimmed to empty, matching all paths via endsWith("")
-        const result = await resolver.resolve('{{creationCode(   )}}', context)
-        expect(result).toBe('0x608060405234801561000f575f5ffd5b50602a5f526020601ff3')
+      it('should throw error for function calls with whitespace only', async () => {
+        // Whitespace-only string gets trimmed to empty and should throw an error
+        await expect(resolver.resolve('{{creationCode(   )}}', context)).rejects.toThrow(
+          'Artifact not found for identifier: ""'
+        )
       })
 
       it('should handle function calls with extra whitespace in argument', async () => {

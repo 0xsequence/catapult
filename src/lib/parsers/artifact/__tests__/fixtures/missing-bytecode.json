@@ -1,0 +1,11 @@
+{
+  "contractName": "MissingBytecode",
+  "abi": [
+    {
+      "type": "function",
+      "name": "test",
+      "inputs": [],
+      "outputs": []
+    }
+  ]
+} 

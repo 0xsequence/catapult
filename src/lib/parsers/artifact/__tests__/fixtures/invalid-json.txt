@@ -1,0 +1,11 @@
+{
+  "contractName": "InvalidJson",
+  "abi": [
+    {
+      "type": "function"
+      // Missing comma here makes it invalid JSON
+      "name": "test"
+    }
+  ]
+  "bytecode": "0x123"
+} 

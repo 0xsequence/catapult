@@ -79,9 +79,11 @@ export class ArtifactRegistry {
     }
 
     // 4. Try to match by a partial path suffix.
-    for (const artifact of this.artifacts) {
-        if (artifact._path.endsWith(identifier)) {
-            return artifact
+    if (identifier) { // Only check if identifier is not empty
+        for (const artifact of this.artifacts) {
+            if (artifact._path.endsWith(identifier)) {
+                return artifact
+            }
         }
     }
 

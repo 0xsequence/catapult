@@ -1,0 +1,67 @@
+{
+  "contractName": "ERC20Token",
+  "sourceName": "contracts/ERC20Token.sol",
+  "abi": [
+    {
+      "type": "constructor",
+      "inputs": [
+        {
+          "name": "initialSupply",
+          "type": "uint256"
+        }
+      ]
+    },
+    {
+      "type": "function",
+      "name": "balanceOf",
+      "inputs": [
+        {
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "event",
+      "name": "Transfer",
+      "inputs": [
+        {
+          "name": "from",
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "to", 
+          "type": "address",
+          "indexed": true
+        },
+        {
+          "name": "value",
+          "type": "uint256",
+          "indexed": false
+        }
+      ]
+    }
+  ],
+  "bytecode": {
+    "object": "0x608060405234801561001057600080fd5b50604051610abc380380610abc8339818101604052810190610032919061007a565b806000819055505061009e565b600080fd5b6000819050919050565b61005681610043565b811461006157600080fd5b50565b6000815190506100738161004d565b92915050565b60006020828403121561008f5761008e61003e565b5b600061009d84828501610064565b91505092915050565b610a0f806100ad6000396000f3fe608060405234801561001057600080fd5b50600436106100575760003560e01c806318160ddd1461005c57806370a0823114610078578063a9059cbb146100a8578063dd62ed3e146100c4575b600080fd5b6100646100f4565b60405161006f919061018a565b60405180910390f35b610092600480360381019061008d91906101d6565b6100fa565b60405161009f919061018a565b60405180910390f35b6100c260048036038101906100bd919061024f565b610142565b005b6100de60048036038101906100d9919061028f565b61015c565b6040516100eb919061018a565b60405180910390f35b60005481565b60008060008373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001908152602001600020549050919050565b600061014f338484610181565b905092915050565b5050565b600060016000858573ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200190815260200160002060008473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001908152602001600020549050929150505600a2646970667358221220",
+    "sourceMap": "123:456:0:-:0;;;789:100;;;;;;;;;;;;;;;;;:::i;:::-;;:::o;:::-;;;;;;;:::i;:::-;;:::o;8:123:-1;5:3;2:1;21:10;18:1;14:2;11:3;8:2;123:456:0;;;;;;;",
+    "linkReferences": {}
+  },
+  "deployedBytecode": {
+    "object": "0x608060405234801561001057600080fd5b50600436106100575760003560e01c806318160ddd1461005c57806370a0823114610078578063a9059cbb146100a8578063dd62ed3e146100c4575b600080fd5b6100646100f4565b60405161006f919061018a565b60405180910390f35b610092600480360381019061008d91906101d6565b6100fa565b60405161009f919061018a565b60405180910390f35b6100c260048036038101906100bd919061024f565b610142565b005b6100de60048036038101906100d9919061028f565b61015c565b6040516100eb919061018a565b60405180910390f35b60005481565b60008060008373ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001908152602001600020549050919050565b600061014f338484610181565b905092915050565b5050565b600060016000858573ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff16815260200190815260200160002060008473ffffffffffffffffffffffffffffffffffffffff1673ffffffffffffffffffffffffffffffffffffffff168152602001908152602001600020549050929150505600a2646970667358221220",
+    "sourceMap": "123:456:0:-:0;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;:::i;:::-;;:::o;:::-;;;;;;;:::i;:::-;;:::o;",
+    "linkReferences": {}
+  },
+  "compiler": {
+    "version": "0.8.19+commit.7dd6d404"
+  },
+  "source": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ncontract ERC20Token {\n    mapping(address => uint256) private _balances;\n    mapping(address => mapping(address => uint256)) private _allowances;\n    uint256 private _totalSupply;\n    \n    constructor(uint256 initialSupply) {\n        _totalSupply = initialSupply;\n        _balances[msg.sender] = initialSupply;\n    }\n    \n    function balanceOf(address account) public view returns (uint256) {\n        return _balances[account];\n    }\n}\n"
+} 

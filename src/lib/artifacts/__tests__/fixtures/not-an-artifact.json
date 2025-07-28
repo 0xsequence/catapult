@@ -1,0 +1,8 @@
+{
+  "name": "NotAnArtifact",
+  "data": {
+    "some": "random",
+    "json": "data"
+  },
+  "version": "1.0.0"
+} 

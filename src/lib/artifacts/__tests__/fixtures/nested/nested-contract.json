@@ -1,0 +1,18 @@
+{
+  "contractName": "NestedContract",
+  "sourceName": "contracts/nested/NestedContract.sol",
+  "abi": [
+    {
+      "type": "function",
+      "name": "nestedFunction",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool"
+        }
+      ]
+    }
+  ],
+  "bytecode": "0x608060405234801561001057600080fd5b50600436106100365760003560e01c806320965255146100365780636d4ce63c14610040575b600080fd5b610040610058565b005b610048610062565b6040516100579190610078565b60405180910390f35b0000005b6000806000fefe"
+} 
