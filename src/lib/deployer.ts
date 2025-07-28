@@ -202,8 +202,8 @@ export class Deployer {
     const filteredNetworks = this.options.networks.filter(n => targetChainIds.has(n.chainId))
     
     if (filteredNetworks.length !== this.options.runOnNetworks.length) {
-        const foundIds = new Set(filteredNetworks.map(n => n.chainId));
-        const missingIds = this.options.runOnNetworks.filter(id => !foundIds.has(id));
+        const foundIds = new Set(filteredNetworks.map(n => n.chainId))
+        const missingIds = this.options.runOnNetworks.filter(id => !foundIds.has(id))
         this.events.emitEvent({
           type: 'missing_network_config_warning',
           level: 'warn',
