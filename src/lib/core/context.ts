@@ -6,6 +6,7 @@ export class ExecutionContext {
   public readonly provider: ethers.Provider
   public readonly signer: ethers.Signer
   public readonly artifactRegistry: ArtifactRegistry
+  private readonly network: Network
 
   private readonly outputs: Map<string, any> = new Map()
 
@@ -14,9 +15,14 @@ export class ExecutionContext {
     privateKey: string, 
     artifactRegistry: ArtifactRegistry
   ) {
+    this.network = network
     this.provider = new ethers.JsonRpcProvider(network.rpcUrl)
     this.signer = new ethers.Wallet(privateKey, this.provider)
     this.artifactRegistry = artifactRegistry
+  }
+
+  public getNetwork(): Network {
+    return this.network
   }
 
   // To store results like `{{sequence-v1.factory.address}}`

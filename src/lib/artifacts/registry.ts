@@ -45,7 +45,16 @@ export class ArtifactRegistry {
 
     // Populate lookup maps, handling potential collisions.
     if (this.byName.has(artifact.contractName)) {
-      console.warn(`Warning: Duplicate artifact contractName found: "${artifact.contractName}". Overwriting with artifact from ${artifact._path}.`)
+      // Import events here to avoid circular dependency
+      const { deploymentEvents } = require('../events')
+      deploymentEvents.emitEvent({
+        type: 'duplicate_artifact_warning',
+        level: 'warn',
+        data: {
+          contractName: artifact.contractName,
+          path: artifact._path
+        }
+      })
     }
     this.byName.set(artifact.contractName, artifact)
 

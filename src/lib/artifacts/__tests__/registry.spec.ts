@@ -52,8 +52,16 @@ describe('ArtifactRegistry', () => {
     })
 
     it('should handle duplicate contract names and show warning', () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation()
+      // Import the deploymentEvents to listen for events
+      const { deploymentEvents } = require('../../events')
+      const emittedEvents: any[] = []
       
+      const eventListener = (event: any) => {
+        emittedEvents.push(event)
+      }
+      
+      deploymentEvents.onAnyEvent(eventListener)
+
       const artifact1: Artifact = {
         contractName: 'DuplicateName',
         abi: [],
@@ -73,15 +81,17 @@ describe('ArtifactRegistry', () => {
       registry.add(artifact1)
       registry.add(artifact2)
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Warning: Duplicate artifact contractName found: "DuplicateName"')
-      )
+      // Check that the duplicate warning event was emitted
+      const warningEvent = emittedEvents.find(e => e.type === 'duplicate_artifact_warning')
+      expect(warningEvent).toBeDefined()
+      expect(warningEvent.data.contractName).toBe('DuplicateName')
+      expect(warningEvent.data.path).toBe('/test/path2.json')
 
       // Should return the second one (last added)
       const found = registry.lookup('DuplicateName')
       expect(found!._path).toBe('/test/path2.json')
 
-      consoleSpy.mockRestore()
+      deploymentEvents.off('event', eventListener)
     })
 
     it('should handle duplicate hashes silently', () => {
@@ -283,7 +293,16 @@ describe('ArtifactRegistry', () => {
     })
 
     it('should handle duplicate names from multiple files', async () => {
-      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation()
+      // Import the deploymentEvents to listen for events
+      const { deploymentEvents } = require('../../events')
+      const emittedEvents: any[] = []
+      
+      const eventListener = (event: any) => {
+        emittedEvents.push(event)
+      }
+      
+      deploymentEvents.onAnyEvent(eventListener)
+
       const tempDir = await createTempDir()
       
       await copyFixture('contract1.json', path.join(tempDir, 'contract1.json'))
@@ -291,16 +310,19 @@ describe('ArtifactRegistry', () => {
 
       await registry.loadFrom(tempDir)
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Warning: Duplicate artifact contractName found: "TestContract1"')
-      )
+      // Check that the duplicate warning event was emitted
+      const warningEvent = emittedEvents.find(e => e.type === 'duplicate_artifact_warning')
+      expect(warningEvent).toBeDefined()
+      expect(warningEvent.data.contractName).toBe('TestContract1')
+
+      deploymentEvents.off('event', eventListener)
 
       // Should have the last loaded one
       const artifact = registry.lookup('TestContract1')
       expect(artifact).toBeDefined()
       expect(artifact!.sourceName).toBe('contracts/DuplicateTestContract1.sol')
 
-      consoleSpy.mockRestore()
+
     })
   })
 

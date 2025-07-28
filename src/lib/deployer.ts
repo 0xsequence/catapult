@@ -1,12 +1,12 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
-import chalk from 'chalk'
 
 import { ProjectLoader } from './core/loader'
 import { DependencyGraph } from './core/graph'
 import { ExecutionEngine } from './core/engine'
 import { ExecutionContext } from './core/context'
 import { Network, Job } from './types'
+import { DeploymentEventEmitter, deploymentEvents } from './events'
 
 /**
  * Options for configuring a Deployer instance.
@@ -26,6 +26,9 @@ export interface DeployerOptions {
   
   /** Optional: An array of chain IDs to run on. If not provided, all configured networks are used. */
   runOnNetworks?: number[]
+  
+  /** Optional: Custom event emitter instance. If not provided, uses the global singleton. */
+  eventEmitter?: DeploymentEventEmitter
 }
 
 /**
@@ -37,6 +40,7 @@ export class Deployer {
   private readonly options: DeployerOptions
   private readonly loader: ProjectLoader
   private graph!: DependencyGraph
+  public readonly events: DeploymentEventEmitter
   
   // Stores the results of successful job executions.
   // Map<jobName, { job: Job, outputs: Map<chainId, Map<actionOutputKey, value>> }>
@@ -45,19 +49,41 @@ export class Deployer {
   constructor(options: DeployerOptions) {
     this.options = options
     this.loader = new ProjectLoader(options.projectRoot)
+    this.events = options.eventEmitter || deploymentEvents
   }
 
   /**
    * Runs the entire deployment process from loading to execution and outputting results.
    */
   public async run(): Promise<void> {
-    console.log(chalk.bold.inverse(' DEPLOYITO: STARTING DEPLOYMENT RUN '))
+    this.events.emitEvent({
+      type: 'deployment_started',
+      level: 'info',
+      data: {
+        projectRoot: this.options.projectRoot
+      }
+    })
     
     try {
       // 1. Load all project artifacts, templates, and jobs.
-      console.log(chalk.blue(`\n1. Loading project from: ${this.options.projectRoot}`))
+      this.events.emitEvent({
+        type: 'project_loading_started',
+        level: 'info',
+        data: {
+          projectRoot: this.options.projectRoot
+        }
+      })
+      
       await this.loader.load()
-      console.log(chalk.green(`   - Loaded ${this.loader.jobs.size} jobs, ${this.loader.templates.size} templates, and registered artifacts.`))
+      
+      this.events.emitEvent({
+        type: 'project_loaded',
+        level: 'info',
+        data: {
+          jobCount: this.loader.jobs.size,
+          templateCount: this.loader.templates.size
+        }
+      })
       
       // 2. Build the dependency graph and determine execution order.
       this.graph = new DependencyGraph(this.loader.jobs, this.loader.templates)
@@ -67,22 +93,44 @@ export class Deployer {
       const jobExecutionPlan = this.getJobExecutionPlan(fullExecutionOrder)
       const targetNetworks = this.getTargetNetworks()
       
-      console.log(chalk.blue('\n2. Execution Plan'))
-      console.log(chalk.gray(`   - Target Networks: ${targetNetworks.map(n => `${n.name} (ChainID: ${n.chainId})`).join(', ')}`))
-      console.log(chalk.gray(`   - Job Execution Order: ${jobExecutionPlan.join(' -> ')}`))
+      this.events.emitEvent({
+        type: 'execution_plan',
+        level: 'info',
+        data: {
+          targetNetworks: targetNetworks.map(n => ({
+            name: n.name,
+            chainId: n.chainId
+          })),
+          jobExecutionOrder: jobExecutionPlan
+        }
+      })
 
       // 4. Execute the plan.
-      console.log(chalk.blue('\n3. Executing Jobs...'))
-      const engine = new ExecutionEngine(this.loader.templates)
+      const engine = new ExecutionEngine(this.loader.templates, this.events)
       
       for (const network of targetNetworks) {
-        console.log(chalk.cyan.bold(`\nNetwork: ${network.name} (ChainID: ${network.chainId})`))
+        this.events.emitEvent({
+          type: 'network_started',
+          level: 'info',
+          data: {
+            networkName: network.name,
+            chainId: network.chainId
+          }
+        })
         
         for (const jobName of jobExecutionPlan) {
           const job = this.loader.jobs.get(jobName)!
           
           if (this.shouldSkipJobOnNetwork(job, network)) {
-            console.log(chalk.yellow(`  Skipping job "${jobName}" on network "${network.name}" due to configuration.`))
+            this.events.emitEvent({
+              type: 'job_skipped',
+              level: 'warn',
+              data: {
+                jobName,
+                networkName: network.name,
+                reason: 'configuration'
+              }
+            })
             continue
           }
           
@@ -101,14 +149,19 @@ export class Deployer {
       // 5. Write results to output files.
       await this.writeOutputFiles()
 
-      console.log(chalk.bold.inverse('\n DEPLOYITO: DEPLOYMENT RUN COMPLETED SUCCESSFULLY '))
+      this.events.emitEvent({
+        type: 'deployment_completed',
+        level: 'info'
+      })
     } catch (error) {
-      console.error(chalk.red.bold('\n💥 DEPLOYMENT FAILED!'))
-      if (error instanceof Error) {
-        console.error(chalk.red(error.stack || error.message))
-      } else {
-        console.error(chalk.red(String(error)))
-      }
+      this.events.emitEvent({
+        type: 'deployment_failed',
+        level: 'error',
+        data: {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined
+        }
+      })
       // Re-throw to allow CLI to exit with a non-zero code
       throw error
     }
@@ -151,7 +204,13 @@ export class Deployer {
     if (filteredNetworks.length !== this.options.runOnNetworks.length) {
         const foundIds = new Set(filteredNetworks.map(n => n.chainId));
         const missingIds = this.options.runOnNetworks.filter(id => !foundIds.has(id));
-        console.warn(chalk.yellow(`Warning: Could not find network configurations for specified chain IDs: ${missingIds.join(', ')}`));
+        this.events.emitEvent({
+          type: 'missing_network_config_warning',
+          level: 'warn',
+          data: {
+            missingChainIds: missingIds
+          }
+        })
     }
     
     return filteredNetworks
@@ -182,14 +241,20 @@ export class Deployer {
    */
   private async writeOutputFiles(): Promise<void> {
     if (this.results.size === 0) {
-      console.log(chalk.yellow('\nNo successful job executions to write to output.'))
+      this.events.emitEvent({
+        type: 'no_outputs',
+        level: 'warn'
+      })
       return
     }
 
     const outputDir = path.join(this.options.projectRoot, 'output')
     await fs.mkdir(outputDir, { recursive: true })
     
-    console.log(chalk.blue('\n4. Writing output files...'))
+    this.events.emitEvent({
+      type: 'output_writing_started',
+      level: 'info'
+    })
 
     for (const [jobName, resultData] of this.results.entries()) {
       const outputFilePath = path.join(outputDir, `${jobName}.json`)
@@ -210,7 +275,13 @@ export class Deployer {
       }
       
       await fs.writeFile(outputFilePath, JSON.stringify(fileContent, null, 2))
-      console.log(chalk.green(`   - Wrote: ${path.relative(this.options.projectRoot, outputFilePath)}`))
+      this.events.emitEvent({
+        type: 'output_file_written',
+        level: 'info',
+        data: {
+          relativePath: path.relative(this.options.projectRoot, outputFilePath)
+        }
+      })
     }
   }
 }

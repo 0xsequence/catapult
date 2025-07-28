@@ -5,14 +5,32 @@ import chalk from 'chalk'
 import { setupCommands } from './cli'
 import packageJson from '../package.json'
 
+import { deploymentEvents, CLIEventAdapter } from './lib/events'
+
+// Set up CLI event adapter to convert events to console output
+const cliAdapter = new CLIEventAdapter(deploymentEvents)
+
 // Setup global error handling
 process.on('unhandledRejection', (reason, promise) => {
-  console.error(chalk.red('Unhandled Rejection at:'), promise, chalk.red('reason:'), reason)
+  deploymentEvents.emitEvent({
+    type: 'unhandled_rejection',
+    level: 'error',
+    data: {
+      reason,
+      promise
+    }
+  })
   process.exit(1)
 })
 
 process.on('uncaughtException', (error) => {
-  console.error(chalk.red('Uncaught Exception:'), error)
+  deploymentEvents.emitEvent({
+    type: 'uncaught_exception',
+    level: 'error',
+    data: {
+      error
+    }
+  })
   process.exit(1)
 })
 
@@ -30,7 +48,13 @@ async function main() {
     // Parse arguments
     await program.parseAsync(process.argv)
   } catch (error) {
-    console.error(chalk.red('Error:'), error instanceof Error ? error.message : error)
+    deploymentEvents.emitEvent({
+      type: 'cli_error',
+      level: 'error',
+      data: {
+        message: error instanceof Error ? error.message : String(error)
+      }
+    })
     process.exit(1)
   }
 }

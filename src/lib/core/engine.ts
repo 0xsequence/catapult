@@ -1,8 +1,8 @@
-import chalk from 'chalk'
 import { Job, Template, Action, JobAction, isPrimitiveActionType, Condition } from '../types'
 import { ExecutionContext } from './context'
 import { ValueResolver, ResolutionScope } from './resolver'
 import { validateAddress, validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
+import { DeploymentEventEmitter, deploymentEvents } from '../events'
 
 /**
  * The ExecutionEngine is the core component that runs jobs and their actions.
@@ -12,10 +12,12 @@ import { validateAddress, validateHexData, validateBigNumberish, validateRawTran
 export class ExecutionEngine {
   private readonly resolver: ValueResolver
   private readonly templates: Map<string, Template>
+  private readonly events: DeploymentEventEmitter
 
-  constructor(templates: Map<string, Template>) {
+  constructor(templates: Map<string, Template>, eventEmitter?: DeploymentEventEmitter) {
     this.resolver = new ValueResolver()
     this.templates = templates
+    this.events = eventEmitter || deploymentEvents
   }
 
   /**
@@ -24,7 +26,16 @@ export class ExecutionEngine {
    * @param context The ExecutionContext for the target network.
    */
   public async executeJob(job: Job, context: ExecutionContext): Promise<void> {
-    console.log(chalk.cyan.bold(`\n🚀 Starting job: ${job.name} (v${job.version})`))
+         this.events.emitEvent({
+       type: 'job_started',
+       level: 'info',
+       data: {
+         jobName: job.name,
+         jobVersion: job.version,
+         networkName: context.getNetwork().name,
+         chainId: context.getNetwork().chainId
+       }
+     })
 
     const executionOrder = this.topologicalSortActions(job)
 
@@ -37,7 +48,15 @@ export class ExecutionEngine {
       await this.executeAction(action, context, new Map())
     }
 
-    console.log(chalk.green.bold(`✅ Job "${job.name}" completed successfully.`))
+         this.events.emitEvent({
+       type: 'job_completed',
+       level: 'info',
+       data: {
+         jobName: job.name,
+         networkName: context.getNetwork().name,
+         chainId: context.getNetwork().chainId
+       }
+     })
   }
 
   /**
@@ -55,11 +74,25 @@ export class ExecutionEngine {
     const actionName = 'name' in action ? action.name : action.type
     const templateName = 'template' in action ? action.template : action.type
     
-    console.log(chalk.blue(`  - Executing: ${actionName}`))
+    this.events.emitEvent({
+      type: 'action_started',
+      level: 'info',
+      data: {
+        actionName: actionName,
+        jobName: 'unknown' // We'll need to pass job context later
+      }
+    })
 
     // 1. Evaluate skip conditions for the action itself.
     if (await this.evaluateSkipConditions(action.skip_condition, context, scope)) {
-      console.log(chalk.yellow(`    ↪ Skipping "${actionName}" due to met condition.`))
+      this.events.emitEvent({
+        type: 'action_skipped',
+        level: 'info',
+        data: {
+          actionName: actionName,
+          reason: 'condition met'
+        }
+      })
       return
     }
 
@@ -97,7 +130,13 @@ export class ExecutionEngine {
       const actionName = 'name' in callingAction ? callingAction.name : callingAction.type
       throw new Error(`Template "${templateName}" not found for action "${actionName}".`)
     }
-    console.log(chalk.magenta(`    -> Entering template: ${template.name}`))
+            this.events.emitEvent({
+          type: 'template_entered',
+          level: 'debug',
+          data: {
+            templateName: template.name
+          }
+        })
 
     // 1. Create and populate a new resolution scope for this template call.
     const templateScope: ResolutionScope = new Map()
@@ -111,18 +150,37 @@ export class ExecutionEngine {
     
     // 2. Handle template-level setup block.
     if (template.setup?.actions) {
-        console.log(chalk.magenta(`    -> Running setup for template: ${template.name}`))
+        this.events.emitEvent({
+          type: 'template_setup_started',
+          level: 'debug',
+          data: {
+            templateName: template.name
+          }
+        })
         for (const setupAction of template.setup.actions) {
           // Setup actions are executed with the new template scope.
           await this.executeAction(setupAction, context, templateScope)
         }
-        console.log(chalk.magenta(`    <- Finished setup for template: ${template.name}`))
+        this.events.emitEvent({
+          type: 'template_setup_completed',
+          level: 'debug',
+          data: {
+            templateName: template.name
+          }
+        })
     }
 
     // 3. Evaluate template-level skip conditions.
     const templateSkipConditions = template.skip_condition || template.setup?.skip_condition
     if (await this.evaluateSkipConditions(templateSkipConditions, context, templateScope)) {
-      console.log(chalk.yellow(`    ↪ Skipping actions in template "${template.name}" due to met condition.`))
+      this.events.emitEvent({
+        type: 'template_skipped',
+        level: 'info',
+        data: {
+          templateName: template.name,
+          reason: 'condition met'
+        }
+      })
       // Even if we skip the main actions, we must still process the outputs,
       // as they might be pre-computable (e.g., a CREATE2 address).
     } else {
@@ -138,11 +196,24 @@ export class ExecutionEngine {
         const resolvedOutput = await this.resolver.resolve(value, context, templateScope)
         const outputKey = `${callingAction.name}.${key}`
         context.setOutput(outputKey, resolvedOutput)
-        console.log(chalk.gray(`      Stored output: ${outputKey} = ${resolvedOutput}`))
+        this.events.emitEvent({
+          type: 'output_stored',
+          level: 'debug',
+          data: {
+            outputKey,
+            value: resolvedOutput
+          }
+        })
       }
     }
 
-    console.log(chalk.magenta(`    <- Exiting template: ${template.name}`))
+    this.events.emitEvent({
+      type: 'template_exited',
+      level: 'debug',
+      data: {
+        templateName: template.name
+      }
+    })
   }
 
   /**
@@ -157,7 +228,13 @@ export class ExecutionEngine {
     scope: ResolutionScope,
   ): Promise<void> {
     const actionName = action.name || action.type
-    console.log(chalk.gray(`      Executing primitive: ${action.type}`))
+    this.events.emitEvent({
+      type: 'primitive_action',
+      level: 'debug',
+      data: {
+        actionType: action.type
+      }
+    })
 
     switch (action.type) {
       case 'send-transaction': {
@@ -170,17 +247,32 @@ export class ExecutionEngine {
         const data = validateHexData(resolvedData, actionName, 'data')
         const value = validateBigNumberish(resolvedValue, actionName, 'value')
         
-        console.log(chalk.gray(`        to: ${to}, value: ${value}, data: ${String(data).substring(0, 42)}...`))
-
         const tx = await context.signer.sendTransaction({ to, data, value })
-        console.log(chalk.gray(`        tx hash: ${tx.hash}`))
+        
+        this.events.emitEvent({
+          type: 'transaction_sent',
+          level: 'info',
+          data: {
+            to,
+            value: value.toString(),
+            dataPreview: String(data).substring(0, 42),
+            txHash: tx.hash
+          }
+        })
         
         const receipt = await tx.wait()
         if (!receipt || receipt.status !== 1) {
             throw new Error(`Transaction for action "${actionName}" failed (reverted). Hash: ${tx.hash}`)
         }
         
-        console.log(chalk.gray(`        tx confirmed in block: ${receipt.blockNumber}`))
+        this.events.emitEvent({
+          type: 'transaction_confirmed',
+          level: 'info',
+          data: {
+            txHash: tx.hash,
+            blockNumber: receipt.blockNumber
+          }
+        })
         
         if (action.name) {
             context.setOutput(`${action.name}.hash`, tx.hash)
@@ -195,14 +287,31 @@ export class ExecutionEngine {
         const rawTx = validateRawTransaction(resolvedRawTx, actionName)
         
         const tx = await context.provider.broadcastTransaction(rawTx)
-        console.log(chalk.gray(`        tx hash: ${tx.hash}`))
+        
+        this.events.emitEvent({
+          type: 'transaction_sent',
+          level: 'info',
+          data: {
+            to: '',
+            value: '0',
+            dataPreview: 'signed transaction',
+            txHash: tx.hash
+          }
+        })
         
         const receipt = await tx.wait()
         if (!receipt || receipt.status !== 1) {
             throw new Error(`Signed transaction for action "${actionName}" failed (reverted). Hash: ${tx.hash}`)
         }
         
-        console.log(chalk.gray(`        tx confirmed in block: ${receipt.blockNumber}`))
+        this.events.emitEvent({
+          type: 'transaction_confirmed',
+          level: 'info',
+          data: {
+            txHash: tx.hash,
+            blockNumber: receipt.blockNumber
+          }
+        })
         
         if (action.name) {
             context.setOutput(`${action.name}.hash`, tx.hash)
