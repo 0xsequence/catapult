@@ -18,8 +18,25 @@ module.exports = [
       'no-var': 'error',
       'semi': ['error', 'never'],
       
+      // Unused variables and imports detection
+      'no-unused-vars': 'off', // Turn off base rule in favor of TypeScript version
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        {
+          vars: 'all',
+          args: 'after-used',
+          ignoreRestSiblings: true,
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          destructuredArrayIgnorePattern: '^_'
+        }
+      ],
+      
+      // Additional import/export rules for unused detection
+      '@typescript-eslint/no-unused-expressions': 'warn',
+      
       // TypeScript ESLint rules
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       '@typescript-eslint/explicit-function-return-type': 'off',
       '@typescript-eslint/no-explicit-any': 'warn',
       '@typescript-eslint/no-var-requires': 'off',

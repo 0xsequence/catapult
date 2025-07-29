@@ -5,6 +5,12 @@ import { loadNetworks } from '../lib/network-loader'
 import { DependencyGraph } from '../lib/core/graph'
 import { projectOption, noStdOption } from './common'
 
+interface DryRunOptions {
+  project: string
+  std: boolean
+  network?: string[]
+}
+
 export function makeDryRunCommand(): Command {
   const dryRun = new Command('dry-run')
     .description('Validate project configuration and show execution plan without running transactions')
@@ -14,7 +20,7 @@ export function makeDryRunCommand(): Command {
   projectOption(dryRun)
   noStdOption(dryRun)
   
-  dryRun.action(async (jobs: string[], options: any) => {
+  dryRun.action(async (jobs: string[], options: DryRunOptions) => {
     try {
       console.log(chalk.bold.inverse(' DRY-RUN MODE '))
       const projectRoot = options.project

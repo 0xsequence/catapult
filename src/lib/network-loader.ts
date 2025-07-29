@@ -3,13 +3,16 @@ import * as path from 'path'
 import { parse as parseYaml } from 'yaml'
 import { Network } from './types'
 
-function isValidNetwork(obj: any): obj is Network {
+function isValidNetwork(obj: unknown): obj is Network {
   return (
-    obj &&
     typeof obj === 'object' &&
-    typeof obj.name === 'string' &&
-    typeof obj.chainId === 'number' &&
-    typeof obj.rpcUrl === 'string'
+    obj !== null &&
+    'name' in obj &&
+    'chainId' in obj &&
+    'rpcUrl' in obj &&
+    typeof (obj as Record<string, unknown>).name === 'string' &&
+    typeof (obj as Record<string, unknown>).chainId === 'number' &&
+    typeof (obj as Record<string, unknown>).rpcUrl === 'string'
   )
 }
 
@@ -37,11 +40,12 @@ export async function loadNetworks(projectRoot: string): Promise<Network[]> {
       networks.push(item)
     }
     return networks
-  } catch (error: any) {
-    if (error.code === 'ENOENT') {
+  } catch (error: unknown) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
       // It's okay if the file doesn't exist, just return an empty array.
       return []
     }
-    throw new Error(`Failed to load or parse networks.yaml: ${error.message}`)
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Failed to load or parse networks.yaml: ${message}`)
   }
 }

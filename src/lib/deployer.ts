@@ -47,7 +47,7 @@ export class Deployer {
   // Store both successful and failed execution results
   private readonly results = new Map<string, { 
     job: Job; 
-    outputs: Map<number, { status: 'success' | 'error'; data: Map<string, any> | string }> 
+    outputs: Map<number, { status: 'success' | 'error'; data: Map<string, unknown> | string }> 
   }>()
   private graph?: DependencyGraph
 
@@ -153,7 +153,7 @@ export class Deployer {
             // Store successful results
             this.results.get(job.name)!.outputs.set(network.chainId, {
               status: 'success',
-              data: (context as any).getOutputs()
+              data: (context as { getOutputs(): Map<string, unknown> }).getOutputs()
             })
           } catch (error) {
             // Store error results
@@ -318,9 +318,19 @@ export class Deployer {
    * - Success states with identical outputs are grouped together with chainIds array
    * - Error states are kept separate (one entry per network)
    */
-  private groupNetworkResults(outputs: Map<number, { status: 'success' | 'error'; data: Map<string, any> | string }>): any[] {
-    const successGroups = new Map<string, { chainIds: string[], outputs: Record<string, any> }>()
-    const errorEntries: any[] = []
+  private groupNetworkResults(outputs: Map<number, { status: 'success' | 'error'; data: Map<string, unknown> | string }>): Array<{
+    status: 'success' | 'error';
+    chainIds?: string[];
+    chainId?: string;
+    outputs?: Record<string, unknown>;
+    error?: string;
+  }> {
+    const successGroups = new Map<string, { chainIds: string[], outputs: Record<string, unknown> }>()
+    const errorEntries: Array<{
+      status: 'error';
+      chainId: string;
+      error: string;
+    }> = []
     
     for (const [chainId, result] of outputs.entries()) {
       if (result.status === 'success') {
@@ -341,14 +351,14 @@ export class Deployer {
         errorEntries.push({
           status: 'error',
           chainId: chainId.toString(),
-          error: result.data
+          error: result.data as string
         })
       }
     }
     
     // Convert success groups to array format
     const successEntries = Array.from(successGroups.values()).map(group => ({
-      status: 'success',
+      status: 'success' as const,
       chainIds: group.chainIds.sort(), // Sort for consistent output
       outputs: group.outputs
     }))

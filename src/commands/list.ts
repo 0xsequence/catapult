@@ -4,6 +4,15 @@ import * as path from 'path'
 import { loadProject, projectOption, noStdOption } from './common'
 import { loadNetworks } from '../lib/network-loader'
 
+interface ListOptions {
+  project: string
+  std: boolean
+}
+
+interface NetworksListOptions {
+  project: string
+}
+
 export function makeListCommand(): Command {
   const list = new Command('list')
     .description('List project resources like jobs, artifacts, and networks')
@@ -12,7 +21,7 @@ export function makeListCommand(): Command {
     .description('List all available jobs in the project')
   projectOption(listJobs)
   noStdOption(listJobs)
-  listJobs.action(async (options: any) => {
+  listJobs.action(async (options: ListOptions) => {
     try {
       const loader = await loadProject(options.project, { 
         loadStdTemplates: options.std !== false 
@@ -38,7 +47,7 @@ export function makeListCommand(): Command {
     .description('List all artifacts found in the project')
   projectOption(listArtifacts)
   noStdOption(listArtifacts)
-  listArtifacts.action(async (options: any) => {
+  listArtifacts.action(async (options: ListOptions) => {
     try {
       const loader = await loadProject(options.project, { 
         loadStdTemplates: options.std !== false 
@@ -65,7 +74,7 @@ export function makeListCommand(): Command {
     .description('List all available templates')
   projectOption(listTemplates)
   noStdOption(listTemplates)
-  listTemplates.action(async (options: any) => {
+  listTemplates.action(async (options: ListOptions) => {
     try {
       const loader = await loadProject(options.project, { 
         loadStdTemplates: options.std !== false 
@@ -90,7 +99,7 @@ export function makeListCommand(): Command {
   const listNetworks = new Command('networks')
     .description('List all configured networks')
   projectOption(listNetworks)
-  listNetworks.action(async (options: any) => {
+  listNetworks.action(async (options: NetworksListOptions) => {
     try {
       const networks = await loadNetworks(options.project)
       console.log(chalk.bold.underline('Available Networks:'))

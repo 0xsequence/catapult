@@ -4,6 +4,14 @@ import { loadNetworks } from '../lib/network-loader'
 import { deploymentEvents } from '../lib/events'
 import { projectOption, dotenvOption, noStdOption, loadDotenv } from './common'
 
+interface RunOptions {
+  project: string
+  privateKey?: string
+  network?: string[]
+  dotenv?: string
+  std: boolean
+}
+
 export function makeRunCommand(): Command {
   const run = new Command('run')
     .description('Run deployment jobs on specified networks')
@@ -15,7 +23,7 @@ export function makeRunCommand(): Command {
   dotenvOption(run)
   noStdOption(run)
 
-  run.action(async (jobs: string[], options: any) => {
+  run.action(async (jobs: string[], options: RunOptions) => {
     try {
       loadDotenv(options)
       
