@@ -52,6 +52,7 @@ export class ProjectLoader {
       try {
         const content = await fs.readFile(filePath, 'utf-8')
         const template = parseTemplate(content)
+        template._path = filePath
         this.templates.set(template.name, template)
       } catch (error) {
         // Silently ignore files that can't be read or parsed, as they may not be template files

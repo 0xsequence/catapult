@@ -302,5 +302,60 @@ describe('ArtifactReferenceValidator', () => {
       const errors = validator.validateAll(jobs, templates)
       expect(errors).toHaveLength(0)
     })
+
+    it('should support relative artifact references in templates', () => {
+      // Add artifact that can be found via relative path
+      registry.add({
+        contractName: 'RelativeContract',
+        abi: [{ type: 'function', name: 'test' }],
+        bytecode: '0x608060405234801561000f575f5ffd5b50',
+        _path: '/project/templates/deploy/artifacts/Contract.json',
+        _hash: 'relative123'
+      })
+
+      const jobs = new Map<string, Job>()
+      const templates = new Map<string, Template>([
+        ['deploy-template', {
+          name: 'deploy-template',
+          _path: '/project/templates/deploy/template.yaml', // Template path for context
+          actions: [{
+            type: 'send-transaction',
+            arguments: {
+              to: '0x123',
+              data: '{{creationCode(./artifacts/Contract.json)}}' // Relative reference
+            }
+          }]
+        }]
+      ])
+
+      const errors = validator.validateAll(jobs, templates)
+      expect(errors).toHaveLength(0) // Should validate successfully with relative reference
+    })
+
+    it('should detect missing relative artifacts in templates', () => {
+      const jobs = new Map<string, Job>()
+      const templates = new Map<string, Template>([
+        ['deploy-template', {
+          name: 'deploy-template',
+          _path: '/project/templates/deploy/template.yaml', // Template path for context
+          actions: [{
+            type: 'send-transaction',
+            arguments: {
+              to: '0x123',
+              data: '{{creationCode(./artifacts/NonExistent.json)}}' // Missing relative reference
+            }
+          }]
+        }]
+      ])
+
+      const errors = validator.validateAll(jobs, templates)
+      expect(errors).toHaveLength(1)
+      expect(errors[0]).toEqual({
+        type: 'missing_artifact',
+        message: 'Artifact not found for identifier: "./artifacts/NonExistent.json"',
+        location: 'template "deploy-template" action "send-transaction" argument "data"',
+        artifactIdentifier: './artifacts/NonExistent.json'
+      })
+    })
   })
 }) 

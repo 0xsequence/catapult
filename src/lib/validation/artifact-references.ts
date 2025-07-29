@@ -43,14 +43,15 @@ export class ArtifactReferenceValidator {
   }
 
   private validateTemplate(template: Template, errors: ArtifactReferenceError[]): void {
-    // Templates don't have context paths, so use default behavior
+    // Validate setup actions with template context
     if (template.setup?.actions) {
       for (const action of template.setup.actions) {
-        this.validateAction(action, `template "${template.name}" setup`, errors)
+        this.validateAction(action, `template "${template.name}" setup`, errors, template._path)
       }
     }
+    // Validate main actions with template context
     for (const action of template.actions) {
-      this.validateAction(action, `template "${template.name}"`, errors)
+      this.validateAction(action, `template "${template.name}"`, errors, template._path)
     }
 
     // Validate outputs
@@ -70,13 +71,13 @@ export class ArtifactReferenceValidator {
     }
   }
 
-  private validateAction(action: Action, context: string, errors: ArtifactReferenceError[]): void {
+  private validateAction(action: Action, context: string, errors: ArtifactReferenceError[], templatePath?: string): void {
     const actionName = action.name || action.type
     const actionContext = `${context} action "${actionName}"`
     
     // Validate the action arguments
     for (const [argName, argValue] of Object.entries(action.arguments || {})) {
-      this.validateValue(argValue, `${actionContext} argument "${argName}"`, errors)
+      this.validateValue(argValue, `${actionContext} argument "${argName}"`, errors, templatePath)
     }
   }
 

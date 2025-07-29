@@ -21,6 +21,7 @@ export interface Template {
     actions: Action[];
     skip_condition?: Condition[];
     outputs?: Record<string, Value<any>>;
+    _path?: string; // Path to the template file for relative artifact resolution
 }
 
 // --- Job Definition ---
