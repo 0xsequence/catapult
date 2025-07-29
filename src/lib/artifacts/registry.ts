@@ -2,6 +2,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { createHash } from 'crypto'
 import { parseArtifact } from '../parsers/artifact'
+import { parseBuildInfo, isBuildInfoFile, extractedContractToArtifact } from '../parsers/buildinfo'
 import { Artifact } from '../types'
 import { deploymentEvents } from '../events'
 
@@ -23,16 +24,37 @@ export class ArtifactRegistry {
     for (const filePath of files) {
       try {
         const content = await fs.readFile(filePath, 'utf-8')
-        const parsed = parseArtifact(content, filePath)
-
-        if (parsed) {
-          const hash = createHash('md5').update(content).digest('hex')
-          const artifact: Artifact = {
-            ...parsed,
-            _path: filePath,
-            _hash: hash,
+        
+        // Check if this is a build-info file
+        if (isBuildInfoFile(filePath)) {
+          const extractedContracts = parseBuildInfo(content, filePath)
+          if (extractedContracts) {
+            // Create an artifact for each extracted contract
+            for (const extracted of extractedContracts) {
+              // Create a unique path identifier for each contract within the build-info
+              const contractPath = `${filePath}#${extracted.fullyQualifiedName}`
+              const hash = createHash('md5').update(content + extracted.fullyQualifiedName).digest('hex')
+              
+              const artifact: Artifact = {
+                ...extractedContractToArtifact(extracted),
+                _path: contractPath,
+                _hash: hash,
+              }
+              this.add(artifact)
+            }
           }
-          this.add(artifact)
+        } else {
+          // Handle regular artifact files
+          const parsed = parseArtifact(content, filePath)
+          if (parsed) {
+            const hash = createHash('md5').update(content).digest('hex')
+            const artifact: Artifact = {
+              ...parsed,
+              _path: filePath,
+              _hash: hash,
+            }
+            this.add(artifact)
+          }
         }
       } catch (error) {
         // Silently ignore files that can't be read or parsed, as they may not be artifacts

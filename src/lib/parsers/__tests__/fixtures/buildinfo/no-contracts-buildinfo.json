@@ -1,0 +1,17 @@
+{
+  "_format": "hh-sol-build-info-1",
+  "id": "000000000000000000000000000000000000000000000000000000000000000",
+  "solcVersion": "0.8.30",
+  "solcLongVersion": "0.8.30+commit.8fe82020",
+  "input": {
+    "language": "Solidity",
+    "sources": {},
+    "settings": {
+      "outputSelection": {}
+    }
+  },
+  "output": {
+    "contracts": {},
+    "sources": {}
+  }
+} 

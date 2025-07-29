@@ -1,0 +1,62 @@
+{
+  "_format": "hh-sol-build-info-1",
+  "id": "invalid123456789012345678901234567890abcd",
+  "solcVersion": "0.8.30",
+  "solcLongVersion": "0.8.30+commit.8fe82020",
+  "input": {
+    "language": "Solidity",
+    "sources": {
+      "src/ValidContract.sol": {
+        "content": "pragma solidity 0.8.30; contract ValidContract {}"
+      },
+      "src/InvalidContract.sol": {
+        "content": "pragma solidity 0.8.30; contract InvalidContract {}"
+      }
+    },
+    "settings": {
+      "outputSelection": {
+        "*": {
+          "*": ["abi", "evm.bytecode", "evm.deployedBytecode"]
+        }
+      }
+    }
+  },
+  "output": {
+    "contracts": {
+      "src/ValidContract.sol": {
+        "ValidContract": {
+          "abi": [],
+          "evm": {
+            "bytecode": {
+              "object": "0x608060405234801561001057600080fd5b50005b"
+            },
+            "deployedBytecode": {
+              "object": "0x608060405234801561001057600080fd5b50005b"
+            }
+          }
+        }
+      },
+      "src/InvalidContract.sol": {
+        "InvalidContract": {
+          "abi": [],
+          "evm": {
+            "bytecode": {
+              "object": "invalid_bytecode_without_0x_prefix"
+            },
+            "deployedBytecode": {
+              "object": "0x608060405234801561001057600080fd5b50005b"
+            }
+          }
+        }
+      }
+    },
+    "sources": {
+      "src/ValidContract.sol": {
+        "id": 0
+      },
+      "src/InvalidContract.sol": {
+        "id": 1
+      }
+    }
+  }
+} 

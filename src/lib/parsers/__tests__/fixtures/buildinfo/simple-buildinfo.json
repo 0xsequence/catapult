@@ -1,0 +1,63 @@
+{
+  "_format": "hh-sol-build-info-1",
+  "id": "901568e56d422b1e1e3f64004cb4dd6e",
+  "solcVersion": "0.8.30",
+  "solcLongVersion": "0.8.30+commit.8fe82020",
+  "input": {
+    "language": "Solidity",
+    "sources": {
+      "src/Counter.sol": {
+        "content": "pragma solidity 0.8.30;\n\ncontract Counter {\n  uint256 public count;\n  \n  function increment() external {\n    count++;\n  }\n  \n  function getCount() external view returns (uint256) {\n    return count;\n  }\n}"
+      }
+    },
+    "settings": {
+      "optimizer": {
+        "enabled": true,
+        "runs": 200
+      },
+      "outputSelection": {
+        "*": {
+          "*": ["abi", "evm.bytecode", "evm.deployedBytecode"]
+        }
+      }
+    }
+  },
+  "output": {
+    "contracts": {
+      "src/Counter.sol": {
+        "Counter": {
+          "abi": [
+            {
+              "type": "function",
+              "name": "increment",
+              "inputs": [],
+              "outputs": [],
+              "stateMutability": "nonpayable"
+            },
+            {
+              "type": "function",
+              "name": "getCount",
+              "inputs": [],
+              "outputs": [{"name": "", "type": "uint256", "internalType": "uint256"}],
+              "stateMutability": "view"
+            }
+          ],
+          "evm": {
+            "bytecode": {
+              "object": "0x608060405234801561001057600080fd5b50600436106100365760003560e01c8063a87d942c1461003b578063d09de08a14610059575b600080fd5b610043610063565b6040516100509190610084565b60405180910390f35b610061610069565b005b60005481565b600160008082825461007b919061009f565b92505081905550565b60005b8381101561009e5780820151818401526020810190506100835b50505050565b60008201905061009c565b60008219050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052601160045260246000fd5b600081905091905056fea2646970667358221220c4d6f7e4b8f9a5d8c2b1a0e9f8d7c6b5a4938271605948372819465730384756464736f6c634300081e0033",
+              "sourceMap": "25:194:0:-:0;;;67:1;44:24;;25:194;;;;;;"
+            },
+            "deployedBytecode": {
+              "object": "0x608060405234801561001057600080fd5b50600436106100365760003560e01c8063a87d942c1461003b578063d09de08a14610059575b600080fd5b610043610063565b6040516100509190610084565b60405180910390f35b610061610069565b005b60005481565b600160008082825461007b919061009f565b92505081905550565b60005b8381101561009e5780820151818401526020810190506100835b50505050565b60008201905061009c565b60008219050919050565b7f4e487b7100000000000000000000000000000000000000000000000000000000600052601160045260246000fd5b600081905091905056fea2646970667358221220c4d6f7e4b8f9a5d8c2b1a0e9f8d7c6b5a4938271605948372819465730384756464736f6c634300081e0033"
+            }
+          }
+        }
+      }
+    },
+    "sources": {
+      "src/Counter.sol": {
+        "id": 0
+      }
+    }
+  }
+} 

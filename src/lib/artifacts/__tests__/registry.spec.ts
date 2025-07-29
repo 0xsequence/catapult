@@ -514,5 +514,34 @@ describe('ArtifactRegistry', () => {
       // Should not throw and should have no artifacts
       expect(registry.lookup('AnyContract')).toBeUndefined()
     })
+
+    it('should load contracts from build-info files', async () => {
+      const tempDir = await createTempDir()
+      
+      // Copy a build-info fixture
+      const buildInfoPath = path.join(tempDir, 'artifacts', 'build-info', 'test.json')
+      const buildInfoFixturePath = path.join(__dirname, '../../parsers/__tests__/fixtures/buildinfo/multi-contract-buildinfo.json')
+      await fs.promises.mkdir(path.dirname(buildInfoPath), { recursive: true })
+      await fs.promises.copyFile(buildInfoFixturePath, buildInfoPath)
+      
+      await registry.loadFrom(tempDir)
+
+      // Should load both contracts from the build-info
+      const token = registry.lookup('Token')
+      const factory = registry.lookup('TokenFactory')
+      
+      expect(token).toBeDefined()
+      expect(token!.contractName).toBe('Token')
+      expect(token!.sourceName).toBe('src/Token.sol')
+      expect(token!._path).toContain('#src/Token.sol:Token')
+      
+      expect(factory).toBeDefined()
+      expect(factory!.contractName).toBe('TokenFactory')
+      expect(factory!.sourceName).toBe('src/TokenFactory.sol')
+      expect(factory!._path).toContain('#src/TokenFactory.sol:TokenFactory')
+
+      // Should have 2 total artifacts
+      expect(registry.getAll()).toHaveLength(2)
+    })
   })
 }) 
