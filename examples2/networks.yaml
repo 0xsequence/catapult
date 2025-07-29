@@ -1,0 +1,3 @@
+- name: "Arbitrum One"
+  chainId: 42161
+  rpcUrl: "https://nodes.sequence.app/arbitrum"

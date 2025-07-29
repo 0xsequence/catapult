@@ -1,0 +1,11 @@
+name: "test-contract-deployment"
+version: "1"
+description: "Deploy a test contract"
+depends_on: []
+
+actions:
+  - name: "deploy-test-contract"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      salt: "0x0000000000000000000000000000000000000000000000000000000000000000"
+      creationCode: "{{creationCode(e0f5dfce7023f4ee447f9089f76df7d6)}}"
