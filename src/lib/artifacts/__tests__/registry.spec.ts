@@ -51,7 +51,7 @@ describe('ArtifactRegistry', () => {
       expect(found!._hash).toBe('testhash')
     })
 
-    it('should handle duplicate contract names and show warning', () => {
+    it('should handle duplicate contract names and disable name-based lookup', () => {
       // Import the deploymentEvents to listen for events
       const { deploymentEvents } = require('../../events')
       const emittedEvents: any[] = []
@@ -87,9 +87,27 @@ describe('ArtifactRegistry', () => {
       expect(warningEvent.data.contractName).toBe('DuplicateName')
       expect(warningEvent.data.path).toBe('/test/path2.json')
 
-      // Should return the second one (last added)
-      const found = registry.lookup('DuplicateName')
-      expect(found!._path).toBe('/test/path2.json')
+      // Name-based lookup should now be disabled for duplicates
+      const foundByName = registry.lookup('DuplicateName')
+      expect(foundByName).toBeUndefined()
+
+      // But hash-based lookup should still work
+      const foundByHash1 = registry.lookup('hash1')
+      expect(foundByHash1).toBeDefined()
+      expect(foundByHash1!._path).toBe('/test/path1.json')
+
+      const foundByHash2 = registry.lookup('hash2')
+      expect(foundByHash2).toBeDefined()
+      expect(foundByHash2!._path).toBe('/test/path2.json')
+
+      // And path-based lookup should still work
+      const foundByPath1 = registry.lookup('/test/path1.json')
+      expect(foundByPath1).toBeDefined()
+      expect(foundByPath1!._path).toBe('/test/path1.json')
+
+      const foundByPath2 = registry.lookup('/test/path2.json')
+      expect(foundByPath2).toBeDefined()
+      expect(foundByPath2!._path).toBe('/test/path2.json')
 
       deploymentEvents.off('event', eventListener)
     })
@@ -122,6 +140,87 @@ describe('ArtifactRegistry', () => {
       
       // Hash lookup should return the last added
       expect(registry.lookup('samehash')!.contractName).toBe('Contract2')
+    })
+
+    it('should still allow name-based lookup for non-duplicate contract names', () => {
+      const artifact1: Artifact = {
+        contractName: 'UniqueContract1',
+        abi: [],
+        bytecode: '0x123',
+        _path: '/test/path1.json',
+        _hash: 'hash1'
+      }
+
+      const artifact2: Artifact = {
+        contractName: 'UniqueContract2',
+        abi: [],
+        bytecode: '0x456',
+        _path: '/test/path2.json',
+        _hash: 'hash2'
+      }
+
+      registry.add(artifact1)
+      registry.add(artifact2)
+
+      // Name-based lookup should work for unique names
+      const found1 = registry.lookup('UniqueContract1')
+      expect(found1).toBeDefined()
+      expect(found1!._path).toBe('/test/path1.json')
+      expect(found1!._hash).toBe('hash1')
+
+      const found2 = registry.lookup('UniqueContract2')
+      expect(found2).toBeDefined()
+      expect(found2!._path).toBe('/test/path2.json')
+      expect(found2!._hash).toBe('hash2')
+    })
+
+    it('should handle mixed scenarios with some duplicates and some unique names', () => {
+      const artifact1: Artifact = {
+        contractName: 'DuplicateName',
+        abi: [],
+        bytecode: '0x123',
+        _path: '/test/path1.json',
+        _hash: 'hash1'
+      }
+
+      const artifact2: Artifact = {
+        contractName: 'DuplicateName',
+        abi: [],
+        bytecode: '0x456',
+        _path: '/test/path2.json',
+        _hash: 'hash2'
+      }
+
+      const artifact3: Artifact = {
+        contractName: 'UniqueName',
+        abi: [],
+        bytecode: '0x789',
+        _path: '/test/path3.json',
+        _hash: 'hash3'
+      }
+
+      registry.add(artifact1)
+      registry.add(artifact2)
+      registry.add(artifact3)
+
+      // Duplicate name should not be resolvable by name
+      const duplicateByName = registry.lookup('DuplicateName')
+      expect(duplicateByName).toBeUndefined()
+
+      // But unique name should still work
+      const uniqueByName = registry.lookup('UniqueName')
+      expect(uniqueByName).toBeDefined()
+      expect(uniqueByName!._path).toBe('/test/path3.json')
+
+      // All should be resolvable by hash
+      expect(registry.lookup('hash1')).toBeDefined()
+      expect(registry.lookup('hash2')).toBeDefined()
+      expect(registry.lookup('hash3')).toBeDefined()
+
+      // All should be resolvable by path
+      expect(registry.lookup('/test/path1.json')).toBeDefined()
+      expect(registry.lookup('/test/path2.json')).toBeDefined()
+      expect(registry.lookup('/test/path3.json')).toBeDefined()
     })
   })
 
@@ -317,12 +416,19 @@ describe('ArtifactRegistry', () => {
 
       deploymentEvents.off('event', eventListener)
 
-      // Should have the last loaded one
-      const artifact = registry.lookup('TestContract1')
-      expect(artifact).toBeDefined()
-      expect(artifact!.sourceName).toBe('contracts/DuplicateTestContract1.sol')
+      // Name-based lookup should be disabled for duplicates
+      const artifactByName = registry.lookup('TestContract1')
+      expect(artifactByName).toBeUndefined()
 
+      // But we should still be able to access artifacts by their paths
+      const artifact1ByPath = registry.lookup(path.join(tempDir, 'contract1.json'))
+      expect(artifact1ByPath).toBeDefined()
+      expect(artifact1ByPath!.contractName).toBe('TestContract1')
 
+      const artifact2ByPath = registry.lookup(path.join(tempDir, 'duplicate-name.json'))
+      expect(artifact2ByPath).toBeDefined()
+      expect(artifact2ByPath!.contractName).toBe('TestContract1')
+      expect(artifact2ByPath!.sourceName).toBe('contracts/DuplicateTestContract1.sol')
     })
   })
 

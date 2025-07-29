@@ -1,12 +1,12 @@
 import { ArtifactParser } from './types'
-import { naiveParser } from './naive'
+import { foundry12Parser } from './foundry-1.2'
 import { Artifact } from '../../types'
 
 // Array of all available artifact parsers.
 // To add a new format, create a new parser and add it to this list.
 const parsers: ArtifactParser[] = [
-  naiveParser,
-  // Future parsers (e.g., foundryParser, truffleParser) would go here.
+  foundry12Parser,
+  // Future parsers (e.g., truffleParser) would go here.
 ]
 
 /**

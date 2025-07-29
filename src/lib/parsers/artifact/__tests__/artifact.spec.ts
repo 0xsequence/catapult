@@ -1,7 +1,6 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { parseArtifact } from '../index'
-import { naiveParser } from '../naive'
 
 describe('Artifact Parsing', () => {
   const fixturesDir = path.join(__dirname, 'fixtures')
@@ -62,11 +61,12 @@ describe('Artifact Parsing', () => {
       expect(result).toBeNull()
     })
 
-    it('should return null when contractName is missing', () => {
+    it('should derive contractName from filename when missing', () => {
       const content = readFixture('missing-contract-name.json')
       const result = parseArtifact(content, '/test/missing-contract-name.json')
 
-      expect(result).toBeNull()
+      expect(result).not.toBeNull()
+      expect(result!.contractName).toBe('missing-contract-name')
     })
 
     it('should return null when abi is missing', () => {
@@ -112,111 +112,6 @@ describe('Artifact Parsing', () => {
     it('should handle empty string input gracefully', () => {
       const result = parseArtifact('', '/test/empty.json')
       expect(result).toBeNull()
-    })
-  })
-
-  describe('naiveParser function', () => {
-    it('should parse artifact with string bytecode', () => {
-      const content = readFixture('simple-artifact.json')
-      const result = naiveParser(content, '/test/simple-artifact.json')
-
-      expect(result).not.toBeNull()
-      expect(result!.contractName).toBe('SimpleToken')
-      expect(result!.bytecode).toMatch(/^0x[0-9a-fA-F]+$/)
-    })
-
-    it('should parse artifact with Hardhat-style bytecode object', () => {
-      const content = readFixture('hardhat-artifact.json')
-      const result = naiveParser(content, '/test/hardhat-artifact.json')
-
-      expect(result).not.toBeNull()
-      expect(result!.contractName).toBe('ERC20Token')
-      expect(result!.bytecode).toMatch(/^0x[0-9a-fA-F]+$/)
-    })
-
-    it('should handle deployedBytecode as string', () => {
-      const artifact = {
-        contractName: 'Test',
-        abi: [],
-        bytecode: '0x123',
-        deployedBytecode: '0x456'
-      }
-      const result = naiveParser(JSON.stringify(artifact), '/test.json')
-
-      expect(result).not.toBeNull()
-      expect(result!.deployedBytecode).toBe('0x456')
-    })
-
-    it('should handle deployedBytecode as object', () => {
-      const artifact = {
-        contractName: 'Test',
-        abi: [],
-        bytecode: '0x123',
-        deployedBytecode: {
-          object: '0x456'
-        }
-      }
-      const result = naiveParser(JSON.stringify(artifact), '/test.json')
-
-      expect(result).not.toBeNull()
-      expect(result!.deployedBytecode).toBe('0x456')
-    })
-
-    it('should handle missing deployedBytecode', () => {
-      const artifact = {
-        contractName: 'Test',
-        abi: [],
-        bytecode: '0x123'
-      }
-      const result = naiveParser(JSON.stringify(artifact), '/test.json')
-
-      expect(result).not.toBeNull()
-      expect(result!.deployedBytecode).toBeUndefined()
-    })
-
-    it('should reject bytecode object without object property', () => {
-      const artifact = {
-        contractName: 'Test',
-        abi: [],
-        bytecode: {
-          notObject: '0x123'
-        }
-      }
-      const result = naiveParser(JSON.stringify(artifact), '/test.json')
-
-      expect(result).toBeNull()
-    })
-
-    it('should reject when contractName is not a string', () => {
-      const artifact = {
-        contractName: 123,
-        abi: [],
-        bytecode: '0x123'
-      }
-      const result = naiveParser(JSON.stringify(artifact), '/test.json')
-
-      expect(result).toBeNull()
-    })
-
-    it('should reject when abi is not an array', () => {
-      const artifact = {
-        contractName: 'Test',
-        abi: 'not-array',
-        bytecode: '0x123'
-      }
-      const result = naiveParser(JSON.stringify(artifact), '/test.json')
-
-      expect(result).toBeNull()
-    })
-
-    it('should preserve optional fields when present', () => {
-      const content = readFixture('hardhat-artifact.json')
-      const result = naiveParser(content, '/test/hardhat-artifact.json')
-
-      expect(result).not.toBeNull()
-      expect(result!.sourceName).toBe('contracts/ERC20Token.sol')
-      expect(result!.compiler).toBeDefined()
-      expect(result!.source).toContain('contract ERC20Token')
     })
   })
 }) 

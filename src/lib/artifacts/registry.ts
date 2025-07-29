@@ -10,6 +10,7 @@ export class ArtifactRegistry {
   private byName: Map<string, Artifact> = new Map()
   private byHash: Map<string, Artifact> = new Map()
   private byPath: Map<string, Artifact> = new Map()
+  private duplicateNames: Set<string> = new Set()
 
   /**
    * Recursively scans a directory for artifact files, parses them, and adds them to the registry.
@@ -44,7 +45,7 @@ export class ArtifactRegistry {
   public add(artifact: Artifact): void {
     this.artifacts.push(artifact)
 
-    // Populate lookup maps, handling potential collisions.
+    // Check for duplicate names and track them
     if (this.byName.has(artifact.contractName)) {
       deploymentEvents.emitEvent({
         type: 'duplicate_artifact_warning',
@@ -54,6 +55,8 @@ export class ArtifactRegistry {
           path: artifact._path
         }
       })
+      // Mark this contract name as having duplicates
+      this.duplicateNames.add(artifact.contractName)
     }
     this.byName.set(artifact.contractName, artifact)
 
@@ -73,7 +76,7 @@ export class ArtifactRegistry {
 
   /**
    * Finds an artifact in the registry using a flexible identifier.
-   * The lookup order is: hash, name, then path.
+   * The lookup order is: hash, name (unless duplicate), then path.
    * @param identifier The identifier (hash, name, or path) to look for.
    * @returns The found Artifact, or undefined.
    */
@@ -83,8 +86,8 @@ export class ArtifactRegistry {
       return this.byHash.get(identifier)
     }
 
-    // 2. Try to match by contractName. This is how `{{creationCode(sequence/v1/factory)}}` works.
-    if (this.byName.has(identifier)) {
+    // 2. Try to match by contractName, but only if it's not a duplicate name
+    if (this.byName.has(identifier) && !this.duplicateNames.has(identifier)) {
       return this.byName.get(identifier)
     }
 
