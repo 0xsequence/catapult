@@ -88,9 +88,10 @@ export class ArtifactPathResolver {
   }
 
   /**
-   * Resolves artifact references in a string value like "{{creationCode(./artifacts/counter.json)}}".
+   * Resolves artifact references in a string value like "{{creationCode(./artifacts/counter.json)}}"
+   * to the actual artifact data (bytecode, ABI, etc.).
    */
-  private resolveStringArtifacts(value: string, basePath: string): string {
+  private resolveStringArtifacts(value: string, basePath: string): string | any {
     // Match patterns like {{creationCode(artifact-path)}} or {{abi(artifact-path)}}
     const refMatch = value.match(/^{{(.*)}}$/)
     if (!refMatch) {
@@ -105,19 +106,36 @@ export class ArtifactPathResolver {
       const [, funcName, argStr] = funcMatch
       const artifactIdentifier = argStr.trim()
 
-      // Only resolve relative paths
+      // Resolve the artifact identifier to an actual artifact
+      let artifact
+      
+      // Handle relative paths
       if (artifactIdentifier.startsWith('./') || artifactIdentifier.startsWith('../')) {
         const resolvedPath = path.resolve(basePath, artifactIdentifier)
+        artifact = this.artifactRegistry.lookup(resolvedPath)
+      } else {
+        // Handle absolute paths, contract names, or hashes
+        artifact = this.artifactRegistry.lookup(artifactIdentifier)
+      }
+
+      if (artifact) {
+
         
-        // Check if an artifact exists at this resolved path
-        const artifact = this.artifactRegistry.lookup(resolvedPath)
-        if (artifact) {
-          // Replace the relative path with the absolute path
-          return `{{${funcName}(${resolvedPath})}}`
+        // Return the actual artifact data instead of a reference
+        if (funcName === 'creationCode' || funcName === 'initCode') {
+          if (!artifact.bytecode) {
+            throw new Error(`Artifact "${artifact.contractName}" is missing bytecode for ${funcName}() function`)
+          }
+          return artifact.bytecode
+        } else if (funcName === 'abi') {
+          if (!artifact.abi) {
+            throw new Error(`Artifact "${artifact.contractName}" is missing ABI for abi() function`)
+          }
+          return artifact.abi
         }
       }
     }
 
-    return value // Return unchanged if not a relative artifact reference
+    return value // Return unchanged if not an artifact reference or artifact not found
   }
 } 

@@ -80,6 +80,8 @@ export class ValueResolver {
       const arg = argStr.trim()
 
       // Handle artifact-related functions
+      // NOTE: These should have been resolved during parsing, but we keep this as a fallback
+      // for any references that weren't resolved (e.g., dynamic artifact references)
       if (funcName === 'creationCode' || funcName === 'initCode') {
         const artifact = context.artifactRegistry.lookup(arg)
         if (!artifact) throw new Error(`Artifact not found for identifier: "${arg}"`)
