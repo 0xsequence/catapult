@@ -149,7 +149,18 @@ export class ExecutionEngine {
     }
     
     // 2. Handle template-level setup block.
-    if (template.setup?.actions) {
+    if (template.setup) {
+      // Check setup skip conditions before executing setup actions
+      if (template.setup.skip_condition && await this.evaluateSkipConditions(template.setup.skip_condition, context, templateScope)) {
+        this.events.emitEvent({
+          type: 'template_setup_skipped',
+          level: 'info',
+          data: {
+            templateName: template.name,
+            reason: 'setup skip condition met'
+          }
+        })
+      } else if (template.setup.actions) {
         this.events.emitEvent({
           type: 'template_setup_started',
           level: 'debug',
@@ -168,10 +179,11 @@ export class ExecutionEngine {
             templateName: template.name
           }
         })
+      }
     }
 
     // 3. Evaluate template-level skip conditions.
-    const templateSkipConditions = template.skip_condition || template.setup?.skip_condition
+    const templateSkipConditions = template.skip_condition
     if (await this.evaluateSkipConditions(templateSkipConditions, context, templateScope)) {
       this.events.emitEvent({
         type: 'template_skipped',

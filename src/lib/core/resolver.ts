@@ -8,6 +8,8 @@ import {
   ReadBalanceValue,
   BasicArithmeticValue,
   CallValue,
+  ContractExistsCondition,
+  ContractExistsValue,
 } from '../types'
 import { ExecutionContext } from './context'
 
@@ -137,6 +139,8 @@ export class ValueResolver {
         return this.resolveBasicArithmetic(resolvedArgs as BasicArithmeticValue['arguments'])
       case 'call':
         return this.resolveCall(resolvedArgs as CallValue['arguments'], context)
+      case 'contract-exists':
+        return this.resolveContractExists(resolvedArgs as ContractExistsValue['arguments'], context)
       default:
         throw new Error(`Unknown value resolver type: ${(obj as any).type}`)
     }
@@ -327,6 +331,22 @@ export class ValueResolver {
       return decodedResult
     } catch (error) {
       throw new Error(`call: Failed to execute contract call: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  private async resolveContractExists(args: ContractExistsValue['arguments'], context: ExecutionContext): Promise<boolean> {
+    const { address } = args
+
+    if (!ethers.isAddress(address)) {
+      throw new Error(`contract-exists: invalid address: ${address}`)
+    }
+
+    try {
+      const code = await context.provider.getCode(address)
+      // getCode returns '0x' if no contract exists at the address
+      return code !== '0x'
+    } catch (error) {
+      throw new Error(`contract-exists: Failed to check contract existence: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

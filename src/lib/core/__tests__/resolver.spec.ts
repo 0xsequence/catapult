@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { ValueResolver } from '../resolver'
 import { ExecutionContext } from '../context'
-import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, CallValue } from '../../types'
+import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, CallValue, ContractExistsValue } from '../../types'
 import { ArtifactRegistry } from '../../artifacts/registry'
 
 describe('ValueResolver', () => {
@@ -1232,6 +1232,77 @@ describe('ValueResolver', () => {
       
       const result = await resolver.resolve(value, context)
       expect(result).toBe(20000n)
+    })
+  })
+
+  describe('contract-exists', () => {
+    let testContractAddress: string
+    let anvilProvider: ethers.JsonRpcProvider
+
+    beforeEach(async () => {
+      anvilProvider = context.provider as ethers.JsonRpcProvider
+
+      // Set the Mini contract bytecode directly to an address using anvil_setCode
+      // This contract has: 
+      // - test() public returns (uint256) -> returns 42
+      // - multiply2numbers(uint256 a, uint256 b) public returns (uint256) -> returns a * b
+      testContractAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3' // Standard first contract address
+      const miniContractBytecode = '0x608060405234801561000f575f5ffd5b5060043610610034575f3560e01c80636df5b97a14610038578063f8a8fd6d14610068575b5f5ffd5b610052600480360381019061004d91906100da565b610086565b60405161005f9190610127565b60405180910390f35b61007061009b565b60405161007d9190610127565b60405180910390f35b5f8183610093919061016d565b905092915050565b5f602a905090565b5f5ffd5b5f819050919050565b6100b9816100a7565b81146100c3575f5ffd5b50565b5f813590506100d4816100b0565b92915050565b5f5f604083850312156100f0576100ef6100a3565b5b5f6100fd858286016100c6565b925050602061010e858286016100c6565b9150509250929050565b610121816100a7565b82525050565b5f60208201905061013a5f830184610118565b92915050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5f610177826100a7565b9150610182836100a7565b9250828202610190816100a7565b915082820484148315176101a7576101a6610140565b5b509291505056fea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033'
+
+      // Use anvil_setCode to set the deployed bytecode directly at the address
+      await anvilProvider.send('anvil_setCode', [testContractAddress, miniContractBytecode])
+    })
+
+    it('should return true if contract exists', async () => {
+      const value: ContractExistsValue = {
+        type: 'contract-exists',
+        arguments: {
+          address: testContractAddress,
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(true)
+    })
+
+    it('should return false if contract does not exist', async () => {
+      const value: ContractExistsValue = {
+        type: 'contract-exists',
+        arguments: {
+          address: '0x0000000000000000000000000000000000000001', // A non-existent address
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(false)
+    })
+
+    it('should throw error for null address', async () => {
+      const value: ContractExistsValue = {
+        type: 'contract-exists',
+        arguments: {
+          address: null as any,
+        },
+      }
+      await expect(resolver.resolve(value, context)).rejects.toThrow('contract-exists: invalid address: null')
+    })
+
+    it('should throw error for undefined address', async () => {
+      const value: ContractExistsValue = {
+        type: 'contract-exists',
+        arguments: {
+          address: undefined as any,
+        },
+      }
+      await expect(resolver.resolve(value, context)).rejects.toThrow('contract-exists: invalid address: undefined')
+    })
+
+    it('should throw error for invalid address', async () => {
+      const value: ContractExistsValue = {
+        type: 'contract-exists',
+        arguments: {
+          address: 'invalid-address',
+        },
+      }
+      await expect(resolver.resolve(value, context)).rejects.toThrow('contract-exists: invalid address: invalid-address')
     })
   })
 })

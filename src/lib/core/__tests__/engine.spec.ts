@@ -191,6 +191,7 @@ describe('ExecutionEngine', () => {
         actions: [
           {
             type: 'send-transaction',
+            name: 'param-action',
             arguments: {
               to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
               value: '1000000000000000000',
@@ -334,7 +335,18 @@ describe('ExecutionEngine', () => {
       const template: Template = {
         name: 'skippable-setup-template',
         setup: {
-          skip_condition: [{ type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{skip_setup}}', 1] } }]
+          skip_condition: [{ type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{skip_setup}}', 1] } }],
+          actions: [
+            {
+              type: 'send-transaction',
+              name: 'setup-action',
+              arguments: {
+                to: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
+                value: '1000000000000000000',
+                data: '0x'
+              }
+            }
+          ]
         },
         actions: [
           {
@@ -358,8 +370,10 @@ describe('ExecutionEngine', () => {
 
       await (engine as any).executeTemplate(callingAction, 'skippable-setup-template', context)
 
-      // Main action should not have executed due to setup skip condition
-      expect(() => context.getOutput('main-action-after-skipped-setup.hash')).toThrow()
+      // Setup action should have been skipped due to setup skip condition
+      expect(() => context.getOutput('setup-action.hash')).toThrow()
+      // Main action should still have executed (setup skip conditions don't affect main actions)
+      expect(context.getOutput('main-action-after-skipped-setup.hash')).toBeDefined()
     })
 
     it('should pass arguments to template and resolve outputs', async () => {
@@ -726,7 +740,7 @@ describe('ExecutionEngine', () => {
             arguments: {
               to: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
               value: '1000000000000000000',
-              data: '0x608060405234801561000f575f5ffd5b50603e80601c5f395ff3fe60806040525f80fdfea26469706673582212'
+              data: '0x608060405234801561000f575f5ffd5b50603e80601c5f395ff3fe60806040525f80fdfea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033'
             }
           }
         ],
@@ -803,6 +817,62 @@ describe('ExecutionEngine', () => {
       }
 
       await expect(engine.executeJob(job, context)).rejects.toThrow()
+    })
+  })
+
+  describe('setup skip conditions', () => {
+    it('should skip setup actions when contract-exists condition is met', async () => {
+      // Deploy a contract first using anvil_setCode  
+      const contractAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+      const miniContractBytecode = '0x608060405234801561000f575f5ffd5b5060043610610034575f3560e01c80636df5b97a14610038578063f8a8fd6d14610068575b5f5ffd5b610052600480360381019061004d91906100da565b610086565b60405161005f9190610127565b60405180910390f35b61007061009b565b60405161007d9190610127565b60405180910390f35b5f8183610093919061016d565b905092915050565b5f602a905090565b5f5ffd5b5f819050919050565b6100b9816100a7565b81146100c3575f5ffd5b50565b5f813590506100d4816100b0565b92915050565b5f5f604083850312156100f0576100ef6100a3565b5b5f6100fd858286016100c6565b925050602061010e858286016100c6565b9150509250929050565b610121816100a7565b82525050565b5f60208201905061013a5f830184610118565b92915050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5f610177826100a7565b9150610182836100a7565b9250828202610190816100a7565b915082820484148315176101a7576101a6610140565b5b509291505056fea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033'
+      await anvilProvider.send('anvil_setCode', [contractAddress, miniContractBytecode])
+
+      // Create a template that should skip setup because the contract exists
+      const template: Template = {
+        name: 'test-contract-exists-skip',
+        setup: {
+          skip_condition: [
+            { type: 'contract-exists', arguments: { address: contractAddress } }
+          ],
+          actions: [
+            {
+              type: 'send-transaction',
+              name: 'setup-action',
+              arguments: {
+                to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+                value: '1000000000000000000',
+                data: '0x'
+              }
+            }
+          ]
+        },
+        actions: [
+          {
+            type: 'send-transaction',
+            name: 'main-action',
+            arguments: {
+              to: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
+              value: '500000000000000000',
+              data: '0x'
+            }
+          }
+        ]
+      }
+
+      templates.set('test-contract-exists-skip', template)
+
+      const action: JobAction = {
+        name: 'test-skip',
+        template: 'test-contract-exists-skip',
+        arguments: {}
+      }
+
+      await (engine as any).executeAction(action, context, new Map())
+
+      // Setup action should have been skipped, so no output
+      expect(() => context.getOutput('setup-action.hash')).toThrow()
+      // Main action should still have executed
+      expect(context.getOutput('main-action.hash')).toBeDefined()
     })
   })
 }) 

@@ -57,6 +57,13 @@ export interface CallValue {
     };
 }
 
+export interface ContractExistsValue {
+    type: 'contract-exists';
+    arguments: {
+        address: AddressValue;
+    };
+}
+
 /**
  * A union of all possible value-resolver objects.
  */
@@ -66,7 +73,8 @@ export type ValueResolver =
   | ComputeCreate2Value
   | ReadBalanceValue
   | BasicArithmeticValue
-  | CallValue;
+  | CallValue
+  | ContractExistsValue;
 
 /**
  * A generic value type that can be a primitive literal (string, number, boolean),
