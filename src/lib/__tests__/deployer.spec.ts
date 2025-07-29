@@ -144,7 +144,7 @@ describe('Deployer', () => {
 
     it('should initialize ProjectLoader with correct project root', () => {
       new Deployer(deployerOptions)
-      expect(MockProjectLoader).toHaveBeenCalledWith('/test/project')
+      expect(MockProjectLoader).toHaveBeenCalledWith('/test/project', undefined)
     })
   })
 

@@ -47,26 +47,77 @@ export class ProjectLoader {
   }
 
   private async loadTemplatesFromDir(dir: string) {
-    const files = await fs.readdir(dir)
-    for (const file of files) {
-      if (file.endsWith('.yaml') || file.endsWith('.yml')) {
-        const content = await fs.readFile(path.join(dir, file), 'utf-8')
+    const templateFiles = await this.findTemplateFiles(dir)
+    for (const filePath of templateFiles) {
+      try {
+        const content = await fs.readFile(filePath, 'utf-8')
         const template = parseTemplate(content)
         this.templates.set(template.name, template)
+      } catch (error) {
+        // Silently ignore files that can't be read or parsed, as they may not be template files
       }
     }
   }
 
+  /**
+   * Recursively finds all template files (.yaml/.yml) in a directory.
+   */
+  private async findTemplateFiles(dir: string, ignoreDirs: Set<string> = new Set(['node_modules', 'dist', '.git', '.idea', '.vscode'])): Promise<string[]> {
+    let results: string[] = []
+    try {
+      const list = await fs.readdir(dir, { withFileTypes: true })
+
+      for (const dirent of list) {
+        const fullPath = path.resolve(dir, dirent.name)
+        if (dirent.isDirectory()) {
+          if (!ignoreDirs.has(dirent.name)) {
+            results = results.concat(await this.findTemplateFiles(fullPath, ignoreDirs))
+          }
+        } else if (dirent.isFile() && (dirent.name.endsWith('.yaml') || dirent.name.endsWith('.yml'))) {
+          results.push(fullPath)
+        }
+      }
+    } catch (err) {
+      // Ignore errors from trying to read directories we don't have access to, etc.
+    }
+    return results
+  }
+
   private async loadJobsFromDir(dir: string) {
-    // Similar to loadTemplatesFromDir, but calls parseJob
-    const files = await fs.readdir(dir)
-    for (const file of files) {
-      if (file.endsWith('.yaml') || file.endsWith('.yml')) {
-        const content = await fs.readFile(path.join(dir, file), 'utf-8')
+    const jobFiles = await this.findJobFiles(dir)
+    for (const filePath of jobFiles) {
+      try {
+        const content = await fs.readFile(filePath, 'utf-8')
         const job = parseJob(content)
         this.jobs.set(job.name, job)
+      } catch (error) {
+        // Silently ignore files that can't be read or parsed, as they may not be job files
       }
     }
+  }
+
+  /**
+   * Recursively finds all job files (.yaml/.yml) in a directory.
+   */
+  private async findJobFiles(dir: string, ignoreDirs: Set<string> = new Set(['node_modules', 'dist', '.git', '.idea', '.vscode'])): Promise<string[]> {
+    let results: string[] = []
+    try {
+      const list = await fs.readdir(dir, { withFileTypes: true })
+
+      for (const dirent of list) {
+        const fullPath = path.resolve(dir, dirent.name)
+        if (dirent.isDirectory()) {
+          if (!ignoreDirs.has(dirent.name)) {
+            results = results.concat(await this.findJobFiles(fullPath, ignoreDirs))
+          }
+        } else if (dirent.isFile() && (dirent.name.endsWith('.yaml') || dirent.name.endsWith('.yml'))) {
+          results.push(fullPath)
+        }
+      }
+    } catch (err) {
+      // Ignore errors from trying to read directories we don't have access to, etc.
+    }
+    return results
   }
 
   /**
