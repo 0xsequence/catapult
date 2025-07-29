@@ -1,10 +1,10 @@
 {
-  "name": "deployito",
+  "name": "catapult",
   "version": "1.0.0",
   "description": "Ethereum contract deployment CLI tool",
   "main": "dist/index.js",
   "bin": {
-    "deployito": "dist/index.js"
+    "catapult": "dist/index.js"
   },
   "scripts": {
     "build": "tsc && cp -r src/lib/std dist/lib/",

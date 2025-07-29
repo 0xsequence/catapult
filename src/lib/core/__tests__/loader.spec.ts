@@ -12,7 +12,7 @@ describe('ProjectLoader', () => {
   beforeAll(() => {
     // Generate unique test run ID
     testRunId = `test_${Date.now()}_${randomBytes(4).toString('hex')}`
-    baseTestDir = `/tmp/deployito_testing/${testRunId}`
+    baseTestDir = `/tmp/catapult_testing/${testRunId}`
   })
 
   beforeEach(async () => {

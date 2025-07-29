@@ -38,7 +38,7 @@ async function main() {
   try {
     // Configure the main program
     program
-      .name('deployito')
+      .name('catapult')
       .description('Ethereum contract deployment CLI tool')
       .version(packageJson.version)
 

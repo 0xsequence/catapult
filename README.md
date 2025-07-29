@@ -1,10 +1,10 @@
-# Deployito
+# Catapult
 
-**Deployito** is a powerful Ethereum contract deployment and management framework designed to simplify the orchestration of complex contract deployments across multiple blockchain networks. Built with TypeScript and Node.js, it provides a declarative YAML-based approach to defining deployment jobs, templates, and dependencies.
+**Catapult** is a powerful Ethereum contract deployment and management framework designed to simplify the orchestration of complex contract deployments across multiple blockchain networks. Built with TypeScript and Node.js, it provides a declarative YAML-based approach to defining deployment jobs, templates, and dependencies.
 
 ## Overview
 
-Deployito addresses the challenge of managing complex contract deployment scenarios where multiple contracts need to be deployed in a specific order, with dependencies between them, across multiple blockchain networks. Instead of writing custom deployment scripts for each scenario, you define your deployment logic declaratively using YAML files.
+Catapult addresses the challenge of managing complex contract deployment scenarios where multiple contracts need to be deployed in a specific order, with dependencies between them, across multiple blockchain networks. Instead of writing custom deployment scripts for each scenario, you define your deployment logic declaratively using YAML files.
 
 ### Key Features
 
@@ -24,7 +24,7 @@ Deployito addresses the challenge of managing complex contract deployment scenar
 
 ```bash
 git clone <repository-url>
-cd deployito
+cd catapult
 npm install
 npm run build
 npm link
@@ -33,12 +33,12 @@ npm link
 ### Global Installation (when published)
 
 ```bash
-npm install -g deployito
+npm install -g catapult
 ```
 
 ## Project Structure
 
-A Deployito project follows this structure:
+A Catapult project follows this structure:
 
 ```
 my-deployment-project/
@@ -177,19 +177,19 @@ outputs:
 Deploy all jobs to all configured networks:
 
 ```bash
-deployito run --private-key YOUR_PRIVATE_KEY
+catapult run --private-key YOUR_PRIVATE_KEY
 ```
 
 Deploy specific jobs:
 
 ```bash
-deployito run core-contracts token-setup --private-key YOUR_PRIVATE_KEY
+catapult run core-contracts token-setup --private-key YOUR_PRIVATE_KEY
 ```
 
 Deploy to specific networks:
 
 ```bash
-deployito run --network 1 42161 --private-key YOUR_PRIVATE_KEY
+catapult run --network 1 42161 --private-key YOUR_PRIVATE_KEY
 ```
 
 ### Validation and Dry Run
@@ -197,13 +197,13 @@ deployito run --network 1 42161 --private-key YOUR_PRIVATE_KEY
 Validate your configuration without executing transactions:
 
 ```bash
-deployito dry-run
+catapult dry-run
 ```
 
 Validate specific jobs:
 
 ```bash
-deployito dry-run core-contracts --network 1
+catapult dry-run core-contracts --network 1
 ```
 
 ### Listing Resources
@@ -211,30 +211,30 @@ deployito dry-run core-contracts --network 1
 List available jobs:
 
 ```bash
-deployito list jobs
+catapult list jobs
 ```
 
 List detected artifacts:
 
 ```bash
-deployito list artifacts
+catapult list artifacts
 ```
 
 List available templates:
 
 ```bash
-deployito list templates
+catapult list templates
 ```
 
 List configured networks:
 
 ```bash
-deployito list networks
+catapult list networks
 ```
 
 ## Built-in Actions
 
-Deployito provides several built-in primitive actions:
+Catapult provides several built-in primitive actions:
 
 ### `send-transaction`
 Send a transaction to the blockchain:
@@ -258,7 +258,7 @@ Broadcast a pre-signed transaction:
 
 ## Value Resolvers
 
-Deployito includes powerful value resolvers for computing complex values:
+Catapult includes powerful value resolvers for computing complex values:
 
 ### `abi-encode`
 ABI-encode function call data:
@@ -356,7 +356,7 @@ skip_condition:
 
 ## Standard Templates
 
-Deployito includes several standard templates:
+Catapult includes several standard templates:
 
 - **`sequence-universal-deployer-2`**: Deploy contracts using Sequence's Universal Deployer v2
 - **`nano-universal-deployer`**: Deploy contracts using the Nano Universal Deployer
@@ -364,7 +364,7 @@ Deployito includes several standard templates:
 
 ## Artifact Resolution
 
-Deployito automatically discovers and indexes contract artifacts in your project. It supports:
+Catapult automatically discovers and indexes contract artifacts in your project. It supports:
 
 - **JSON artifacts** (Hardhat, Truffle, Foundry)
 - **Nested directory structures**
@@ -381,7 +381,7 @@ creationCode: "{{creationCode(0x1234...hash)}}"
 
 ## Output Format
 
-After successful deployment, Deployito generates JSON files in the `output/` directory for each job. The output format is optimized to reduce repetition:
+After successful deployment, Catapult generates JSON files in the `output/` directory for each job. The output format is optimized to reduce repetition:
 
 ### Success Grouping
 

@@ -102,7 +102,7 @@ describe('Event System', () => {
       })
 
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('DEPLOYITO: STARTING DEPLOYMENT RUN')
+        expect.stringContaining('CATAPULT: STARTING DEPLOYMENT RUN')
       )
     })
 

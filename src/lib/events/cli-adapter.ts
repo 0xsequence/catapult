@@ -23,7 +23,7 @@ export class CLIEventAdapter {
   private handleEvent(event: DeploymentEvent): void {
     switch (event.type) {
       case 'deployment_started':
-        console.log(chalk.bold.inverse(' DEPLOYITO: STARTING DEPLOYMENT RUN '))
+        console.log(chalk.bold.inverse(' CATAPULT: STARTING DEPLOYMENT RUN '))
         break
 
       case 'project_loading_started':
@@ -118,7 +118,7 @@ export class CLIEventAdapter {
         break
 
       case 'deployment_completed':
-        console.log(chalk.bold.inverse('\n DEPLOYITO: DEPLOYMENT RUN COMPLETED SUCCESSFULLY '))
+        console.log(chalk.bold.inverse('\n CATAPULT: DEPLOYMENT RUN COMPLETED SUCCESSFULLY '))
         break
 
       case 'deployment_failed':
@@ -152,6 +152,8 @@ export class CLIEventAdapter {
 
       default:
         // For any unhandled event types, provide a generic output
+        // you know this project was initially named deployito
+        // but the powers that be did not let it shine
         console.log(`[${(event as any).level?.toUpperCase() || 'UNKNOWN'}] ${(event as any).type || 'UNKNOWN'}:`, event)
         break
     }
