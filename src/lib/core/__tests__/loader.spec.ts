@@ -269,14 +269,66 @@ actions: []`
       expect(loader.jobs.has('guards-v1')).toBe(true)
     })
 
-    it('should load the examples2 project structure with nested jobs', async () => {
-      const examples2Root = path.resolve(__dirname, '../../../../examples2')
-      const loader = new ProjectLoader(examples2Root)
+    it('should load nested jobs from subdirectories', async () => {
+      // Create a nested job structure similar to examples2
+      const jobsDir = path.join(tempDir, 'jobs')
+      const testContractDir = path.join(jobsDir, 'test_contract')
+      const artifactsDir = path.join(testContractDir, 'artifacts')
+      
+      await fs.mkdir(artifactsDir, { recursive: true })
+
+      // Create the nested job file
+      const jobYaml = `name: "test-contract-deployment"
+version: "1"
+description: "Deploy a test contract"
+depends_on: []
+
+actions:
+  - name: "deploy-test-contract"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      salt: "0x0000000000000000000000000000000000000000000000000000000000000003"
+      creationCode: "{{creationCode(./artifacts/counter.json)}}"`
+
+      // Create a sample artifact file
+      const artifactJson = {
+        abi: [
+          {
+            type: "function",
+            name: "increment",
+            inputs: [],
+            outputs: [],
+            stateMutability: "nonpayable"
+          },
+          {
+            type: "function",
+            name: "number",
+            inputs: [],
+            outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+            stateMutability: "view"
+          }
+        ],
+        bytecode: {
+          object: "0x6080604052348015600e575f5ffd5b5060c180601a5f395ff3fe6080604052348015600e575f5ffd5b50600436106030575f3560e01c80638381f58a146034578063d09de08a14604d575b5f5ffd5b603b5f5481565b60405190815260200160405180910390f35b60536055565b005b5f805490806061836068565b9190505550565b5f60018201608457634e487b7160e01b5f52601160045260245ffd5b506001019056fea264697066735822122074300f82bc4b1d0eec22668b0edf09603d979df755b8315a9a2493d4f5c293c364736f6c634300081e0033"
+        },
+        deployedBytecode: {
+          object: "0x6080604052348015600e575f5ffd5b50600436106030575f3560e01c80638381f58a146034578063d09de08a14604d575b5f5ffd5b603b5f5481565b60405190815260200160405180910390f35b60536055565b005b5f805490806061836068565b9190505550565b5f60018201608457634e487b7160e01b5f52601160045260245ffd5b506001019056fea264697066735822122074300f82bc4b1d0eec22668b0edf09603d979df755b8315a9a2493d4f5c293c364736f6c634300081e0033"
+        }
+      }
+
+      await fs.writeFile(path.join(testContractDir, 'demo_contract.yaml'), jobYaml)
+      await fs.writeFile(path.join(artifactsDir, 'counter.json'), JSON.stringify(artifactJson))
+
+      const loader = new ProjectLoader(tempDir)
       await loader.load()
 
       // Should load the nested job
       expect(loader.jobs.size).toBeGreaterThan(0)
       expect(loader.jobs.has('test-contract-deployment')).toBe(true)
+      
+      const job = loader.jobs.get('test-contract-deployment')!
+      expect(job.name).toBe('test-contract-deployment')
+      expect(job.description).toBe('Deploy a test contract')
     })
   })
 }) 
