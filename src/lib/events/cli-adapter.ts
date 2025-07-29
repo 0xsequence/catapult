@@ -80,6 +80,10 @@ export class CLIEventAdapter {
         console.log(chalk.magenta(`    <- Finished setup for template: ${event.data.templateName}`))
         break
 
+      case 'template_setup_skipped':
+        // Don't output anything - this is internal and not user-facing
+        break
+
       case 'template_skipped':
         console.log(chalk.yellow(`    ↪ Skipping actions in template "${event.data.templateName}" due to met condition.`))
         break

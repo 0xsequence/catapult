@@ -147,6 +147,15 @@ export interface TemplateSetupCompletedEvent extends BaseEvent {
   }
 }
 
+export interface TemplateSetupSkippedEvent extends BaseEvent {
+  type: 'template_setup_skipped'
+  level: 'info'
+  data: {
+    templateName: string
+    reason: string
+  }
+}
+
 export interface TemplateSkippedEvent extends BaseEvent {
   type: 'template_skipped'
   level: 'info'
@@ -284,6 +293,7 @@ export type DeploymentEvent =
   | TemplateExitedEvent
   | TemplateSetupStartedEvent
   | TemplateSetupCompletedEvent
+  | TemplateSetupSkippedEvent
   | TemplateSkippedEvent
   | PrimitiveActionEvent
   | TransactionSentEvent
