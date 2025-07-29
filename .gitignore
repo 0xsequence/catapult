@@ -101,3 +101,9 @@ Thumbs.db
 # Logs
 logs
 *.log 
+
+# Examples output
+examples/output/
+
+# Examples 2
+examples2/
