@@ -11,12 +11,14 @@ export class ArtifactRegistry {
   private byHash: Map<string, Artifact> = new Map()
   private byPath: Map<string, Artifact> = new Map()
   private duplicateNames: Set<string> = new Set()
+  private projectRoot?: string
 
   /**
    * Recursively scans a directory for artifact files, parses them, and adds them to the registry.
    * @param projectRoot The root directory to start scanning from.
    */
   public async loadFrom(projectRoot: string): Promise<void> {
+    this.projectRoot = projectRoot
     const files = await this.findArtifactFiles(projectRoot)
     for (const filePath of files) {
       try {
@@ -69,10 +71,41 @@ export class ArtifactRegistry {
   /**
    * Finds an artifact in the registry using a flexible identifier.
    * The lookup order is: hash, name (unless duplicate), then path.
+   * Supports relative paths that are resolved against the project root.
    * @param identifier The identifier (hash, name, or path) to look for.
    * @returns The found Artifact, or undefined.
    */
   public lookup(identifier: string): Artifact | undefined {
+    return this.lookupWithContext(identifier)
+  }
+
+  /**
+   * Finds an artifact in the registry using a flexible identifier with context.
+   * The lookup order is: hash, name (unless duplicate), then path.
+   * Supports relative paths that are resolved against the context path or project root.
+   * @param identifier The identifier (hash, name, or path) to look for.
+   * @param contextPath Optional context path for resolving relative paths (e.g., job file path).
+   * @returns The found Artifact, or undefined.
+   */
+  public lookupWithContext(identifier: string, contextPath?: string): Artifact | undefined {
+    // 0. Handle relative paths - resolve against context path if available, otherwise project root
+    if (identifier.startsWith('./') || identifier.startsWith('../')) {
+      if (contextPath) {
+        // Resolve relative to the directory containing the context file
+        const contextDir = path.dirname(contextPath)
+        const resolvedPath = path.resolve(contextDir, identifier)
+        if (this.byPath.has(resolvedPath)) {
+          return this.byPath.get(resolvedPath)
+        }
+      } else if (this.projectRoot) {
+        // Fallback to project root resolution
+        const resolvedPath = path.resolve(this.projectRoot, identifier)
+        if (this.byPath.has(resolvedPath)) {
+          return this.byPath.get(resolvedPath)
+        }
+      }
+    }
+
     // 1. Try to match by full hash
     if (this.byHash.has(identifier)) {
       return this.byHash.get(identifier)

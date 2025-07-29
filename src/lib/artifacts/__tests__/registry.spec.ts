@@ -284,6 +284,49 @@ describe('ArtifactRegistry', () => {
       expect(found).toBeUndefined()
     })
 
+    it('should resolve relative paths using context', () => {
+      // Add an artifact with absolute path
+      const artifact: Artifact = {
+        contractName: 'ContextContract',
+        abi: [],
+        bytecode: '0x789',
+        _path: '/project/jobs/deploy/artifacts/Contract.json',
+        _hash: 'context123'
+      }
+      registry.add(artifact)
+
+      // Test relative path resolution with context
+      const contextPath = '/project/jobs/deploy/job.yaml'
+      const found = registry.lookupWithContext('./artifacts/Contract.json', contextPath)
+      
+      expect(found).toBeDefined()
+      expect(found!.contractName).toBe('ContextContract')
+    })
+
+    it('should fallback to project root for relative paths without context', async () => {
+      // Clear existing artifacts and create a test scenario
+      registry = new ArtifactRegistry()
+      
+      // Simulate project root being set
+      await registry.loadFrom('/test/project')
+      
+      // Add an artifact with path relative to project root
+      const artifact: Artifact = {
+        contractName: 'RootContract',
+        abi: [],
+        bytecode: '0xabc',
+        _path: '/test/project/artifacts/Root.json',
+        _hash: 'root123'
+      }
+      registry.add(artifact)
+
+      // Test that relative path resolves against project root when no context
+      const found = registry.lookupWithContext('./artifacts/Root.json')
+      
+      expect(found).toBeDefined()
+      expect(found!.contractName).toBe('RootContract')
+    })
+
     it('should follow lookup order: hash > name > path > partial path', () => {
       // Add an artifact where contractName could match a hash
       const artifact: Artifact = {

@@ -1,4 +1,4 @@
-import { Job, Template, Value, Action } from '../types'
+import { Job, Template, Value, Action, JobAction } from '../types'
 import { ArtifactRegistry } from '../artifacts/registry'
 
 export interface ArtifactReferenceError {
@@ -38,19 +38,17 @@ export class ArtifactReferenceValidator {
 
   private validateJob(job: Job, errors: ArtifactReferenceError[]): void {
     for (const action of job.actions) {
-      this.validateJobAction(action, `job "${job.name}"`, errors)
+      this.validateJobAction(action, `job "${job.name}"`, errors, job._path)
     }
   }
 
   private validateTemplate(template: Template, errors: ArtifactReferenceError[]): void {
-    // Validate setup actions
+    // Templates don't have context paths, so use default behavior
     if (template.setup?.actions) {
       for (const action of template.setup.actions) {
         this.validateAction(action, `template "${template.name}" setup`, errors)
       }
     }
-
-    // Validate main actions
     for (const action of template.actions) {
       this.validateAction(action, `template "${template.name}"`, errors)
     }
@@ -63,44 +61,40 @@ export class ArtifactReferenceValidator {
     }
   }
 
-  private validateJobAction(action: { name: string; arguments: Record<string, Value<any>> }, location: string, errors: ArtifactReferenceError[]): void {
+  private validateJobAction(action: JobAction, context: string, errors: ArtifactReferenceError[], jobPath?: string): void {
+    const actionContext = `${context} action "${action.name}"`
+    
+    // Validate the action arguments
     for (const [argName, argValue] of Object.entries(action.arguments)) {
-      this.validateValue(argValue, `${location} action "${action.name}" argument "${argName}"`, errors)
+      this.validateValue(argValue, `${actionContext} argument "${argName}"`, errors, jobPath)
     }
   }
 
-  private validateAction(action: Action, location: string, errors: ArtifactReferenceError[]): void {
-    if ('arguments' in action && action.arguments) {
-      for (const [argName, argValue] of Object.entries(action.arguments)) {
-        const actionName = action.name || action.type
-        this.validateValue(argValue, `${location} action "${actionName}" argument "${argName}"`, errors)
-      }
+  private validateAction(action: Action, context: string, errors: ArtifactReferenceError[]): void {
+    const actionName = action.name || action.type
+    const actionContext = `${context} action "${actionName}"`
+    
+    // Validate the action arguments
+    for (const [argName, argValue] of Object.entries(action.arguments || {})) {
+      this.validateValue(argValue, `${actionContext} argument "${argName}"`, errors)
     }
   }
 
-  private validateValue(value: Value<any>, location: string, errors: ArtifactReferenceError[]): void {
+  private validateValue(value: any, location: string, errors: ArtifactReferenceError[], contextPath?: string): void {
     if (typeof value === 'string') {
-      // Check for artifact function references
-      this.validateStringReference(value, location, errors)
+      this.validateStringReference(value, location, errors, contextPath)
     } else if (Array.isArray(value)) {
-      // Recursively validate array elements
       value.forEach((item, index) => {
-        this.validateValue(item, `${location}[${index}]`, errors)
+        this.validateValue(item, `${location}[${index}]`, errors, contextPath)
       })
-    } else if (value && typeof value === 'object') {
-      // Handle ValueResolver objects
-      if ('type' in value) {
-        this.validateValueResolverObject(value, location, errors)
-      } else {
-        // Handle plain objects by recursively validating values
-        for (const [key, val] of Object.entries(value)) {
-          this.validateValue(val, `${location}.${key}`, errors)
-        }
+    } else if (typeof value === 'object' && value !== null) {
+      for (const [key, val] of Object.entries(value)) {
+        this.validateValue(val, `${location}.${key}`, errors, contextPath)
       }
     }
   }
 
-  private validateStringReference(value: string, location: string, errors: ArtifactReferenceError[]): void {
+  private validateStringReference(value: string, location: string, errors: ArtifactReferenceError[], contextPath?: string): void {
     // Match patterns like {{creationCode(artifact-name)}} or {{abi(artifact-name)}}
     const refMatch = value.match(/^{{(.*)}}$/)
     if (!refMatch) {
@@ -126,8 +120,8 @@ export class ArtifactReferenceValidator {
         return
       }
 
-      // Check if the artifact exists in the registry
-      const artifact = this.artifactRegistry.lookup(artifactIdentifier)
+      // Check if the artifact exists in the registry using context-aware lookup
+      const artifact = this.artifactRegistry.lookupWithContext(artifactIdentifier, contextPath)
       if (!artifact) {
         errors.push({
           type: 'missing_artifact',
