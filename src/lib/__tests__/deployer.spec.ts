@@ -266,16 +266,13 @@ describe('Deployer', () => {
           jobName: 'job1',
           jobVersion: '1.0.0',
           lastRun: expect.any(String),
-          networks: {
-            '1': {
+          networks: [
+            {
               status: 'success',
-              outputs: expect.any(Object)
-            },
-            '137': {
-              status: 'success',
+              chainIds: expect.arrayContaining(['1', '137']),
               outputs: expect.any(Object)
             }
-          }
+          ]
         })
       })
 
@@ -312,12 +309,25 @@ describe('Deployer', () => {
         await expect(deployer.run()).rejects.toThrow('Circular dependency detected')
       })
 
-      it('should throw when job execution fails', async () => {
+            it('should capture job execution failures and continue', async () => {
         mockEngine.executeJob.mockRejectedValue(new Error('Transaction failed'))
-
+        
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).rejects.toThrow('Transaction failed')
+        await expect(deployer.run()).resolves.not.toThrow()
+        
+        // Should still write output files with error entries
+        expect(mockFs.writeFile).toHaveBeenCalled()
+        
+        // Check that error entries are recorded
+        const writeFileCalls = mockFs.writeFile.mock.calls
+        const outputFile = writeFileCalls[0]
+        const outputContent = JSON.parse(outputFile[1] as string)
+        
+        // Should have error entries for failed executions
+        const errorEntries = outputContent.networks.filter((entry: any) => entry.status === 'error')
+        expect(errorEntries.length).toBeGreaterThan(0)
+        expect(errorEntries[0].error).toBe('Transaction failed')
       })
 
       it('should throw when output directory creation fails', async () => {
@@ -343,7 +353,16 @@ describe('Deployer', () => {
 
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).rejects.toThrow('Invalid private key')
+        await expect(deployer.run()).resolves.not.toThrow()
+        
+        // Should record context creation failures as error entries
+        const writeFileCalls = mockFs.writeFile.mock.calls
+        const outputFile = writeFileCalls[0]
+        const outputContent = JSON.parse(outputFile[1] as string)
+        
+        const errorEntries = outputContent.networks.filter((entry: any) => entry.status === 'error')
+        expect(errorEntries.length).toBeGreaterThan(0)
+        expect(errorEntries[0].error).toBe('Invalid private key')
       })
     })
 
@@ -424,7 +443,15 @@ describe('Deployer', () => {
 
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).rejects.toThrow()
+        await expect(deployer.run()).resolves.not.toThrow()
+        
+        // Should record the missing method error
+        const writeFileCalls = mockFs.writeFile.mock.calls
+        const outputFile = writeFileCalls[0]
+        const outputContent = JSON.parse(outputFile[1] as string)
+        
+        const errorEntries = outputContent.networks.filter((entry: any) => entry.status === 'error')
+        expect(errorEntries.length).toBeGreaterThan(0)
       })
 
       it('should handle empty networks array', async () => {
@@ -489,18 +516,30 @@ describe('Deployer', () => {
         expect(usedNetworks).toEqual(expect.arrayContaining([1, 137]))
       })
 
-      it('should skip output writing when no successful executions', async () => {
-        // Make all executions fail but don't throw (simulate partial failure)
+      it('should write output files even when all executions fail', async () => {
+        // Make all executions fail
         mockEngine.executeJob.mockImplementation(() => {
           throw new Error('Execution failed')
         })
 
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).rejects.toThrow('Execution failed')
+        await expect(deployer.run()).resolves.not.toThrow()
         
-        // Should not write any output files since no executions succeeded
-        expect(mockFs.writeFile).not.toHaveBeenCalled()
+        // Should write output files with error entries
+        expect(mockFs.writeFile).toHaveBeenCalled()
+        
+        const writeFileCalls = mockFs.writeFile.mock.calls
+        const outputFile = writeFileCalls[0]
+        const outputContent = JSON.parse(outputFile[1] as string)
+        
+        // All entries should be error entries
+        const errorEntries = outputContent.networks.filter((entry: any) => entry.status === 'error')
+        expect(errorEntries.length).toBeGreaterThan(0)
+        
+        // No success entries
+        const successEntries = outputContent.networks.filter((entry: any) => entry.status === 'success')
+        expect(successEntries.length).toBe(0)
       })
 
       it('should handle very long execution order', async () => {
@@ -661,7 +700,21 @@ describe('Deployer', () => {
 
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).rejects.toThrow('Polygon execution failed')
+        await expect(deployer.run()).resolves.not.toThrow()
+        
+        // Should capture the partial failure in output files
+        const writeFileCalls = mockFs.writeFile.mock.calls
+        const job2Output = writeFileCalls.find(call => 
+          String(call[0]).includes('job2.json')
+        )
+        
+        if (job2Output) {
+          const job2Content = JSON.parse(job2Output[1] as string)
+          const errorEntries = job2Content.networks.filter((entry: any) => entry.status === 'error')
+          expect(errorEntries.some((entry: any) => 
+            entry.chainId === '137' && entry.error === 'Polygon execution failed'
+          )).toBe(true)
+        }
       })
 
       it('should handle context output aggregation correctly', async () => {
@@ -677,15 +730,99 @@ describe('Deployer', () => {
         const deployer = new Deployer(deployerOptions)
         await deployer.run()
 
-        // Verify outputs are correctly segregated by network
+        // Verify outputs are correctly segregated by network since they have different outputs
         const writeFileCalls = mockFs.writeFile.mock.calls
         const job1Output = writeFileCalls.find(call => 
           call[0] === '/test/project/output/job1.json'
         )
         
         const job1Content = JSON.parse(job1Output![1] as string)
-        expect(job1Content.networks['1'].outputs['action.hash']).toBe('0xhash-1')
-        expect(job1Content.networks['137'].outputs['action.hash']).toBe('0xhash-137')
+        // Since outputs differ by network, they should be in separate entries
+        expect(job1Content.networks).toHaveLength(2)
+        
+        // Find entries for each network
+        const network1Entry = job1Content.networks.find((entry: any) => 
+          entry.chainIds && entry.chainIds.includes('1')
+        )
+        const network137Entry = job1Content.networks.find((entry: any) => 
+          entry.chainIds && entry.chainIds.includes('137')
+        )
+        
+        expect(network1Entry.outputs['action.hash']).toBe('0xhash-1')
+        expect(network137Entry.outputs['action.hash']).toBe('0xhash-137')
+      })
+
+      it('should group networks with identical outputs together', async () => {
+        // Mock identical outputs for different networks
+        MockExecutionContext.mockImplementation(() => ({
+          getOutputs: jest.fn().mockReturnValue(new Map<string, any>([
+            [`contract.address`, `0x1234567890123456789012345678901234567890`],
+            [`contract.txHash`, `0xabcdef1234567890abcdef1234567890abcdef12`]
+          ]))
+        } as any))
+
+        const deployer = new Deployer(deployerOptions)
+        await deployer.run()
+
+        // Verify identical outputs are grouped together
+        const writeFileCalls = mockFs.writeFile.mock.calls
+        const job1Output = writeFileCalls.find(call => 
+          call[0] === '/test/project/output/job1.json'
+        )
+        
+        const job1Content = JSON.parse(job1Output![1] as string)
+        // Since outputs are identical, they should be grouped into one entry
+        expect(job1Content.networks).toHaveLength(1)
+        expect(job1Content.networks[0].status).toBe('success')
+        expect(job1Content.networks[0].chainIds).toEqual(['1', '137'])
+        expect(job1Content.networks[0].outputs['contract.address']).toBe('0x1234567890123456789012345678901234567890')
+      })
+
+      it('should handle partial failure scenario with proper grouping', async () => {
+        // Make job1 fail on polygon only
+        let callCount = 0
+        mockEngine.executeJob.mockImplementation((job, context) => {
+          const currentCall = MockExecutionContext.mock.calls[callCount]
+          const network = currentCall ? currentCall[0] : null
+          callCount++
+          
+          if (job.name === 'job1' && network && network.chainId === 137) {
+            throw new Error('Polygon execution failed')
+          }
+          return Promise.resolve()
+        })
+
+        // Mock successful outputs for mainnet
+        MockExecutionContext.mockImplementation((network) => ({
+          network,
+          getOutputs: jest.fn().mockReturnValue(new Map<string, any>([
+            [`contract.address`, `0x1234567890123456789012345678901234567890`]
+          ]))
+        } as any))
+
+        const deployer = new Deployer(deployerOptions)
+        await expect(deployer.run()).resolves.not.toThrow() // Should not throw, just continue
+
+        // Verify outputs show both success and error states
+        const writeFileCalls = mockFs.writeFile.mock.calls
+        const job1Output = writeFileCalls.find(call => 
+          call[0] === '/test/project/output/job1.json'
+        )
+        
+        const job1Content = JSON.parse(job1Output![1] as string)
+        expect(job1Content.networks).toHaveLength(2) // One success entry, one error entry
+        
+        // Find success and error entries
+        const successEntry = job1Content.networks.find((entry: any) => entry.status === 'success')
+        const errorEntry = job1Content.networks.find((entry: any) => entry.status === 'error')
+        
+        expect(successEntry).toBeDefined()
+        expect(successEntry.chainIds).toEqual(['1'])
+        expect(successEntry.outputs['contract.address']).toBe('0x1234567890123456789012345678901234567890')
+        
+        expect(errorEntry).toBeDefined()
+        expect(errorEntry.chainId).toBe('137')
+        expect(errorEntry.error).toBe('Polygon execution failed')
       })
     })
   })

@@ -379,6 +379,64 @@ creationCode: "{{creationCode(path/to/MyContract)}}"
 creationCode: "{{creationCode(0x1234...hash)}}"
 ```
 
+## Output Format
+
+After successful deployment, Deployito generates JSON files in the `output/` directory for each job. The output format is optimized to reduce repetition:
+
+### Success Grouping
+
+Networks with identical deployment outputs are grouped together:
+
+```json
+{
+  "jobName": "core-contracts",
+  "jobVersion": "1.0.0",
+  "lastRun": "2025-01-15T10:30:45.123Z",
+  "networks": [
+    {
+      "status": "success",
+      "chainIds": ["1", "42161", "137"],
+      "outputs": {
+        "deploy-factory.address": "0x742d35Cc6ab8b3c7B3d4B8b3aB4c8f9e9C8e8aB6",
+        "deploy-factory.txHash": "0xabc123...",
+        "deploy-implementation.address": "0x123abc..."
+      }
+    }
+  ]
+}
+```
+
+### Error Handling
+
+When deployments fail on specific networks, each failure is recorded separately:
+
+```json
+{
+  "jobName": "core-contracts", 
+  "jobVersion": "1.0.0",
+  "lastRun": "2025-01-15T10:30:45.123Z",
+  "networks": [
+    {
+      "status": "success",
+      "chainIds": ["1", "42161"],
+      "outputs": {
+        "deploy-factory.address": "0x742d35Cc6ab8b3c7B3d4B8b3aB4c8f9e9C8e8aB6"
+      }
+    },
+    {
+      "status": "error",
+      "chainId": "137",
+      "error": "Transaction failed: insufficient funds"
+    }
+  ]
+}
+```
+
+This format ensures:
+- **Minimal repetition**: Successful deployments with identical outputs across multiple networks are grouped together
+- **Clear error tracking**: Individual network failures are clearly documented
+- **Scalability**: The format remains readable even with deployments across dozens of networks
+
 ## Environment Variables
 
 - `PRIVATE_KEY`: Signer private key (alternative to `--private-key` flag)

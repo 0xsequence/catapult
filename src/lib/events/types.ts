@@ -276,6 +276,17 @@ export interface CLIErrorEvent extends BaseEvent {
   }
 }
 
+export interface JobExecutionFailedEvent extends BaseEvent {
+  type: 'job_execution_failed'
+  level: 'error'
+  data: {
+    jobName: string
+    networkName: string
+    chainId: number
+    error: string
+  }
+}
+
 // Union type of all events
 export type DeploymentEvent =
   | DeploymentStartedEvent
@@ -307,4 +318,5 @@ export type DeploymentEvent =
   | NetworkStartedEvent
   | UnhandledRejectionEvent
   | UncaughtExceptionEvent
-  | CLIErrorEvent 
+  | CLIErrorEvent
+  | JobExecutionFailedEvent 

@@ -41,19 +41,23 @@ export interface DeployerOptions {
  */
 export class Deployer {
   private readonly options: DeployerOptions
-  private readonly loader: ProjectLoader
-  private graph!: DependencyGraph
   public readonly events: DeploymentEventEmitter
+  private readonly loader: ProjectLoader
   
-  // Stores the results of successful job executions.
-  // Map<jobName, { job: Job, outputs: Map<chainId, Map<actionOutputKey, value>> }>
-  private readonly results: Map<string, { job: Job; outputs: Map<number, Map<string, any>> }> = new Map()
+  // Store both successful and failed execution results
+  private readonly results = new Map<string, { 
+    job: Job; 
+    outputs: Map<number, { status: 'success' | 'error'; data: Map<string, any> | string }> 
+  }>()
+  private graph?: DependencyGraph
+
 
   constructor(options: DeployerOptions) {
     this.options = options
-    this.loader = new ProjectLoader(options.projectRoot, options.loaderOptions)
     this.events = options.eventEmitter || deploymentEvents
+    this.loader = new ProjectLoader(options.projectRoot, options.loaderOptions)
   }
+
 
   /**
    * Runs the entire deployment process from loading to execution and outputting results.
@@ -137,15 +141,41 @@ export class Deployer {
             continue
           }
           
-          const context = new ExecutionContext(network, this.options.privateKey, this.loader.artifactRegistry)
-          await engine.executeJob(job, context)
-          
-          // Store successful results
+          // Initialize results storage for this job if not exists
           if (!this.results.has(job.name)) {
             this.results.set(job.name, { job, outputs: new Map() })
           }
-          // Note: This relies on a new `getOutputs()` method in ExecutionContext.
-          this.results.get(job.name)!.outputs.set(network.chainId, (context as any).getOutputs())
+          
+          try {
+            const context = new ExecutionContext(network, this.options.privateKey, this.loader.artifactRegistry)
+            await engine.executeJob(job, context)
+            
+            // Store successful results
+            this.results.get(job.name)!.outputs.set(network.chainId, {
+              status: 'success',
+              data: (context as any).getOutputs()
+            })
+          } catch (error) {
+            // Store error results
+            const errorMessage = error instanceof Error ? error.message : String(error)
+            this.results.get(job.name)!.outputs.set(network.chainId, {
+              status: 'error',
+              data: errorMessage
+            })
+            
+            this.events.emitEvent({
+              type: 'job_execution_failed',
+              level: 'error',
+              data: {
+                jobName: job.name,
+                networkName: network.name,
+                chainId: network.chainId,
+                error: errorMessage
+              }
+            })
+            
+            // Continue to next job/network instead of failing the entire deployment
+          }
         }
       }
       
@@ -185,7 +215,7 @@ export class Deployer {
         throw new Error(`Specified job "${jobName}" not found in project.`)
       }
       jobsToRun.add(jobName)
-      const dependencies = this.graph.getDependencies(jobName)
+      const dependencies = this.graph?.getDependencies(jobName) || []
       dependencies.forEach(dep => jobsToRun.add(dep))
     }
     
@@ -262,19 +292,14 @@ export class Deployer {
     for (const [jobName, resultData] of this.results.entries()) {
       const outputFilePath = path.join(outputDir, `${jobName}.json`)
       
-      const networksOutput: Record<string, any> = {}
-      for (const [chainId, outputMap] of resultData.outputs.entries()) {
-        networksOutput[chainId] = {
-          status: 'success',
-          outputs: Object.fromEntries(outputMap)
-        }
-      }
+      // Group networks by identical status and outputs
+      const groupedResults = this.groupNetworkResults(resultData.outputs)
 
       const fileContent = {
         jobName: resultData.job.name,
         jobVersion: resultData.job.version,
         lastRun: new Date().toISOString(),
-        networks: networksOutput
+        networks: groupedResults
       }
       
       await fs.writeFile(outputFilePath, JSON.stringify(fileContent, null, 2))
@@ -286,5 +311,49 @@ export class Deployer {
         }
       })
     }
+  }
+
+  /**
+   * Groups network results by status and outputs.
+   * - Success states with identical outputs are grouped together with chainIds array
+   * - Error states are kept separate (one entry per network)
+   */
+  private groupNetworkResults(outputs: Map<number, { status: 'success' | 'error'; data: Map<string, any> | string }>): any[] {
+    const successGroups = new Map<string, { chainIds: string[], outputs: Record<string, any> }>()
+    const errorEntries: any[] = []
+    
+    for (const [chainId, result] of outputs.entries()) {
+      if (result.status === 'success') {
+        // Group successful results by identical outputs
+        const outputsObj = result.data instanceof Map ? Object.fromEntries(result.data) : {}
+        const key = JSON.stringify(outputsObj)
+        
+        if (!successGroups.has(key)) {
+          successGroups.set(key, {
+            chainIds: [],
+            outputs: outputsObj
+          })
+        }
+        
+        successGroups.get(key)!.chainIds.push(chainId.toString())
+      } else {
+        // Keep error results separate - one entry per network
+        errorEntries.push({
+          status: 'error',
+          chainId: chainId.toString(),
+          error: result.data
+        })
+      }
+    }
+    
+    // Convert success groups to array format
+    const successEntries = Array.from(successGroups.values()).map(group => ({
+      status: 'success',
+      chainIds: group.chainIds.sort(), // Sort for consistent output
+      outputs: group.outputs
+    }))
+    
+    // Return all entries: successes first, then errors
+    return [...successEntries, ...errorEntries]
   }
 }

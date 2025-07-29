@@ -7,5 +7,5 @@ actions:
   - name: "deploy-test-contract"
     template: "sequence-universal-deployer-2"
     arguments:
-      salt: "0x0000000000000000000000000000000000000000000000000000000000000000"
+      salt: "0x0000000000000000000000000000000000000000000000000000000000000003"
       creationCode: "{{creationCode(./artifacts/counter.json)}}"
