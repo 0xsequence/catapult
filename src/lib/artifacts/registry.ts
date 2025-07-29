@@ -47,14 +47,6 @@ export class ArtifactRegistry {
 
     // Check for duplicate names and track them
     if (this.byName.has(artifact.contractName)) {
-      deploymentEvents.emitEvent({
-        type: 'duplicate_artifact_warning',
-        level: 'warn',
-        data: {
-          contractName: artifact.contractName,
-          path: artifact._path
-        }
-      })
       // Mark this contract name as having duplicates
       this.duplicateNames.add(artifact.contractName)
     }
@@ -87,7 +79,19 @@ export class ArtifactRegistry {
     }
 
     // 2. Try to match by contractName, but only if it's not a duplicate name
-    if (this.byName.has(identifier) && !this.duplicateNames.has(identifier)) {
+    if (this.byName.has(identifier)) {
+      if (this.duplicateNames.has(identifier)) {
+        // Emit warning only when someone tries to use a duplicate name
+        deploymentEvents.emitEvent({
+          type: 'duplicate_artifact_warning',
+          level: 'warn',
+          data: {
+            contractName: identifier,
+            path: '' // We don't have a specific path in this context
+          }
+        })
+        return undefined
+      }
       return this.byName.get(identifier)
     }
 

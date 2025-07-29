@@ -1,5 +1,4 @@
 import { Command } from 'commander'
-import chalk from 'chalk'
 import { Deployer, DeployerOptions } from '../lib/deployer'
 import { loadNetworks } from '../lib/network-loader'
 import { deploymentEvents } from '../lib/events'

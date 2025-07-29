@@ -81,17 +81,20 @@ describe('ArtifactRegistry', () => {
       registry.add(artifact1)
       registry.add(artifact2)
 
-      // Check that the duplicate warning event was emitted
-      const warningEvent = emittedEvents.find(e => e.type === 'duplicate_artifact_warning')
-      expect(warningEvent).toBeDefined()
-      expect(warningEvent.data.contractName).toBe('DuplicateName')
-      expect(warningEvent.data.path).toBe('/test/path2.json')
+      // No warning should be emitted during add phase
+      let warningEvent = emittedEvents.find(e => e.type === 'duplicate_artifact_warning')
+      expect(warningEvent).toBeUndefined()
 
-      // Name-based lookup should now be disabled for duplicates
+      // Warning should only be emitted when trying to lookup by name
       const foundByName = registry.lookup('DuplicateName')
       expect(foundByName).toBeUndefined()
 
-      // But hash-based lookup should still work
+      // Now the warning should be emitted
+      warningEvent = emittedEvents.find(e => e.type === 'duplicate_artifact_warning')
+      expect(warningEvent).toBeDefined()
+      expect(warningEvent.data.contractName).toBe('DuplicateName')
+
+      // But hash-based lookup should still work without warnings
       const foundByHash1 = registry.lookup('hash1')
       expect(foundByHash1).toBeDefined()
       expect(foundByHash1!._path).toBe('/test/path1.json')
@@ -409,16 +412,20 @@ describe('ArtifactRegistry', () => {
 
       await registry.loadFrom(tempDir)
 
-      // Check that the duplicate warning event was emitted
-      const warningEvent = emittedEvents.find(e => e.type === 'duplicate_artifact_warning')
+      // No warning should be emitted during loading
+      let warningEvent = emittedEvents.find(e => e.type === 'duplicate_artifact_warning')
+      expect(warningEvent).toBeUndefined()
+
+      // Warning should only be emitted when trying to lookup by name
+      const artifactByName = registry.lookup('TestContract1')
+      expect(artifactByName).toBeUndefined()
+
+      // Now the warning should be emitted
+      warningEvent = emittedEvents.find(e => e.type === 'duplicate_artifact_warning')
       expect(warningEvent).toBeDefined()
       expect(warningEvent.data.contractName).toBe('TestContract1')
 
       deploymentEvents.off('event', eventListener)
-
-      // Name-based lookup should be disabled for duplicates
-      const artifactByName = registry.lookup('TestContract1')
-      expect(artifactByName).toBeUndefined()
 
       // But we should still be able to access artifacts by their paths
       const artifact1ByPath = registry.lookup(path.join(tempDir, 'contract1.json'))

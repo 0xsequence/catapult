@@ -127,7 +127,7 @@ export class CLIEventAdapter {
         break
 
       case 'duplicate_artifact_warning':
-        console.warn(`Warning: Duplicate artifact contractName found: "${event.data.contractName}". Overwriting with artifact from ${event.data.path}.`)
+        console.warn(`Warning: Duplicate artifact contractName found: "${event.data.contractName}". Name-based lookup disabled - use hash or path references instead.`)
         break
 
       case 'missing_network_config_warning':
