@@ -4,6 +4,7 @@ import { parseJob, parseTemplate } from '../parsers'
 import { Job, Template } from '../types'
 import { ArtifactRegistry } from '../artifacts/registry'
 import { ArtifactReferenceValidator, ArtifactReferenceError } from '../validation/artifact-references'
+import { ArtifactPathResolver } from './artifact-resolver'
 
 export interface ProjectLoaderOptions {
   loadStdTemplates?: boolean
@@ -44,6 +45,9 @@ export class ProjectLoader {
     if (await this.pathExists(jobsPath)) {
         await this.loadJobsFromDir(jobsPath)
     }
+
+    // Resolve relative artifact paths to absolute paths
+    this.resolveArtifactPaths()
   }
 
   private async loadTemplatesFromDir(dir: string) {
@@ -120,6 +124,25 @@ export class ProjectLoader {
       // Ignore errors from trying to read directories we don't have access to, etc.
     }
     return results
+  }
+
+  /**
+   * Resolves relative artifact paths to absolute paths in all jobs and templates.
+   * This is called after loading to ensure all artifact references are absolute paths.
+   * @private
+   */
+  private resolveArtifactPaths(): void {
+    const resolver = new ArtifactPathResolver(this.artifactRegistry)
+
+    // Resolve artifact paths in all jobs
+    for (const job of this.jobs.values()) {
+      resolver.resolveJobArtifacts(job)
+    }
+
+    // Resolve artifact paths in all templates
+    for (const template of this.templates.values()) {
+      resolver.resolveTemplateArtifacts(template)
+    }
   }
 
   /**
