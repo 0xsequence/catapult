@@ -1,7 +1,0 @@
-- name: "Arbitrum One"
-  chainId: 42161
-  rpcUrl: "https://nodes.sequence.app/arbitrum"
-
-- name: "Arbitrum Nova"
-  chainId: 42170
-  rpcUrl: "https://nodes.sequence.app/arbitrum-nova"
