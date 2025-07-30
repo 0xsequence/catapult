@@ -63,6 +63,11 @@ export function parseJob(yamlContent: string): Job {
     if (!action.arguments || typeof action.arguments !== 'object' || Array.isArray(action.arguments)) {
       throw new Error(`Invalid job "${rawObject.name}": action "${action.name}" is missing the required "arguments" field or it is not an object.`)
     }
+    
+    // Validate the optional output field
+    if (action.output !== undefined && typeof action.output !== 'boolean') {
+      throw new Error(`Invalid job "${rawObject.name}": action "${action.name}" has an invalid "output" field. It must be a boolean (true/false).`)
+    }
   }
 
   // --- Construct and return the strongly-typed Job object ---

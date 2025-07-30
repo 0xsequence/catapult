@@ -302,7 +302,7 @@ export class Deployer {
       const outputFilePath = path.join(outputDir, `${jobName}.json`)
       
       // Group networks by identical status and outputs
-      const groupedResults = this.groupNetworkResults(resultData.outputs)
+      const groupedResults = this.groupNetworkResults(resultData.outputs, resultData.job)
 
       const fileContent = {
         jobName: resultData.job.name,
@@ -323,11 +323,39 @@ export class Deployer {
   }
 
   /**
+   * Filters outputs to only include those from actions marked with output: true.
+   * If no actions have output: true, includes all outputs (backward compatibility).
+   */
+  private filterOutputsByActionFlags(outputs: Map<string, unknown>, job: Job): Record<string, unknown> {
+    // Get list of actions that should contribute to output
+    const outputActions = job.actions.filter(action => action.output === true)
+    
+    // If no actions explicitly set output: true, include all outputs (backward compatibility)
+    if (outputActions.length === 0) {
+      return Object.fromEntries(outputs)
+    }
+    
+    // Filter outputs to only include those from actions with output: true
+    const filtered = new Map<string, unknown>()
+    for (const [key, value] of outputs) {
+      // Check if this output key matches any of the output-enabled actions
+      for (const action of outputActions) {
+        if (key.startsWith(`${action.name}.`)) {
+          filtered.set(key, value)
+          break
+        }
+      }
+    }
+    
+    return Object.fromEntries(filtered)
+  }
+
+  /**
    * Groups network results by status and outputs.
    * - Success states with identical outputs are grouped together with chainIds array
    * - Error states are kept separate (one entry per network)
    */
-  private groupNetworkResults(outputs: Map<number, { status: 'success' | 'error'; data: Map<string, unknown> | string }>): Array<{
+  private groupNetworkResults(outputs: Map<number, { status: 'success' | 'error'; data: Map<string, unknown> | string }>, job: Job): Array<{
     status: 'success' | 'error';
     chainIds?: string[];
     chainId?: string;
@@ -343,8 +371,8 @@ export class Deployer {
     
     for (const [chainId, result] of outputs.entries()) {
       if (result.status === 'success') {
-        // Group successful results by identical outputs
-        const outputsObj = result.data instanceof Map ? Object.fromEntries(result.data) : {}
+        // Group successful results by identical outputs, filtered by action output flags
+        const outputsObj = result.data instanceof Map ? this.filterOutputsByActionFlags(result.data, job) : {}
         const key = JSON.stringify(outputsObj)
         
         if (!successGroups.has(key)) {

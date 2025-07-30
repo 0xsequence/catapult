@@ -33,6 +33,7 @@ export interface JobAction {
     arguments: Record<string, Value<any>>;
     skip_condition?: Condition[];
     depends_on?: string[];
+    output?: boolean; // Whether this action's outputs should be included in the final output file
 }
 
 export interface Job {
