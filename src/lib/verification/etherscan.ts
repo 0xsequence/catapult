@@ -8,6 +8,8 @@ export interface VerificationRequest {
   constructorArguments?: string  // Hex encoded constructor args
   apiKey: string
   network: Network
+  maxRetries?: number  // Number of retries for "contract not found" errors
+  retryDelayMs?: number  // Delay between retries in milliseconds
 }
 
 export interface VerificationResult {
@@ -23,40 +25,72 @@ export interface VerificationStatus {
 }
 
 /**
- * Gets the Etherscan API URL for a given network
+ * Checks if an error message indicates that the contract code was not found
  */
-function getEtherscanApiUrl(network: Network): string {
-  const chainId = network.chainId
-  
-  switch (chainId) {
-    case 1: // Ethereum Mainnet
-      return 'https://api.etherscan.io/api'
-    case 11155111: // Sepolia
-      return 'https://api-sepolia.etherscan.io/api'
-    case 137: // Polygon
-      return 'https://api.polygonscan.com/api'
-    case 56: // BSC
-      return 'https://api.bscscan.com/api'
-    case 42161: // Arbitrum One
-      return 'https://api.arbiscan.io/api'
-    case 10: // Optimism
-      return 'https://api-optimistic.etherscan.io/api'
-    case 8453: // Base
-      return 'https://api.basescan.org/api'
-    case 43114: // Avalanche
-      return 'https://api.snowtrace.io/api'
-    default:
-      throw new Error(`Etherscan verification not supported for chain ID ${chainId}`)
-  }
+function isContractNotFoundError(message: string): boolean {
+  return message.toLowerCase().includes('unable to locate contractcode') ||
+         message.toLowerCase().includes('contract source code not verified') ||
+         message.toLowerCase().includes('contract not found')
 }
 
 /**
- * Submits a contract for verification to Etherscan using the v2 API
+ * Extracts the full compiler version with commit hash from contract metadata
  */
-export async function submitVerification(request: VerificationRequest): Promise<VerificationResult> {
-  const apiUrl = getEtherscanApiUrl(request.network)
+function getFullCompilerVersion(buildInfo: BuildInfo): string {
+  // Try to extract from any contract's metadata
+  for (const [sourceName, contracts] of Object.entries(buildInfo.output.contracts)) {
+    for (const [contractName, contract] of Object.entries(contracts)) {
+      if (contract.metadata) {
+        try {
+          const metadata = JSON.parse(contract.metadata)
+          if (metadata.compiler?.version) {
+            return metadata.compiler.version
+          }
+        } catch (error) {
+          // Continue to next contract if metadata parsing fails
+          continue
+        }
+      }
+    }
+  }
   
-  const sourceCode = JSON.stringify(request.buildInfo.input)
+  // Fallback to the basic version if metadata extraction fails
+  return buildInfo.solcLongVersion
+}
+
+/**
+ * Gets the Etherscan v2 API URL (unified endpoint for all chains)
+ */
+function getEtherscanApiUrl(chainId: number): string {
+  return `https://api.etherscan.io/v2/api?chainid=${chainId}`
+}
+
+/**
+ * Internal function to perform a single verification attempt
+ */
+async function submitVerificationAttempt(request: VerificationRequest): Promise<VerificationResult> {
+  const apiUrl = getEtherscanApiUrl(request.network.chainId)
+  
+  // Clean the input to only include standard Solidity compiler input format keys
+  const cleanedInput = {
+    language: request.buildInfo.input.language,
+    sources: request.buildInfo.input.sources,
+    settings: {
+      // Only include standard settings that Etherscan supports
+      ...(request.buildInfo.input.settings.optimizer && { optimizer: request.buildInfo.input.settings.optimizer }),
+      ...(request.buildInfo.input.settings.evmVersion && { evmVersion: request.buildInfo.input.settings.evmVersion }),
+      ...(request.buildInfo.input.settings.remappings && { remappings: request.buildInfo.input.settings.remappings }),
+      ...(request.buildInfo.input.settings.viaIR && { viaIR: request.buildInfo.input.settings.viaIR }),
+      ...(request.buildInfo.input.settings.libraries && { libraries: request.buildInfo.input.settings.libraries }),
+      outputSelection: request.buildInfo.input.settings.outputSelection,
+      ...(request.buildInfo.input.settings.metadata && { metadata: request.buildInfo.input.settings.metadata })
+    }
+  }
+  
+  const sourceCode = JSON.stringify(cleanedInput)
+  
+  // Extract the full compiler version with commit hash from contract metadata
+  const fullCompilerVersion = getFullCompilerVersion(request.buildInfo)
   
   const formData = new URLSearchParams({
     module: 'contract',
@@ -65,7 +99,7 @@ export async function submitVerification(request: VerificationRequest): Promise<
     sourceCode,
     contractaddress: request.address,
     contractname: request.contractName,
-    compilerversion: request.buildInfo.solcVersion,
+    compilerversion: `v${fullCompilerVersion}`,
     apikey: request.apiKey,
   })
   
@@ -77,45 +111,88 @@ export async function submitVerification(request: VerificationRequest): Promise<
     formData.append('constructorArguements', constructorArgs) // Note: Etherscan API has this typo
   }
 
-  try {
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: formData.toString(),
-      signal: AbortSignal.timeout(30000), // 30 second timeout
-    })
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: formData.toString(),
+    signal: AbortSignal.timeout(30000), // 30 second timeout
+  })
 
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-    }
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
 
-    const data = await response.json() as { status: string; result: string }
+  const data = await response.json() as { status: string; result: string }
 
-    if (data.status === '1') {
-      return {
-        success: true,
-        guid: data.result,
-        message: 'Verification submitted successfully'
-      }
-    } else {
-      return {
-        success: false,
-        message: data.result || 'Unknown error occurred'
-      }
+  if (data.status === '1') {
+    return {
+      success: true,
+      guid: data.result,
+      message: 'Verification submitted successfully'
     }
-  } catch (error) {
-    if (error instanceof Error) {
-      return {
-        success: false,
-        message: `API request failed: ${error.message}`
-      }
-    }
+  } else {
     return {
       success: false,
-      message: `Unexpected error: ${String(error)}`
+      message: data.result || 'Unknown error occurred'
     }
+  }
+}
+
+/**
+ * Submits a contract for verification to Etherscan using the v2 API with retry logic
+ */
+export async function submitVerification(request: VerificationRequest): Promise<VerificationResult> {
+  const maxRetries = request.maxRetries ?? 3
+  const retryDelayMs = request.retryDelayMs ?? 5000 // 5 seconds default
+  
+  let lastError: string = ''
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await submitVerificationAttempt(request)
+      
+      // If successful or if it's not a "contract not found" error, return immediately
+      if (result.success || !isContractNotFoundError(result.message)) {
+        return result
+      }
+      
+      // Store the error message for potential retry
+      lastError = result.message
+      
+      // If this is the last attempt, don't wait
+      if (attempt === maxRetries) {
+        break
+      }
+      
+      // Wait before retrying
+      console.log(`Verification attempt ${attempt + 1} failed with "contract not found" error. Retrying in ${retryDelayMs}ms...`)
+      await new Promise(resolve => setTimeout(resolve, retryDelayMs))
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      
+      // If it's a "contract not found" type error and we have retries left, continue
+      if (isContractNotFoundError(errorMessage) && attempt < maxRetries) {
+        lastError = errorMessage
+        console.log(`Verification attempt ${attempt + 1} failed with "contract not found" error. Retrying in ${retryDelayMs}ms...`)
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs))
+        continue
+      }
+      
+      // For other errors or if we're out of retries, return the error
+      return {
+        success: false,
+        message: `API request failed: ${errorMessage}`
+      }
+    }
+  }
+  
+  // All retries exhausted
+  return {
+    success: false,
+    message: `Verification failed after ${maxRetries + 1} attempts. Last error: ${lastError}`
   }
 }
 
@@ -127,7 +204,7 @@ export async function checkVerificationStatus(
   apiKey: string, 
   network: Network
 ): Promise<VerificationStatus> {
-  const apiUrl = getEtherscanApiUrl(network)
+  const apiUrl = getEtherscanApiUrl(network.chainId)
   
   const params = new URLSearchParams({
     module: 'contract',
@@ -137,7 +214,7 @@ export async function checkVerificationStatus(
   })
 
   try {
-    const response = await fetch(`${apiUrl}?${params.toString()}`, {
+    const response = await fetch(`${apiUrl}&${params.toString()}`, {
       method: 'GET',
       signal: AbortSignal.timeout(15000), // 15 second timeout
     })
