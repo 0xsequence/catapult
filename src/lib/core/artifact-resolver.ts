@@ -101,7 +101,7 @@ export class ArtifactPathResolver {
     const expression = refMatch[1].trim()
     
     // Check for artifact function calls
-    const funcMatch = expression.match(/^(creationCode|initCode|abi)\((.*)\)$/)
+    const funcMatch = expression.match(/^(creationCode|initCode|abi|buildInfo)\((.*)\)$/)
     if (funcMatch) {
       const [, funcName, argStr] = funcMatch
       const artifactIdentifier = argStr.trim()
@@ -132,6 +132,38 @@ export class ArtifactPathResolver {
             throw new Error(`Artifact "${artifact.contractName}" is missing ABI for abi() function`)
           }
           return artifact.abi
+        } else if (funcName === 'buildInfo') {
+          // For buildInfo, find the corresponding build-info artifact identifier
+          // Read the raw artifact file to extract compilation target from metadata
+          let compilationTarget: string | undefined
+          try {
+            const fs = require('fs')
+            const artifactContent = fs.readFileSync(artifact._path, 'utf-8')
+            const artifactJson = JSON.parse(artifactContent)
+            
+            if (artifactJson.metadata?.settings?.compilationTarget) {
+              const target = artifactJson.metadata.settings.compilationTarget
+              const entries = Object.entries(target)
+              if (entries.length === 1) {
+                const [sourceName, contractName] = entries[0]
+                compilationTarget = `${sourceName}:${contractName}`
+              }
+            }
+          } catch (error) {
+            throw new Error(`Failed to read artifact file for compilation target extraction: ${error instanceof Error ? error.message : String(error)}`)
+          }
+          
+          if (!compilationTarget) {
+            throw new Error(`Unable to determine compilation target for artifact: "${artifactIdentifier}"`)
+          }
+          
+          // Look up the build-info artifact using the compilation target
+          const buildInfoArtifact = this.artifactRegistry.lookup(compilationTarget)
+          if (!buildInfoArtifact) {
+            throw new Error(`Build-info artifact not found for compilation target: "${compilationTarget}"`)
+          }
+          
+          return compilationTarget
         }
       }
     }

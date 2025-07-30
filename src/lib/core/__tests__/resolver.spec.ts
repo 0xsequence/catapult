@@ -873,6 +873,122 @@ describe('ValueResolver', () => {
       })
     })
 
+    describe('buildInfo function', () => {
+      it('should return build-info artifact identifier for valid artifact', async () => {
+        // Create a temporary artifact file with metadata
+        const tmpDir = require('os').tmpdir()
+        const artifactPath = require('path').join(tmpDir, 'TestContractWithBuildInfo.json')
+        const artifactContent = {
+          contractName: 'TestContract',
+          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
+          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+          metadata: {
+            settings: {
+              compilationTarget: {
+                'src/TestContract.sol': 'TestContract'
+              }
+            }
+          }
+        }
+        
+        require('fs').writeFileSync(artifactPath, JSON.stringify(artifactContent))
+        
+        const testArtifact = {
+          contractName: 'TestContractWithBuildInfo',
+          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
+          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+          _path: artifactPath,
+          _hash: 'test123'
+        }
+        mockRegistry.add(testArtifact)
+        
+        // Add corresponding build-info artifact
+        const buildInfoArtifact = {
+          contractName: 'TestContract',
+          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
+          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+          _path: '/test/build-info/test.json#src/TestContract.sol:TestContract',
+          _hash: 'buildinfo123'
+        }
+        mockRegistry.add(buildInfoArtifact)
+        
+        const result = await resolver.resolve('{{buildInfo(TestContractWithBuildInfo)}}', context)
+        expect(result).toBe('src/TestContract.sol:TestContract')
+        
+        // Clean up
+        require('fs').unlinkSync(artifactPath)
+      })
+
+      it('should throw error for non-existent artifact', async () => {
+        await expect(resolver.resolve('{{buildInfo(NonExistent)}}', context))
+          .rejects.toThrow('Artifact not found for identifier: "NonExistent"')
+      })
+
+      it('should throw error for artifact without compilation target metadata', async () => {
+        // Create a temporary artifact file without metadata
+        const tmpDir = require('os').tmpdir()
+        const artifactPath = require('path').join(tmpDir, 'TestContractNoMetadata.json')
+        const artifactContent = {
+          contractName: 'TestContract',
+          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
+          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3'
+          // No metadata field
+        }
+        
+        require('fs').writeFileSync(artifactPath, JSON.stringify(artifactContent))
+        
+        const testArtifact = {
+          contractName: 'TestContractNoMetadata',
+          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
+          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+          _path: artifactPath,
+          _hash: 'nometadata123'
+        }
+        mockRegistry.add(testArtifact)
+        
+        await expect(resolver.resolve('{{buildInfo(TestContractNoMetadata)}}', context))
+          .rejects.toThrow('Unable to determine compilation target for artifact: "TestContractNoMetadata"')
+        
+        // Clean up
+        require('fs').unlinkSync(artifactPath)
+      })
+
+      it('should throw error when build-info artifact not found', async () => {
+        // Create a temporary artifact file with metadata
+        const tmpDir = require('os').tmpdir()
+        const artifactPath = require('path').join(tmpDir, 'TestContractNoBuildInfo.json')
+        const artifactContent = {
+          contractName: 'TestContractNoBuildInfo',
+          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
+          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+          metadata: {
+            settings: {
+              compilationTarget: {
+                'src/TestContractNoBuildInfo.sol': 'TestContractNoBuildInfo'
+              }
+            }
+          }
+        }
+        
+        require('fs').writeFileSync(artifactPath, JSON.stringify(artifactContent))
+        
+        const testArtifact = {
+          contractName: 'TestContractNoBuildInfo',
+          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
+          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+          _path: artifactPath,
+          _hash: 'nobuildinfo123'
+        }
+        mockRegistry.add(testArtifact)
+        
+        await expect(resolver.resolve('{{buildInfo(TestContractNoBuildInfo)}}', context))
+          .rejects.toThrow('Build-info artifact not found for compilation target: "src/TestContractNoBuildInfo.sol:TestContractNoBuildInfo"')
+        
+        // Clean up
+        require('fs').unlinkSync(artifactPath)
+      })
+    })
+
     describe('invalid function expressions', () => {
       it('should throw error for unknown function names', async () => {
         await expect(resolver.resolve('{{unknownFunction(TestContract)}}', context))

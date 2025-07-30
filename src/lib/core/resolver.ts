@@ -96,6 +96,42 @@ export class ValueResolver {
         if (!artifact.abi) throw new Error(`Artifact "${artifact.contractName}" is missing ABI.`)
         return artifact.abi
       }
+      if (funcName === 'buildInfo') {
+        // For buildInfo, find the corresponding build-info artifact identifier
+        const artifact = context.artifactRegistry.lookup(arg)
+        if (!artifact) throw new Error(`Artifact not found for identifier: "${arg}"`)
+        
+        // Read the raw artifact file to extract compilation target from metadata
+        let compilationTarget: string | undefined
+        try {
+          const fs = await import('fs/promises')
+          const artifactContent = await fs.readFile(artifact._path, 'utf-8')
+          const artifactJson = JSON.parse(artifactContent)
+          
+          if (artifactJson.metadata?.settings?.compilationTarget) {
+            const target = artifactJson.metadata.settings.compilationTarget
+            const entries = Object.entries(target)
+            if (entries.length === 1) {
+              const [sourceName, contractName] = entries[0]
+              compilationTarget = `${sourceName}:${contractName}`
+            }
+          }
+        } catch (error) {
+          throw new Error(`Failed to read artifact file for compilation target extraction: ${error instanceof Error ? error.message : String(error)}`)
+        }
+        
+        if (!compilationTarget) {
+          throw new Error(`Unable to determine compilation target for artifact: "${arg}"`)
+        }
+        
+        // Look up the build-info artifact using the compilation target
+        const buildInfoArtifact = context.artifactRegistry.lookup(compilationTarget)
+        if (!buildInfoArtifact) {
+          throw new Error(`Build-info artifact not found for compilation target: "${compilationTarget}"`)
+        }
+        
+        return compilationTarget
+      }
       
       throw new Error(`Unknown function in expression: ${funcName}`)
     }
