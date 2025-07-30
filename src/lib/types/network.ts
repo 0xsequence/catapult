@@ -10,4 +10,7 @@ export interface Network {
   
   /** The RPC URL endpoint for the network */
   rpcUrl: string
+
+  /** Supported verification platforms */
+  supports?: string[]
 } 

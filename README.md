@@ -74,7 +74,14 @@ Create a `networks.yaml` file in your project root to define target networks:
 - name: "Polygon"
   chainId: 137
   rpcUrl: "https://polygon-rpc.com"
+  supports: ["etherscan_v2"]  # Optional: verification platforms supported
 ```
+
+The `supports` field is optional and specifies which verification platforms are available for the network. Currently supported platforms:
+
+- `etherscan_v2`: Etherscan v2 verification API (supports Ethereum, Polygon, Arbitrum, BSC, etc.)
+
+If a network doesn't specify `supports` or doesn't include a verification platform, verification jobs will be silently skipped on that network.
 
 ### Job Definitions
 
@@ -330,6 +337,19 @@ result:
     values: []
 ```
 
+### `verify-contract`
+Verify deployed contracts on block explorers:
+
+```yaml
+- type: "verify-contract"
+  arguments:
+    address: "{{deploy-factory.address}}"
+    buildInfo: "MyContract"  # Reference to build-info containing the contract
+    contractName: "contracts/MyContract.sol:MyContract"
+    constructorArguments: "0x000000000000000000000000..."  # Optional hex-encoded args
+    platform: "etherscan_v2"  # Optional, defaults to etherscan_v2
+```
+
 ## Skip Conditions
 
 Avoid redundant operations with skip conditions:
@@ -466,20 +486,4 @@ npm run watch
 ### Scripts
 - `npm run build` - Compile TypeScript to JavaScript
 - `npm run dev` - Run the CLI in development mode with ts-node
-- `npm run watch` - Watch for changes and recompile automatically
-- `npm run clean` - Remove compiled files
-- `npm test` - Run tests
-- `npm run lint` - Run ESLint
-- `npm run lint:fix` - Fix ESLint issues automatically
-
-## Examples
-
-Check the `examples/` directory for complete example projects including:
-
-- Sequence v1 contract deployments
-- Factory pattern deployments
-- Multi-step dependency workflows
-
-## License
-
-MIT License 
+- `npm run watch`

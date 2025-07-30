@@ -20,12 +20,24 @@ export interface SendSignedTransactionAction {
   };
 }
 
+export interface VerifyContractAction {
+  type: 'verify-contract';
+  arguments: {
+    address: AddressValue;
+    buildInfo: Value<string>; // Reference to build-info name/path
+    contractName: Value<string>; // Fully qualified name like "contracts/MyToken.sol:MyToken"
+    constructorArguments?: BytesValue; // Optional constructor args as hex string
+    platform?: Value<string>; // Platform to verify on, defaults to "etherscan_v2"
+  };
+}
+
 // A union of all primitive action types.
-export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction;
+export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction;
 
 const primitiveActionTypes = [
   'send-transaction',
   'send-signed-transaction',
+  'verify-contract',
 ] as const;
 
 /**

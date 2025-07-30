@@ -3,8 +3,15 @@ import * as path from 'path'
 import { createHash } from 'crypto'
 import { parseArtifact } from '../parsers/artifact'
 import { parseBuildInfo, isBuildInfoFile, extractedContractToArtifact } from '../parsers/buildinfo'
-import { Artifact } from '../types'
+import { Artifact, BuildInfo } from '../types'
 import { deploymentEvents } from '../events'
+
+export interface BuildInfoEntry {
+  filePath: string
+  buildInfo: BuildInfo
+  hash: string
+  extractedContracts: string[] // Contract names extracted from this build-info
+}
 
 export class ArtifactRegistry {
   private artifacts: Artifact[] = []
@@ -12,6 +19,7 @@ export class ArtifactRegistry {
   private byHash: Map<string, Artifact> = new Map()
   private byPath: Map<string, Artifact> = new Map()
   private duplicateNames: Set<string> = new Set()
+  private buildInfos: BuildInfoEntry[] = []
   private projectRoot?: string
 
   /**
@@ -29,16 +37,29 @@ export class ArtifactRegistry {
         if (isBuildInfoFile(filePath)) {
           const extractedContracts = parseBuildInfo(content, filePath)
           if (extractedContracts) {
+            // Parse the build-info content to get the BuildInfo object
+            const buildInfo = JSON.parse(content) as BuildInfo
+            const hash = createHash('md5').update(content).digest('hex')
+            
+            // Track the build-info file
+            const extractedContractNames = extractedContracts.map(contract => contract.contractName)
+            this.buildInfos.push({
+              filePath,
+              buildInfo,
+              hash,
+              extractedContracts: extractedContractNames
+            })
+            
             // Create an artifact for each extracted contract
             for (const extracted of extractedContracts) {
               // Create a unique path identifier for each contract within the build-info
               const contractPath = `${filePath}#${extracted.fullyQualifiedName}`
-              const hash = createHash('md5').update(content + extracted.fullyQualifiedName).digest('hex')
+              const artifactHash = createHash('md5').update(content + extracted.fullyQualifiedName).digest('hex')
               
               const artifact: Artifact = {
                 ...extractedContractToArtifact(extracted),
                 _path: contractPath,
-                _hash: hash,
+                _hash: artifactHash,
               }
               this.add(artifact)
             }
@@ -88,6 +109,13 @@ export class ArtifactRegistry {
    */
   public getAll(): readonly Artifact[] {
     return this.artifacts
+  }
+
+  /**
+   * Returns a read-only list of all registered build-info files.
+   */
+  public getBuildInfos(): readonly BuildInfoEntry[] {
+    return this.buildInfos
   }
 
   /**

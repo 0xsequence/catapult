@@ -9,7 +9,7 @@ function isValidBuildInfo(data: any): data is BuildInfo {
   return (
     data &&
     typeof data === 'object' &&
-    data._format === 'hh-sol-build-info-1' &&
+    (data._format === 'hh-sol-build-info-1' || data._format === 'ethers-rs-sol-build-info-1') &&
     typeof data.id === 'string' &&
     typeof data.solcVersion === 'string' &&
     typeof data.solcLongVersion === 'string' &&
@@ -68,21 +68,34 @@ export function parseBuildInfo(content: string, filePath: string): ExtractedCont
           continue
         }
         
-        if (!contractData.evm?.bytecode?.object || !contractData.evm.bytecode.object.startsWith('0x')) {
+        // Handle both Hardhat format (with 0x prefix) and ethers-rs format (without 0x prefix)
+        if (!contractData.evm?.bytecode?.object || 
+            (!contractData.evm.bytecode.object.startsWith('0x') && !/^[0-9a-fA-F]+$/.test(contractData.evm.bytecode.object))) {
           continue
         }
         
         // Get source content if available
         const sourceContent = data.input.sources[sourceName]?.content
         
+        // Normalize bytecode to ensure it has 0x prefix (required by the rest of the system)
+        const bytecode = contractData.evm.bytecode.object.startsWith('0x') 
+          ? contractData.evm.bytecode.object 
+          : '0x' + contractData.evm.bytecode.object
+        
+        const deployedBytecode = contractData.evm.deployedBytecode?.object
+          ? (contractData.evm.deployedBytecode.object.startsWith('0x')
+            ? contractData.evm.deployedBytecode.object
+            : '0x' + contractData.evm.deployedBytecode.object)
+          : undefined
+
         // Create the extracted contract
         const extractedContract: ExtractedContract = {
           contractName,
           sourceName,
           fullyQualifiedName: `${sourceName}:${contractName}`,
           abi: contractData.abi,
-          bytecode: contractData.evm.bytecode.object,
-          deployedBytecode: contractData.evm.deployedBytecode?.object,
+          bytecode,
+          deployedBytecode,
           source: sourceContent,
           compiler: {
             version: data.solcLongVersion

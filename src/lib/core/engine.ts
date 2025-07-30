@@ -3,6 +3,8 @@ import { ExecutionContext } from './context'
 import { ValueResolver, ResolutionScope } from './resolver'
 import { validateAddress, validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
 import { DeploymentEventEmitter, deploymentEvents } from '../events'
+import { submitVerification, waitForVerification } from '../verification/etherscan'
+import { BuildInfo } from '../types/buildinfo'
 
 /**
  * The ExecutionEngine is the core component that runs jobs and their actions.
@@ -329,6 +331,184 @@ export class ExecutionEngine {
             context.setOutput(`${action.name}.hash`, tx.hash)
             context.setOutput(`${action.name}.receipt`, receipt)
         }
+        break
+      }
+      case 'verify-contract': {
+        const actionName = action.name || action.type
+        
+        // Resolve arguments
+        const resolvedAddress = await this.resolver.resolve(action.arguments.address, context, scope)
+        const resolvedBuildInfo = await this.resolver.resolve(action.arguments.buildInfo, context, scope)
+        const resolvedContractName = await this.resolver.resolve(action.arguments.contractName, context, scope)
+        const resolvedConstructorArgs = action.arguments.constructorArguments 
+          ? await this.resolver.resolve(action.arguments.constructorArguments, context, scope)
+          : undefined
+        const resolvedPlatform = action.arguments.platform 
+          ? await this.resolver.resolve(action.arguments.platform, context, scope)
+          : 'etherscan_v2'
+
+        // Validate inputs
+        const address = validateAddress(resolvedAddress, actionName)
+        
+        if (typeof resolvedBuildInfo !== 'string') {
+          throw new Error(`Action "${actionName}": buildInfo must be a string reference`)
+        }
+        
+        if (typeof resolvedContractName !== 'string') {
+          throw new Error(`Action "${actionName}": contractName must be a string`)
+        }
+
+        if (typeof resolvedPlatform !== 'string') {
+          throw new Error(`Action "${actionName}": platform must be a string`)
+        }
+
+        // Validate constructor arguments if provided
+        let constructorArguments: string | undefined
+        if (resolvedConstructorArgs !== undefined) {
+          constructorArguments = validateHexData(resolvedConstructorArgs, actionName, 'constructorArguments')
+        }
+
+        // Check if network supports verification
+        const network = context.getNetwork()
+        if (network.supports && !network.supports.includes(resolvedPlatform)) {
+          this.events.emitEvent({
+            type: 'action_skipped',
+            level: 'info',
+            data: {
+              actionName: actionName,
+              reason: `Network ${network.name} does not support ${resolvedPlatform} verification`
+            }
+          })
+          return
+        }
+
+        // Check if API key is available
+        const etherscanApiKey = context.getEtherscanApiKey()
+        if (!etherscanApiKey) {
+          this.events.emitEvent({
+            type: 'action_skipped',
+            level: 'warn',
+            data: {
+              actionName: actionName,
+              reason: 'Verification skipped because Etherscan API key is not provided. Set --etherscan-api-key or ETHERSCAN_API_KEY environment variable.'
+            }
+          })
+          return
+        }
+
+        if (resolvedPlatform !== 'etherscan_v2') {
+          throw new Error(`Action "${actionName}": Unsupported verification platform "${resolvedPlatform}". Currently only "etherscan_v2" is supported.`)
+        }
+
+        // Get build info from artifact registry
+        const artifactRegistry = context.getArtifactRegistry()
+        const artifact = artifactRegistry.lookup(resolvedBuildInfo)
+        
+        if (!artifact) {
+          throw new Error(`Action "${actionName}": Build info "${resolvedBuildInfo}" not found in artifact registry`)
+        }
+
+        // Extract build-info file path from artifact path
+        // For build-info artifacts, _path is in format: "/path/to/buildinfo.json#contractName"
+        let buildInfoPath: string
+        if (artifact._path.includes('#')) {
+          buildInfoPath = artifact._path.split('#')[0]
+        } else {
+          throw new Error(`Action "${actionName}": Artifact "${resolvedBuildInfo}" does not appear to be from a build-info file`)
+        }
+
+        // Load the actual build info file
+        const fs = await import('fs/promises')
+        let buildInfoContent: string
+        try {
+          buildInfoContent = await fs.readFile(buildInfoPath, 'utf-8')
+        } catch (error) {
+          throw new Error(`Action "${actionName}": Failed to read build info file at ${buildInfoPath}: ${error instanceof Error ? error.message : String(error)}`)
+        }
+
+        let buildInfo: BuildInfo
+        try {
+          buildInfo = JSON.parse(buildInfoContent)
+        } catch (error) {
+          throw new Error(`Action "${actionName}": Failed to parse build info JSON: ${error instanceof Error ? error.message : String(error)}`)
+        }
+
+        this.events.emitEvent({
+          type: 'verification_started',
+          level: 'info',
+          data: {
+            actionName: actionName,
+            address,
+            contractName: resolvedContractName,
+            platform: resolvedPlatform,
+            networkName: network.name
+          }
+        })
+
+        try {
+          // Submit verification
+          const verificationResult = await submitVerification({
+            address,
+            buildInfo,
+            contractName: resolvedContractName,
+            constructorArguments,
+            apiKey: etherscanApiKey,
+            network
+          })
+
+          if (!verificationResult.success) {
+            throw new Error(`Verification submission failed: ${verificationResult.message}`)
+          }
+
+          const guid = verificationResult.guid!
+
+          this.events.emitEvent({
+            type: 'verification_submitted',
+            level: 'info',
+            data: {
+              actionName: actionName,
+              guid,
+              message: verificationResult.message
+            }
+          })
+
+          // Wait for verification to complete
+          const verificationStatus = await waitForVerification(guid, etherscanApiKey, network)
+
+          if (verificationStatus.isSuccess) {
+            this.events.emitEvent({
+              type: 'verification_completed',
+              level: 'info',
+              data: {
+                actionName: actionName,
+                address,
+                contractName: resolvedContractName,
+                message: 'Contract verified successfully'
+              }
+            })
+
+            if (action.name) {
+              context.setOutput(`${action.name}.verified`, true)
+              context.setOutput(`${action.name}.guid`, guid)
+            }
+          } else {
+            throw new Error(`Verification failed: ${verificationStatus.message}`)
+          }
+
+        } catch (error) {
+          this.events.emitEvent({
+            type: 'verification_failed',
+            level: 'error',
+            data: {
+              actionName: actionName,
+              address,
+              contractName: resolvedContractName,
+              error: error instanceof Error ? error.message : String(error)
+            }
+          })
+          throw error
+        }
+
         break
       }
       default:

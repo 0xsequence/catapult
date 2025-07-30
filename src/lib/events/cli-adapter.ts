@@ -139,7 +139,7 @@ export class CLIEventAdapter {
         break
 
       case 'unhandled_rejection':
-        console.error(chalk.red('Unhandled Rejection at:'), event.data.promise, chalk.red('reason:'), event.data.reason)
+        console.error(chalk.red('Unhandled Rejection:'), event.data.error, chalk.red('origin:'), event.data.origin)
         break
 
       case 'uncaught_exception':

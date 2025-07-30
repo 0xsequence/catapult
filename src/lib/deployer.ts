@@ -32,6 +32,9 @@ export interface DeployerOptions {
   
   /** Optional: Project loader options (e.g., whether to load standard templates). */
   loaderOptions?: ProjectLoaderOptions
+  
+  /** Optional Etherscan API key for contract verification. */
+  etherscanApiKey?: string
 }
 
 /**
@@ -93,11 +96,12 @@ export class Deployer {
       })
       
       // 2. Build the dependency graph and determine execution order.
-      this.graph = new DependencyGraph(this.loader.jobs, this.loader.templates)
-      const fullExecutionOrder = this.graph.getExecutionOrder()
-      
+      const graph = new DependencyGraph(this.loader.jobs, this.loader.templates)
+      this.graph = graph
+      const jobOrder = graph.getExecutionOrder()
+
       // 3. Filter jobs and networks based on user options.
-      const jobExecutionPlan = this.getJobExecutionPlan(fullExecutionOrder)
+      const jobsToRun = this.getJobExecutionPlan(jobOrder)
       const targetNetworks = this.getTargetNetworks()
       
       this.events.emitEvent({
@@ -108,7 +112,7 @@ export class Deployer {
             name: n.name,
             chainId: n.chainId
           })),
-          jobExecutionOrder: jobExecutionPlan
+          jobExecutionOrder: jobsToRun
         }
       })
 
@@ -125,7 +129,7 @@ export class Deployer {
           }
         })
         
-        for (const jobName of jobExecutionPlan) {
+        for (const jobName of jobsToRun) {
           const job = this.loader.jobs.get(jobName)!
           
           if (this.shouldSkipJobOnNetwork(job, network)) {
@@ -147,7 +151,12 @@ export class Deployer {
           }
           
           try {
-            const context = new ExecutionContext(network, this.options.privateKey, this.loader.artifactRegistry)
+            const context = new ExecutionContext(
+              network, 
+              this.options.privateKey, 
+              this.loader.artifactRegistry,
+              this.options.etherscanApiKey
+            )
             await engine.executeJob(job, context)
             
             // Store successful results
@@ -215,8 +224,8 @@ export class Deployer {
         throw new Error(`Specified job "${jobName}" not found in project.`)
       }
       jobsToRun.add(jobName)
-      const dependencies = this.graph?.getDependencies(jobName) || []
-      dependencies.forEach(dep => jobsToRun.add(dep))
+      const dependencies = this.graph?.getDependencies(jobName) || new Set()
+      dependencies.forEach((dep: string) => jobsToRun.add(dep))
     }
     
     // Filter the original execution order to only include the required jobs, preserving the correct sequence.

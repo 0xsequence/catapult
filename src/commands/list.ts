@@ -52,17 +52,40 @@ export function makeListCommand(): Command {
       const loader = await loadProject(options.project, { 
         loadStdTemplates: options.std !== false 
       })
+      const artifacts = loader.artifactRegistry.getAll()
+      const buildInfos = loader.artifactRegistry.getBuildInfos()
+
+      // Display artifacts
       console.log(chalk.bold.underline('Available Artifacts:'))
-             const artifacts = loader.artifactRegistry.getAll()
       if (artifacts.length === 0) {
         console.log(chalk.yellow('No artifacts found in this project.'))
-        return
+      } else {
+        for (const artifact of artifacts) {
+          const relativePath = path.relative(options.project, artifact._path)
+          console.log(`- ${chalk.cyan(artifact.contractName)}`)
+          console.log(`  ${chalk.gray('Path:')} ${relativePath}`)
+          console.log(`  ${chalk.gray('Hash:')} ${artifact._hash}`)
+        }
       }
-      for (const artifact of artifacts) {
-        const relativePath = path.relative(options.project, artifact._path)
-        console.log(`- ${chalk.cyan(artifact.contractName)}`)
-        console.log(`  ${chalk.gray('Path:')} ${relativePath}`)
-        console.log(`  ${chalk.gray('Hash:')} ${artifact._hash}`)
+
+      // Display build-info files
+      console.log('\n' + chalk.bold.underline('Build Info Files:'))
+      if (buildInfos.length === 0) {
+        console.log(chalk.yellow('No build-info files found in this project.'))
+      } else {
+        for (const buildInfo of buildInfos) {
+          const relativePath = path.relative(options.project, buildInfo.filePath)
+          console.log(`- ${chalk.cyan(buildInfo.buildInfo.id)}`)
+          console.log(`  ${chalk.gray('Path:')} ${relativePath}`)
+          console.log(`  ${chalk.gray('Solc Version:')} ${buildInfo.buildInfo.solcVersion}`)
+          console.log(`  ${chalk.gray('Hash:')} ${buildInfo.hash}`)
+          console.log(`  ${chalk.gray('Extracted Contracts:')} ${buildInfo.extractedContracts.join(', ')}`)
+        }
+      }
+
+      // If both are empty, show a general message
+      if (artifacts.length === 0 && buildInfos.length === 0) {
+        console.log('\n' + chalk.yellow('No artifacts or build-info files found in this project.'))
       }
     } catch (error) {
       console.error(chalk.red('Error listing artifacts:'), error instanceof Error ? error.message : String(error))

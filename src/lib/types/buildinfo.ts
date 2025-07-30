@@ -87,7 +87,7 @@ export interface BuildInfoOutput {
 }
 
 export interface BuildInfo {
-  _format: 'hh-sol-build-info-1'
+  _format: 'hh-sol-build-info-1' | 'ethers-rs-sol-build-info-1'
   id: string
   solcVersion: string
   solcLongVersion: string

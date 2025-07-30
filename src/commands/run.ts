@@ -10,6 +10,7 @@ interface RunOptions {
   network?: string[]
   dotenv?: string
   std: boolean
+  etherscanApiKey?: string
 }
 
 export function makeRunCommand(): Command {
@@ -18,6 +19,7 @@ export function makeRunCommand(): Command {
     .argument('[jobs...]', 'Specific job names to run (and their dependencies). If not provided, all jobs are run.')
     .option('-k, --private-key <key>', 'Signer private key. Can also be set via PRIVATE_KEY env var.')
     .option('-n, --network <chainIds...>', 'One or more network chain IDs to run on. If not provided, runs on all configured networks.')
+    .option('--etherscan-api-key <key>', 'Etherscan API key for contract verification. Can also be set via ETHERSCAN_API_KEY env var.')
 
   projectOption(run)
   dotenvOption(run)
@@ -32,6 +34,8 @@ export function makeRunCommand(): Command {
         throw new Error('A private key must be provided via the --private-key option or the PRIVATE_KEY environment variable.')
       }
 
+      const etherscanApiKey = options.etherscanApiKey || process.env.ETHERSCAN_API_KEY
+
       const projectRoot = options.project
       const networks = await loadNetworks(projectRoot)
 
@@ -45,6 +49,7 @@ export function makeRunCommand(): Command {
         networks,
         runJobs: jobs.length > 0 ? jobs : undefined,
         runOnNetworks: options.network?.map(Number),
+        etherscanApiKey,
         loaderOptions: {
           loadStdTemplates: options.std !== false
         }

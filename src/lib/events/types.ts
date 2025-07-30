@@ -255,8 +255,8 @@ export interface UnhandledRejectionEvent extends BaseEvent {
   type: 'unhandled_rejection'
   level: 'error'
   data: {
-    reason: any
-    promise: Promise<any>
+    error: string
+    origin: string
   }
 }
 
@@ -283,6 +283,50 @@ export interface JobExecutionFailedEvent extends BaseEvent {
     jobName: string
     networkName: string
     chainId: number
+    error: string
+  }
+}
+
+export interface VerificationStartedEvent extends BaseEvent {
+  type: 'verification_started'
+  level: 'info'
+  data: {
+    actionName: string
+    address: string
+    contractName: string
+    platform: string
+    networkName: string
+  }
+}
+
+export interface VerificationSubmittedEvent extends BaseEvent {
+  type: 'verification_submitted'
+  level: 'info'
+  data: {
+    actionName: string
+    guid: string
+    message: string
+  }
+}
+
+export interface VerificationCompletedEvent extends BaseEvent {
+  type: 'verification_completed'
+  level: 'info'
+  data: {
+    actionName: string
+    address: string
+    contractName: string
+    message: string
+  }
+}
+
+export interface VerificationFailedEvent extends BaseEvent {
+  type: 'verification_failed'
+  level: 'error'
+  data: {
+    actionName: string
+    address: string
+    contractName: string
     error: string
   }
 }
@@ -319,4 +363,8 @@ export type DeploymentEvent =
   | UnhandledRejectionEvent
   | UncaughtExceptionEvent
   | CLIErrorEvent
-  | JobExecutionFailedEvent 
+  | JobExecutionFailedEvent
+  | VerificationStartedEvent
+  | VerificationSubmittedEvent
+  | VerificationCompletedEvent
+  | VerificationFailedEvent 
