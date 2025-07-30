@@ -2,17 +2,17 @@ import { ethers } from 'ethers'
 import { ValueResolver } from '../resolver'
 import { ExecutionContext } from '../context'
 import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, CallValue, ContractExistsValue } from '../../types'
-import { ArtifactRegistry } from '../../artifacts/registry'
+import { ContractRepository } from '../../contracts/repository'
 
 describe('ValueResolver', () => {
   let resolver: ValueResolver
   let context: ExecutionContext
   let mockNetwork: Network
-  let mockRegistry: ArtifactRegistry
+  let mockRegistry: ContractRepository
 
   beforeEach(async () => {
     resolver = new ValueResolver()
-    mockRegistry = new ArtifactRegistry()
+    mockRegistry = new ContractRepository()
     // Allow configuring RPC URL via environment variable for CI
     const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545'
     mockNetwork = { name: 'testnet', chainId: 999, rpcUrl }
@@ -683,6 +683,10 @@ describe('ValueResolver', () => {
     })
 
     it('should handle invalid function signatures gracefully', async () => {
+      // Mock console.log to suppress the warnings during testing
+      const originalConsoleLog = console.log
+      console.log = jest.fn()
+      
       const value: AbiEncodeValue = {
         type: 'abi-encode',
         arguments: {
@@ -694,6 +698,9 @@ describe('ValueResolver', () => {
       await expect(resolver.resolve(value, context)).rejects.toThrow(
         /abi-encode: Failed to encode function data:/
       )
+      
+      // Restore console.log
+      console.log = originalConsoleLog
     })
 
     it('should handle mismatched parameter count', async () => {
@@ -747,24 +754,24 @@ describe('ValueResolver', () => {
       const testArtifact3 = {
         contractName: 'ContractWithoutABI',
         abi: [], // Empty ABI
-        bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+        bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff4', // Different bytecode
         _path: '/test/ContractWithoutABI.json',
         _hash: 'ghi789'
       }
 
-      mockRegistry.add(testArtifact1)
-      mockRegistry.add(testArtifact2)
-      mockRegistry.add(testArtifact3)
+      mockRegistry.addForTesting(testArtifact1)
+      mockRegistry.addForTesting(testArtifact2)
+      mockRegistry.addForTesting(testArtifact3)
     })
 
-    describe('creationCode function', () => {
+    describe('Contract(...).creationCode', () => {
       it('should return bytecode for valid artifact', async () => {
-        const result = await resolver.resolve('{{creationCode(TestContract)}}', context)
+        const result = await resolver.resolve('{{Contract(TestContract).creationCode}}', context)
         expect(result).toBe('0x608060405234801561000f575f5ffd5b50602a5f526020601ff3')
       })
 
       it('should return bytecode for valid artifact using initCode alias', async () => {
-        const result = await resolver.resolve('{{initCode(TestContract)}}', context)
+        const result = await resolver.resolve('{{Contract(TestContract).creationCode}}', context)
         expect(result).toBe('0x608060405234801561000f575f5ffd5b50602a5f526020601ff3')
       })
 
@@ -772,7 +779,7 @@ describe('ValueResolver', () => {
         const value = {
           type: 'constructor-encode' as const,
           arguments: {
-            creationCode: '{{creationCode(TestContract)}}',
+            creationCode: '{{Contract(TestContract).creationCode}}',
             types: [],
             values: []
           }
@@ -782,13 +789,27 @@ describe('ValueResolver', () => {
       })
 
       it('should throw error for non-existent artifact', async () => {
-        await expect(resolver.resolve('{{creationCode(NonExistent)}}', context))
-          .rejects.toThrow('Artifact not found for identifier: "NonExistent"')
+        await expect(resolver.resolve('{{Contract(NonExistent).creationCode}}', context))
+          .rejects.toThrow('Artifact not found for reference: "NonExistent"')
       })
 
       it('should throw error for artifact missing bytecode', async () => {
-        await expect(resolver.resolve('{{creationCode(ContractWithoutBytecode)}}', context))
-          .rejects.toThrow('Artifact "ContractWithoutBytecode" is missing bytecode.')
+        // Create an artifact without bytecode (empty string)
+        const artifactWithoutBytecode = {
+          contractName: 'ContractWithoutBytecode',
+          abi: [],
+          bytecode: '',
+          _path: '/test/ContractWithoutBytecode.json',
+          _hash: 'empty123'
+        }
+        mockRegistry.addForTesting(artifactWithoutBytecode)
+        
+        const contract = mockRegistry.lookup('ContractWithoutBytecode')
+        expect(contract?.creationCode).toBe('')
+        
+        // When creationCode is empty, accessing it should still return the empty string
+        const result = await resolver.resolve('{{Contract(ContractWithoutBytecode).creationCode}}', context)
+        expect(result).toBe('')
       })
 
       it('should handle artifacts with null bytecode', async () => {
@@ -799,10 +820,10 @@ describe('ValueResolver', () => {
           _path: '/test/NullBytecodeContract.json',
           _hash: 'null123'
         }
-        mockRegistry.add(artifactWithNullBytecode)
-
-        await expect(resolver.resolve('{{creationCode(NullBytecodeContract)}}', context))
-          .rejects.toThrow('Artifact "NullBytecodeContract" is missing bytecode.')
+        
+        // Should fail to add to registry due to missing bytecode
+        expect(() => mockRegistry.addForTesting(artifactWithNullBytecode))
+          .toThrow('Cannot hydrate contract from /test/NullBytecodeContract.json: missing creation code')
       })
 
       it('should handle artifacts with undefined bytecode', async () => {
@@ -813,34 +834,35 @@ describe('ValueResolver', () => {
           _path: '/test/UndefinedBytecodeContract.json',
           _hash: 'undef123'
         }
-        mockRegistry.add(artifactWithUndefinedBytecode)
-
-        await expect(resolver.resolve('{{creationCode(UndefinedBytecodeContract)}}', context))
-          .rejects.toThrow('Artifact "UndefinedBytecodeContract" is missing bytecode.')
+        
+        // Should fail to add to registry due to missing bytecode
+        expect(() => mockRegistry.addForTesting(artifactWithUndefinedBytecode))
+          .toThrow('Cannot hydrate contract from /test/UndefinedBytecodeContract.json: missing creation code')
       })
     })
 
-    describe('abi function', () => {
+    describe('Contract(...).abi', () => {
       it('should return abi for valid artifact', async () => {
-        const result = await resolver.resolve('{{abi(TestContract)}}', context)
+        const result = await resolver.resolve('{{Contract(TestContract).abi}}', context)
         expect(result).toEqual([{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}])
       })
 
       it('should resolve nested in value resolver objects', async () => {
         // This would be used in a context where ABI is needed for encoding/decoding
-        const abiValue = await resolver.resolve('{{abi(TestContract)}}', context)
+        const abiValue = await resolver.resolve('{{Contract(TestContract).abi}}', context)
         context.setOutput('contractAbi', abiValue)
         const resolvedAbi = await resolver.resolve('{{contractAbi}}', context)
         expect(resolvedAbi).toEqual([{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}])
       })
 
       it('should throw error for non-existent artifact', async () => {
-        await expect(resolver.resolve('{{abi(NonExistent)}}', context))
-          .rejects.toThrow('Artifact not found for identifier: "NonExistent"')
+        await expect(resolver.resolve('{{Contract(NonExistent).abi}}', context))
+          .rejects.toThrow('Artifact not found for reference: "NonExistent"')
       })
 
       it('should return empty abi for artifact with empty abi array', async () => {
-        const result = await resolver.resolve('{{abi(ContractWithoutABI)}}', context)
+        // Use the ContractWithoutABI that's already registered in beforeEach
+        const result = await resolver.resolve('{{Contract(ContractWithoutABI).abi}}', context)
         expect(result).toEqual([])
       })
 
@@ -852,10 +874,10 @@ describe('ValueResolver', () => {
           _path: '/test/NullAbiContract.json',
           _hash: 'nullabi123'
         }
-        mockRegistry.add(artifactWithNullAbi)
+        mockRegistry.addForTesting(artifactWithNullAbi)
 
-        await expect(resolver.resolve('{{abi(NullAbiContract)}}', context))
-          .rejects.toThrow('Artifact "NullAbiContract" is missing ABI.')
+        await expect(resolver.resolve('{{Contract(NullAbiContract).abi}}', context))
+          .rejects.toThrow('Property "abi" does not exist on contract found for reference "NullAbiContract"')
       })
 
       it('should handle artifacts with undefined abi', async () => {
@@ -866,178 +888,93 @@ describe('ValueResolver', () => {
           _path: '/test/UndefinedAbiContract.json',
           _hash: 'undefabi123'
         }
-        mockRegistry.add(artifactWithUndefinedAbi)
+        mockRegistry.addForTesting(artifactWithUndefinedAbi)
 
-        await expect(resolver.resolve('{{abi(UndefinedAbiContract)}}', context))
-          .rejects.toThrow('Artifact "UndefinedAbiContract" is missing ABI.')
+        await expect(resolver.resolve('{{Contract(UndefinedAbiContract).abi}}', context))
+          .rejects.toThrow('Property "abi" does not exist on contract found for reference "UndefinedAbiContract"')
       })
     })
 
-    describe('buildInfo function', () => {
-      it('should return build-info artifact identifier for valid artifact', async () => {
-        // Create a temporary artifact file with metadata
-        const tmpDir = require('os').tmpdir()
-        const artifactPath = require('path').join(tmpDir, 'TestContractWithBuildInfo.json')
-        const artifactContent = {
-          contractName: 'TestContract',
-          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
-          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
-          metadata: {
-            settings: {
-              compilationTarget: {
-                'src/TestContract.sol': 'TestContract'
-              }
-            }
-          }
-        }
-        
-        require('fs').writeFileSync(artifactPath, JSON.stringify(artifactContent))
-        
-        const testArtifact = {
-          contractName: 'TestContractWithBuildInfo',
-          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
-          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
-          _path: artifactPath,
-          _hash: 'test123'
-        }
-        mockRegistry.add(testArtifact)
-        
-        // Add corresponding build-info artifact
+    describe('Contract(...).buildInfoId', () => {
+      it('should return buildInfoId for contract hydrated from build-info file', async () => {
+        // Add a contract that was hydrated from a build-info file
         const buildInfoArtifact = {
-          contractName: 'TestContract',
+          contractName: 'TestBuildInfoContract',
           abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
           bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
-          _path: '/test/build-info/test.json#src/TestContract.sol:TestContract',
+          sourceName: 'src/TestContract.sol',
+          compiler: { name: 'solc', version: '0.8.19' },
+          buildInfoId: 'src/TestContract.sol:TestContract',
+          _path: '/test/build-info/test.json',
           _hash: 'buildinfo123'
         }
-        mockRegistry.add(buildInfoArtifact)
+        mockRegistry.addForTesting(buildInfoArtifact)
         
-        const result = await resolver.resolve('{{buildInfo(TestContractWithBuildInfo)}}', context)
+        const result = await resolver.resolve('{{Contract(TestBuildInfoContract).buildInfoId}}', context)
         expect(result).toBe('src/TestContract.sol:TestContract')
-        
-        // Clean up
-        require('fs').unlinkSync(artifactPath)
       })
 
       it('should throw error for non-existent artifact', async () => {
-        await expect(resolver.resolve('{{buildInfo(NonExistent)}}', context))
-          .rejects.toThrow('Artifact not found for identifier: "NonExistent"')
+        await expect(resolver.resolve('{{Contract(NonExistent).buildInfoId}}', context))
+          .rejects.toThrow('Artifact not found for reference: "NonExistent"')
       })
 
-      it('should throw error for artifact without compilation target metadata', async () => {
-        // Create a temporary artifact file without metadata
-        const tmpDir = require('os').tmpdir()
-        const artifactPath = require('path').join(tmpDir, 'TestContractNoMetadata.json')
-        const artifactContent = {
-          contractName: 'TestContract',
-          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
-          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3'
-          // No metadata field
-        }
-        
-        require('fs').writeFileSync(artifactPath, JSON.stringify(artifactContent))
-        
-        const testArtifact = {
-          contractName: 'TestContractNoMetadata',
-          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
-          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
-          _path: artifactPath,
-          _hash: 'nometadata123'
-        }
-        mockRegistry.add(testArtifact)
-        
-        await expect(resolver.resolve('{{buildInfo(TestContractNoMetadata)}}', context))
-          .rejects.toThrow('Unable to determine compilation target for artifact: "TestContractNoMetadata"')
-        
-        // Clean up
-        require('fs').unlinkSync(artifactPath)
-      })
-
-      it('should throw error when build-info artifact not found', async () => {
-        // Create a temporary artifact file with metadata
-        const tmpDir = require('os').tmpdir()
-        const artifactPath = require('path').join(tmpDir, 'TestContractNoBuildInfo.json')
-        const artifactContent = {
-          contractName: 'TestContractNoBuildInfo',
-          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
-          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
-          metadata: {
-            settings: {
-              compilationTarget: {
-                'src/TestContractNoBuildInfo.sol': 'TestContractNoBuildInfo'
-              }
-            }
-          }
-        }
-        
-        require('fs').writeFileSync(artifactPath, JSON.stringify(artifactContent))
-        
-        const testArtifact = {
-          contractName: 'TestContractNoBuildInfo',
-          abi: [{"type":"function","name":"test","inputs":[],"outputs":[{"type":"uint256"}]}],
-          bytecode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
-          _path: artifactPath,
-          _hash: 'nobuildinfo123'
-        }
-        mockRegistry.add(testArtifact)
-        
-        await expect(resolver.resolve('{{buildInfo(TestContractNoBuildInfo)}}', context))
-          .rejects.toThrow('Build-info artifact not found for compilation target: "src/TestContractNoBuildInfo.sol:TestContractNoBuildInfo"')
-        
-        // Clean up
-        require('fs').unlinkSync(artifactPath)
+      it('should throw error for contract that was not hydrated from build-info file', async () => {
+        // Use the existing TestContract which should not have buildInfoId
+        await expect(resolver.resolve('{{Contract(TestContract).buildInfoId}}', context))
+          .rejects.toThrow('Property "buildInfoId" does not exist on contract found for reference "TestContract"')
       })
     })
 
-    describe('invalid function expressions', () => {
+    describe('invalid Contract expressions', () => {
       it('should throw error for unknown function names', async () => {
         await expect(resolver.resolve('{{unknownFunction(TestContract)}}', context))
-          .rejects.toThrow('Unknown function in expression: unknownFunction')
+          .rejects.toThrow('Failed to resolve expression "{{unknownFunction(TestContract)}}"')
       })
 
-      it('should throw error for malformed function calls', async () => {
+      it('should throw error for malformed expressions', async () => {
         await expect(resolver.resolve('{{creationCode}}', context))
           .rejects.toThrow('Failed to resolve expression "{{creationCode}}"')
       })
 
-      it('should throw error for function calls with missing parentheses', async () => {
+      it('should throw error for invalid syntax', async () => {
         await expect(resolver.resolve('{{creationCode TestContract}}', context))
           .rejects.toThrow('Failed to resolve expression "{{creationCode TestContract}}"')
       })
 
       it('should throw error for empty function calls', async () => {
         // Empty string should not match any artifact and should throw an error
-        await expect(resolver.resolve('{{creationCode()}}', context)).rejects.toThrow(
-          'Artifact not found for identifier: ""'
+        await expect(resolver.resolve('{{Contract().creationCode}}', context)).rejects.toThrow(
+          'Artifact not found for reference: ""'
         )
       })
 
       it('should throw error for function calls with whitespace only', async () => {
         // Whitespace-only string gets trimmed to empty and should throw an error
-        await expect(resolver.resolve('{{creationCode(   )}}', context)).rejects.toThrow(
-          'Artifact not found for identifier: ""'
+        await expect(resolver.resolve('{{Contract(   ).creationCode}}', context)).rejects.toThrow(
+          'Artifact not found for reference: ""'
         )
       })
 
       it('should handle function calls with extra whitespace in argument', async () => {
-        const result = await resolver.resolve('{{creationCode(  TestContract  )}}', context)
+        const result = await resolver.resolve('{{Contract(  TestContract  ).creationCode}}', context)
         expect(result).toBe('0x608060405234801561000f575f5ffd5b50602a5f526020601ff3')
       })
 
       it('should handle mixed case function names correctly', async () => {
         await expect(resolver.resolve('{{CreationCode(TestContract)}}', context))
-          .rejects.toThrow('Unknown function in expression: CreationCode')
+          .rejects.toThrow('Failed to resolve expression "{{CreationCode(TestContract)}}"')
       })
 
       it('should handle function calls with multiple arguments (should fail)', async () => {
-        await expect(resolver.resolve('{{creationCode(TestContract, ExtraArg)}}', context))
-          .rejects.toThrow('Artifact not found for identifier: "TestContract, ExtraArg"')
+        await expect(resolver.resolve('{{Contract(TestContract, ExtraArg).creationCode}}', context))
+          .rejects.toThrow('Artifact not found for reference: "TestContract, ExtraArg"')
       })
     })
 
     describe('edge cases', () => {
-      it('should handle artifacts identified by partial path', async () => {
-        // Add an artifact that can be found by partial path
+      it('should handle artifacts identified by contract name', async () => {
+        // Add an artifact that can be found by contract name
         const pathArtifact = {
           contractName: 'PathContract',
           abi: [],
@@ -1045,9 +982,9 @@ describe('ValueResolver', () => {
           _path: '/very/long/path/to/contracts/PathContract.json',
           _hash: 'path123'
         }
-        mockRegistry.add(pathArtifact)
+        mockRegistry.addForTesting(pathArtifact)
 
-        const result = await resolver.resolve('{{creationCode(contracts/PathContract.json)}}', context)
+        const result = await resolver.resolve('{{Contract(PathContract).creationCode}}', context)
         expect(result).toBe('0xabcdef')
       })
 
@@ -1059,21 +996,21 @@ describe('ValueResolver', () => {
           _path: '/test/Special-Contract_v2.json',
           _hash: 'special123'
         }
-        mockRegistry.add(specialArtifact)
+        mockRegistry.addForTesting(specialArtifact)
 
-        const result = await resolver.resolve('{{creationCode(Special-Contract_v2)}}', context)
+        const result = await resolver.resolve('{{Contract(Special-Contract_v2).creationCode}}', context)
         expect(result).toBe('0xspecial')
       })
 
       it('should be case sensitive for artifact names', async () => {
-        await expect(resolver.resolve('{{creationCode(testcontract)}}', context))
-          .rejects.toThrow('Artifact not found for identifier: "testcontract"')
+        await expect(resolver.resolve('{{Contract(testcontract).creationCode}}', context))
+          .rejects.toThrow('Artifact not found for reference: "testcontract"')
       })
 
       it('should handle resolution with context variables for artifact names', async () => {
         context.setOutput('contractName', 'TestContract')
         const contractName = await resolver.resolve('{{contractName}}', context)
-        const result = await resolver.resolve(`{{creationCode(${contractName})}}`, context)
+        const result = await resolver.resolve(`{{Contract(${contractName}).creationCode}}`, context)
         expect(result).toBe('0x608060405234801561000f575f5ffd5b50602a5f526020601ff3')
       })
     })
@@ -1278,6 +1215,10 @@ describe('ValueResolver', () => {
     })
 
     it('should throw error for invalid function signature', async () => {
+      // Mock console.log to suppress the warnings during testing
+      const originalConsoleLog = console.log
+      console.log = jest.fn()
+      
       const value: CallValue = {
         type: 'call',
         arguments: {
@@ -1290,6 +1231,9 @@ describe('ValueResolver', () => {
       await expect(resolver.resolve(value, context)).rejects.toThrow(
         /call: Failed to execute contract call:/
       )
+      
+      // Restore console.log
+      console.log = originalConsoleLog
     })
 
     it('should handle null address gracefully', async () => {

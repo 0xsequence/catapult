@@ -75,65 +75,33 @@ export class ValueResolver {
    * @private
    */
   private async resolveExpression(expression: string, context: ExecutionContext, scope: ResolutionScope): Promise<any> {
-    // Check for function-like expressions, e.g., `creationCode(id)`
-    const funcMatch = expression.match(/^(\w+)\((.*)\)$/)
-    if (funcMatch) {
-      const [, funcName, argStr] = funcMatch
-      const arg = argStr.trim()
+    // Check for Contract(...) syntax with optional property access
+    const contractMatch = expression.match(/^Contract\((.*?)\)(\.\w+)?$/)
+    if (contractMatch) {
+      const [, reference, property] = contractMatch
+      const contractRef = reference.trim()
 
-      // Handle artifact-related functions
-      // NOTE: These should have been resolved during parsing, but we keep this as a fallback
-      // for any references that weren't resolved (e.g., dynamic artifact references)
-      if (funcName === 'creationCode' || funcName === 'initCode') {
-        const artifact = context.artifactRegistry.lookup(arg)
-        if (!artifact) throw new Error(`Artifact not found for identifier: "${arg}"`)
-        if (!artifact.bytecode) throw new Error(`Artifact "${artifact.contractName}" is missing bytecode.`)
-        return artifact.bytecode
+      // Look up the contract (contextPath is not available in resolver, but relative paths should be resolved at validation time)
+      const contract = context.contractRepository.lookup(contractRef)
+      if (!contract) {
+        throw new Error(`Artifact not found for reference: "${contractRef}"`)
       }
-      if (funcName === 'abi') {
-        const artifact = context.artifactRegistry.lookup(arg)
-        if (!artifact) throw new Error(`Artifact not found for identifier: "${arg}"`)
-        if (!artifact.abi) throw new Error(`Artifact "${artifact.contractName}" is missing ABI.`)
-        return artifact.abi
+
+      // If no property requested, return the entire Contract object
+      if (!property) {
+        return contract
       }
-      if (funcName === 'buildInfo') {
-        // For buildInfo, find the corresponding build-info artifact identifier
-        const artifact = context.artifactRegistry.lookup(arg)
-        if (!artifact) throw new Error(`Artifact not found for identifier: "${arg}"`)
-        
-        // Read the raw artifact file to extract compilation target from metadata
-        let compilationTarget: string | undefined
-        try {
-          const fs = await import('fs/promises')
-          const artifactContent = await fs.readFile(artifact._path, 'utf-8')
-          const artifactJson = JSON.parse(artifactContent)
-          
-          if (artifactJson.metadata?.settings?.compilationTarget) {
-            const target = artifactJson.metadata.settings.compilationTarget
-            const entries = Object.entries(target)
-            if (entries.length === 1) {
-              const [sourceName, contractName] = entries[0]
-              compilationTarget = `${sourceName}:${contractName}`
-            }
-          }
-        } catch (error) {
-          throw new Error(`Failed to read artifact file for compilation target extraction: ${error instanceof Error ? error.message : String(error)}`)
-        }
-        
-        if (!compilationTarget) {
-          throw new Error(`Unable to determine compilation target for artifact: "${arg}"`)
-        }
-        
-        // Look up the build-info artifact using the compilation target
-        const buildInfoArtifact = context.artifactRegistry.lookup(compilationTarget)
-        if (!buildInfoArtifact) {
-          throw new Error(`Build-info artifact not found for compilation target: "${compilationTarget}"`)
-        }
-        
-        return compilationTarget
+
+      // Extract the property name (remove the leading dot)
+      const propName = property.substring(1)
+
+      // Access the requested property
+      const value = (contract as any)[propName]
+      if (value === undefined) {
+        throw new Error(`Property "${propName}" does not exist on contract found for reference "${contractRef}"`)
       }
-      
-      throw new Error(`Unknown function in expression: ${funcName}`)
+
+      return value
     }
 
     // Check scope for local variables (template arguments) first
@@ -146,7 +114,7 @@ export class ValueResolver {
       return context.getOutput(expression)
     } catch (e) {
       // Provide a more helpful error if an unresolved reference is found
-      throw new Error(`Failed to resolve expression "{{${expression}}}". It is not a valid artifact function, local scope variable, or a known output.`)
+      throw new Error(`Failed to resolve expression "{{${expression}}}". It is not a valid Contract(...) reference, local scope variable, or a known output.`)
     }
   }
 

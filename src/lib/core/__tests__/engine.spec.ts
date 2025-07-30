@@ -1,14 +1,14 @@
 import { ethers } from 'ethers'
 import { ExecutionEngine } from '../engine'
 import { ExecutionContext } from '../context'
-import { ArtifactRegistry } from '../../artifacts/registry'
+import { ContractRepository } from '../../contracts/repository'
 import { Job, Template, JobAction, Action, Network } from '../../types'
 
 describe('ExecutionEngine', () => {
   let engine: ExecutionEngine
   let context: ExecutionContext
   let mockNetwork: Network
-  let mockRegistry: ArtifactRegistry
+  let mockRegistry: ContractRepository
   let templates: Map<string, Template>
   let anvilProvider: ethers.JsonRpcProvider
 
@@ -26,7 +26,7 @@ describe('ExecutionEngine', () => {
     const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545'
     anvilProvider = new ethers.JsonRpcProvider(rpcUrl)
     
-    mockRegistry = new ArtifactRegistry()
+    mockRegistry = new ContractRepository()
     const mockPrivateKey = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' // First anvil account
     
     context = new ExecutionContext(mockNetwork, mockPrivateKey, mockRegistry)

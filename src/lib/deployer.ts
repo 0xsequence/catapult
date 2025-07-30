@@ -151,12 +151,12 @@ export class Deployer {
           }
           
           try {
-            const context = new ExecutionContext(
-              network, 
-              this.options.privateKey, 
-              this.loader.artifactRegistry,
-              this.options.etherscanApiKey
-            )
+                      const context = new ExecutionContext(
+            network, 
+            this.options.privateKey, 
+            this.loader.contractRepository,
+            this.options.etherscanApiKey
+          )
             await engine.executeJob(job, context)
             
             // Store successful results

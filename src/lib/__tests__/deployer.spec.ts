@@ -98,7 +98,7 @@ describe('Deployer', () => {
       templates: new Map([
         ['template1', mockTemplate1]
       ]),
-      artifactRegistry: {} as any
+      contractRepository: {} as any
     } as any
 
     mockGraph = {

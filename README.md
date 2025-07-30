@@ -97,7 +97,7 @@ actions:
   - name: "deploy-factory"
     template: "sequence-universal-deployer-2"
     arguments:
-      creationCode: "{{creationCode(MyFactory)}}"
+      creationCode: "{{Contract(MyFactory).creationCode}}"
       salt: "0"
 
   - name: "deploy-implementation"
@@ -107,7 +107,7 @@ actions:
       creationCode:
         type: "constructor-encode"
         arguments:
-          creationCode: "{{creationCode(MyImplementation)}}"
+          creationCode: "{{Contract(MyImplementation).creationCode}}"
           types: ["address"]
           values: ["{{deploy-factory.address}}"]
       salt: "0"
@@ -159,7 +159,7 @@ skip_condition:
           initCode:
             type: "constructor-encode"
             arguments:
-              creationCode: "{{creationCode(ProxyBytecode)}}"
+              creationCode: "{{Contract(ProxyBytecode).creationCode}}"
               types: ["address"]
               values: ["{{implementation}}"]
 
@@ -172,7 +172,7 @@ outputs:
       initCode:
         type: "constructor-encode"
         arguments:
-          creationCode: "{{creationCode(ProxyBytecode)}}"
+          creationCode: "{{Contract(ProxyBytecode).creationCode}}"
           types: ["address"]
           values: ["{{implementation}}"]
 ```
@@ -221,10 +221,10 @@ List available jobs:
 catapult list jobs
 ```
 
-List detected artifacts:
+List detected contracts:
 
 ```bash
-catapult list artifacts
+catapult list contracts
 ```
 
 List available templates:
@@ -287,7 +287,7 @@ Encode constructor parameters with bytecode:
 creationCode:
   type: "constructor-encode"
   arguments:
-    creationCode: "{{creationCode(MyContract)}}"
+    creationCode: "{{Contract(MyContract).creationCode}}"
     types: ["address", "uint256"]
     values: ["{{factory.address}}", "100"]
 ```
@@ -344,8 +344,7 @@ Verify deployed contracts on block explorers:
 - type: "verify-contract"
   arguments:
     address: "{{deploy-factory.address}}"
-    buildInfo: "MyContract"  # Reference to build-info containing the contract
-    contractName: "contracts/MyContract.sol:MyContract"
+    contract: "{{Contract(MyContract)}}"  # Reference to the contract to verify
     constructorArguments: "0x000000000000000000000000..."  # Optional hex-encoded args
     platform: "etherscan_v2"  # Optional, defaults to etherscan_v2
 ```
@@ -382,21 +381,22 @@ Catapult includes several standard templates:
 - **`nano-universal-deployer`**: Deploy contracts using the Nano Universal Deployer
 - **`min-balance`**: Ensure minimum balance for any given address
 
-## Artifact Resolution
+## Contract Resolution
 
 Catapult automatically discovers and indexes contract artifacts in your project. It supports:
 
 - **JSON artifacts** (Hardhat, Truffle, Foundry)
 - **Nested directory structures**
-- **Hash-based artifact references**
-- **Path-based artifact references**
+- **Hash-based contract references**
+- **Path-based contract references**
+- **Name-based contract references**
 
-Reference artifacts in your YAML using:
+Reference contracts in your YAML using the new unified Contract() syntax:
 
 ```yaml
-creationCode: "{{creationCode(path/to/MyContract)}}"
+creationCode: "{{Contract(path/to/MyContract).creationCode}}"
 # or
-creationCode: "{{creationCode(0x1234...hash)}}"
+creationCode: "{{Contract(0x1234...hash).creationCode}}"
 ```
 
 ## Output Format

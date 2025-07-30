@@ -1,0 +1,3 @@
+- name: "Test Network"
+  chainId: 1337
+  rpcUrl: "http://localhost:8545"

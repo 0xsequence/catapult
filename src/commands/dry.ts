@@ -4,6 +4,7 @@ import { loadProject } from './common'
 import { loadNetworks } from '../lib/network-loader'
 import { DependencyGraph } from '../lib/core/graph'
 import { projectOption, noStdOption } from './common'
+import { validateContractReferences } from '../lib/validation/contract-references'
 
 interface DryRunOptions {
   project: string
@@ -34,17 +35,31 @@ export function makeDryRunCommand(): Command {
       const fullOrder = graph.getExecutionOrder()
       console.log(chalk.green('   - Dependency graph built successfully.'))
       
-      console.log(chalk.blue('\nValidating artifact references...'))
-      const artifactErrors = loader.validateArtifactReferences()
+      console.log(chalk.blue('\nContract Repository:'))
+      console.log(chalk.green(`   - Found ${loader.contractRepository.getAll().length} unique contracts.`))
       
-      if (artifactErrors.length > 0) {
-        console.log(chalk.red('   - Found missing artifact references:'))
-        for (const error of artifactErrors) {
-          console.log(chalk.red(`     ✗ ${error.location}: ${error.message}`))
+      // Check for ambiguous references
+      const ambiguousRefs = loader.contractRepository.getAmbiguousReferences()
+      if (ambiguousRefs.length > 0) {
+        console.log(chalk.red('\n   - Found ambiguous contract references:'))
+        for (const ref of ambiguousRefs) {
+          console.log(chalk.red(`     ✗ "${ref}" could refer to multiple contracts`))
         }
-        throw new Error(`Found ${artifactErrors.length} missing artifact reference(s). Please ensure all referenced artifacts exist.`)
+        throw new Error(`Found ${ambiguousRefs.length} ambiguous contract reference(s). Please use more specific references to resolve ambiguity.`)
       }
-      console.log(chalk.green('   - All artifact references validated successfully.'))
+      console.log(chalk.green('   - All contract references are unambiguous.'))
+      
+      // Validate that all Contract() references point to existing contracts
+      console.log(chalk.blue('\nValidating contract references...'))
+      const missingRefs = await validateContractReferences(loader)
+      if (missingRefs.length > 0) {
+        console.log(chalk.red('\n   - Found missing contract references:'))
+        for (const ref of missingRefs) {
+          console.log(chalk.red(`     ✗ ${ref.reference} in ${ref.location}`))
+        }
+        throw new Error(`Found ${missingRefs.length} missing contract reference(s). Please ensure all referenced contracts exist.`)
+      }
+      console.log(chalk.green('   - All contract references are valid.'))
       
       const runJobs = jobs.length > 0 ? jobs : undefined
       const runOnNetworks = options.network?.map(Number)

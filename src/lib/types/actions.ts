@@ -1,4 +1,5 @@
 import { AddressValue, BytesValue, Uint256Value, Value } from './values'
+import { Contract } from './contracts'
 import { Condition } from './conditions'
 
 // --- Primitive Actions ---
@@ -24,8 +25,7 @@ export interface VerifyContractAction {
   type: 'verify-contract';
   arguments: {
     address: AddressValue;
-    buildInfo: Value<string>; // Reference to build-info name/path
-    contractName: Value<string>; // Fully qualified name like "contracts/MyToken.sol:MyToken"
+    contract: Value<Contract>; // The contract to verify
     constructorArguments?: BytesValue; // Optional constructor args as hex string
     platform?: Value<string>; // Platform to verify on, defaults to "etherscan_v2"
   };

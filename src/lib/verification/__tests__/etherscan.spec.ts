@@ -56,6 +56,15 @@ describe('Etherscan Verification', () => {
     }
   }
 
+  const mockContract = {
+    contractName: 'MyToken',
+    sourceName: 'contracts/MyToken.sol',
+    abi: [],
+    creationCode: '0x608060405234801561001057600080fd5b50',
+    uniqueHash: 'test-hash',
+    _sources: new Set(['/test/path'])
+  } as any
+
   const createMockResponse = (data: any, ok = true, status = 200) => ({
     ok,
     status,
@@ -75,10 +84,12 @@ describe('Etherscan Verification', () => {
       }
       mockedFetch.mockResolvedValueOnce(createMockResponse(mockResponseData))
 
+
+
       const result = await submitVerification({
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
-        contractName: 'contracts/MyToken.sol:MyToken',
+        contract: mockContract,
         apiKey: 'test-api-key',
         network: mockNetwork
       })
@@ -107,7 +118,7 @@ describe('Etherscan Verification', () => {
       const result = await submitVerification({
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
-        contractName: 'contracts/MyToken.sol:MyToken',
+        contract: mockContract,
         apiKey: 'test-api-key',
         network: mockNetwork
       })
@@ -127,7 +138,7 @@ describe('Etherscan Verification', () => {
       await submitVerification({
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
-        contractName: 'contracts/MyToken.sol:MyToken',
+        contract: mockContract,
         constructorArguments: '0x000000000000000000000000742d35cc6596c743b2c8d12cd84d5b8fba4f3c',
         apiKey: 'test-api-key',
         network: mockNetwork
@@ -144,7 +155,7 @@ describe('Etherscan Verification', () => {
       const result = await submitVerification({
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
-        contractName: 'contracts/MyToken.sol:MyToken',
+        contract: mockContract,
         apiKey: 'test-api-key',
         network: mockNetwork
       })
@@ -169,7 +180,7 @@ describe('Etherscan Verification', () => {
       await submitVerification({
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
-        contractName: 'contracts/MyToken.sol:MyToken',
+        contract: mockContract,
         apiKey: 'test-api-key',
         network: sepoliaNetwork
       })
@@ -196,7 +207,7 @@ describe('Etherscan Verification', () => {
       const result = await submitVerification({
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
-        contractName: 'contracts/MyToken.sol:MyToken',
+        contract: mockContract,
         apiKey: 'test-api-key',
         network: customNetwork
       })
@@ -241,7 +252,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 3,
@@ -273,7 +284,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 2
@@ -301,7 +312,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork
         })
@@ -322,7 +333,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 3
@@ -344,7 +355,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 2,
@@ -367,7 +378,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork
           // No maxRetries or retryDelayMs specified - should use defaults
@@ -392,7 +403,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 2
@@ -411,7 +422,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 3
@@ -430,7 +441,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 1,
@@ -459,7 +470,7 @@ describe('Etherscan Verification', () => {
         const result = await submitVerification({
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
-          contractName: 'contracts/MyToken.sol:MyToken',
+          contract: mockContract,
           apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 1

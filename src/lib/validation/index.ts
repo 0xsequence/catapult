@@ -1,1 +1,1 @@
-export { ArtifactReferenceValidator, ArtifactReferenceError } from './artifact-references' 
+// No exports - validation logic is now integrated into ContractRepository 

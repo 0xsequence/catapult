@@ -15,7 +15,7 @@ interface NetworksListOptions {
 
 export function makeListCommand(): Command {
   const list = new Command('list')
-    .description('List project resources like jobs, artifacts, and networks')
+    .description('List project resources like jobs, contracts, and networks')
 
   const listJobs = new Command('jobs')
     .description('List all available jobs in the project')
@@ -43,52 +43,50 @@ export function makeListCommand(): Command {
     }
   })
 
-  const listArtifacts = new Command('artifacts')
-    .description('List all artifacts found in the project')
-  projectOption(listArtifacts)
-  noStdOption(listArtifacts)
-  listArtifacts.action(async (options: ListOptions) => {
+  const listContracts = new Command('contracts')
+    .description('List all contracts found in the project')
+  projectOption(listContracts)
+  noStdOption(listContracts)
+  listContracts.action(async (options: ListOptions) => {
     try {
       const loader = await loadProject(options.project, { 
         loadStdTemplates: options.std !== false 
       })
-      const artifacts = loader.artifactRegistry.getAll()
-      const buildInfos = loader.artifactRegistry.getBuildInfos()
+      const contracts = loader.contractRepository.getAll()
+      const ambiguousRefs = loader.contractRepository.getAmbiguousReferences()
 
-      // Display artifacts
-      console.log(chalk.bold.underline('Available Artifacts:'))
-      if (artifacts.length === 0) {
-        console.log(chalk.yellow('No artifacts found in this project.'))
+      // Display contracts
+      console.log(chalk.bold.underline('Available Contracts:'))
+      if (contracts.length === 0) {
+        console.log(chalk.yellow('No contracts found in this project.'))
       } else {
-        for (const artifact of artifacts) {
-          const relativePath = path.relative(options.project, artifact._path)
-          console.log(`- ${chalk.cyan(artifact.contractName)}`)
-          console.log(`  ${chalk.gray('Path:')} ${relativePath}`)
-          console.log(`  ${chalk.gray('Hash:')} ${artifact._hash}`)
+        for (const contract of contracts) {
+          const name = contract.contractName || 'Unknown'
+          const source = contract.sourceName || 'Unknown'
+          console.log(`- ${chalk.cyan(name)} (${source})`)
+          console.log(`  ${chalk.gray('Unique Hash:')} ${contract.uniqueHash.substring(0, 12)}...`)
+          if (contract.buildInfoId) {
+            console.log(`  ${chalk.gray('Build Info ID:')} ${contract.buildInfoId}`)
+          }
+          console.log(`  ${chalk.gray('Sources:')} ${Array.from(contract._sources).map(p => path.relative(options.project, p)).join(', ')}`)
         }
       }
 
-      // Display build-info files
-      console.log('\n' + chalk.bold.underline('Build Info Files:'))
-      if (buildInfos.length === 0) {
-        console.log(chalk.yellow('No build-info files found in this project.'))
-      } else {
-        for (const buildInfo of buildInfos) {
-          const relativePath = path.relative(options.project, buildInfo.filePath)
-          console.log(`- ${chalk.cyan(buildInfo.buildInfo.id)}`)
-          console.log(`  ${chalk.gray('Path:')} ${relativePath}`)
-          console.log(`  ${chalk.gray('Solc Version:')} ${buildInfo.buildInfo.solcVersion}`)
-          console.log(`  ${chalk.gray('Hash:')} ${buildInfo.hash}`)
-          console.log(`  ${chalk.gray('Extracted Contracts:')} ${buildInfo.extractedContracts.join(', ')}`)
+      // Display ambiguous references if any
+      if (ambiguousRefs.length > 0) {
+        console.log('\n' + chalk.bold.underline(chalk.yellow('Ambiguous References:')))
+        console.log(chalk.yellow('The following references point to multiple contracts:'))
+        for (const ref of ambiguousRefs) {
+          console.log(`- ${chalk.red(ref)}`)
         }
+        console.log(chalk.yellow('Use the unique hash or a more specific path to reference these contracts.'))
       }
 
-      // If both are empty, show a general message
-      if (artifacts.length === 0 && buildInfos.length === 0) {
-        console.log('\n' + chalk.yellow('No artifacts or build-info files found in this project.'))
+      if (contracts.length === 0) {
+        console.log('\n' + chalk.yellow('No contracts found in this project. Make sure you have artifact files or build-info files in your project.'))
       }
     } catch (error) {
-      console.error(chalk.red('Error listing artifacts:'), error instanceof Error ? error.message : String(error))
+      console.error(chalk.red('Error listing contracts:'), error instanceof Error ? error.message : String(error))
       process.exit(1)
     }
   })
@@ -141,7 +139,7 @@ export function makeListCommand(): Command {
   })
 
   list.addCommand(listJobs)
-  list.addCommand(listArtifacts)
+  list.addCommand(listContracts)
   list.addCommand(listTemplates)
   list.addCommand(listNetworks)
 

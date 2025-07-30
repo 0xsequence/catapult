@@ -21,9 +21,9 @@ jest.mock('../core/loader', () => {
         load: jest.fn().mockResolvedValue(undefined),
         jobs: mockJobs,
         templates: mockTemplates,
-        artifactRegistry: {
-          getByName: jest.fn(),
-          getByHash: jest.fn()
+        contractRepository: {
+          lookup: jest.fn(),
+          getAll: jest.fn()
         }
       }
     })
@@ -225,9 +225,9 @@ describe('Deployer Event Integration', () => {
           }]
         ]),
         templates: new Map(),
-        artifactRegistry: {
-          getByName: jest.fn(),
-          getByHash: jest.fn()
+        contractRepository: {
+          lookup: jest.fn(),
+          getAll: jest.fn()
         }
       }))
       
@@ -271,9 +271,9 @@ describe('Deployer Event Integration', () => {
           }]
         ]),
         templates: new Map(),
-        artifactRegistry: {
-          getByName: jest.fn(),
-          getByHash: jest.fn()
+        contractRepository: {
+          lookup: jest.fn(),
+          getAll: jest.fn()
         }
       }))
       

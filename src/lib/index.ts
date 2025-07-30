@@ -2,7 +2,7 @@
 export * from './types'
 
 // Export core classes
-export * from './artifacts/registry'
+export * from './contracts/repository'
 
 // Export all parsers
 export * as parsers from './parsers'

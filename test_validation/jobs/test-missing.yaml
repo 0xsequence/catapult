@@ -1,0 +1,16 @@
+name: "test-missing"
+version: "1.0.0"
+description: "Test job that references a non-existent contract"
+
+actions:
+  - name: "deploy-valid"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      creationCode: "{{Contract(TestContract).creationCode}}"
+      salt: "0"
+      
+  - name: "deploy-missing"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      creationCode: "{{Contract(NonExistentContract).creationCode}}"
+      salt: "0"

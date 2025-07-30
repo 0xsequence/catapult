@@ -23,7 +23,7 @@ describe('parseJob', () => {
     expect(factoryAction).toBeDefined()
     expect(factoryAction?.template).toBe('sequence-universal-deployer-2')
     expect(factoryAction?.arguments).toEqual({
-      creationCode: '{{creationCode(sequence/v1/factory)}}',
+      creationCode: '{{Contract(sequence/v1/factory).creationCode}}',
       salt: '0',
     })
     expect(factoryAction?.depends_on).toBeUndefined()
@@ -38,7 +38,7 @@ describe('parseJob', () => {
       creationCode: {
         type: 'constructor-encode',
         arguments: {
-          creationCode: '{{creationCode(sequence/v1/main-module)}}',
+          creationCode: '{{Contract(sequence/v1/main-module).creationCode}}',
           types: ['address'],
           values: ['{{factory.address}}'],
         },

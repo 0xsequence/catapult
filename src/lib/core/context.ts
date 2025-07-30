@@ -1,11 +1,11 @@
 import { ethers } from 'ethers'
 import { Network } from '../types'
-import { ArtifactRegistry } from '../artifacts/registry'
+import { ContractRepository } from '../contracts/repository'
 
 export class ExecutionContext {
   public readonly provider: ethers.JsonRpcProvider
   public readonly signer: ethers.Wallet
-  public readonly artifactRegistry: ArtifactRegistry
+  public readonly contractRepository: ContractRepository
   private outputs: Map<string, any> = new Map()
   private network: Network
   private etherscanApiKey?: string
@@ -13,13 +13,13 @@ export class ExecutionContext {
   constructor(
     network: Network, 
     privateKey: string, 
-    artifactRegistry: ArtifactRegistry,
+    contractRepository: ContractRepository,
     etherscanApiKey?: string
   ) {
     this.network = network
     this.provider = new ethers.JsonRpcProvider(network.rpcUrl)
     this.signer = new ethers.Wallet(privateKey, this.provider)
-    this.artifactRegistry = artifactRegistry
+    this.contractRepository = contractRepository
     this.etherscanApiKey = etherscanApiKey
   }
 
@@ -31,8 +31,8 @@ export class ExecutionContext {
     return this.etherscanApiKey
   }
 
-  public getArtifactRegistry(): ArtifactRegistry {
-    return this.artifactRegistry
+  public getContractRepository(): ContractRepository {
+    return this.contractRepository
   }
 
   // To store results like `{{sequence-v1.factory.address}}`

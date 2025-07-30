@@ -2,9 +2,7 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { parseJob, parseTemplate } from '../parsers'
 import { Job, Template } from '../types'
-import { ArtifactRegistry } from '../artifacts/registry'
-import { ArtifactReferenceValidator, ArtifactReferenceError } from '../validation/artifact-references'
-import { ArtifactPathResolver } from './artifact-resolver'
+import { ContractRepository } from '../contracts/repository'
 
 export interface ProjectLoaderOptions {
   loadStdTemplates?: boolean
@@ -13,18 +11,18 @@ export interface ProjectLoaderOptions {
 export class ProjectLoader {
   public jobs: Map<string, Job> = new Map()
   public templates: Map<string, Template> = new Map()
-  public readonly artifactRegistry: ArtifactRegistry
+  public readonly contractRepository: ContractRepository
 
   constructor(
     private readonly projectRoot: string,
     private readonly options: ProjectLoaderOptions = {}
   ) {
-    this.artifactRegistry = new ArtifactRegistry()
+    this.contractRepository = new ContractRepository()
   }
 
   async load() {
-    // Load all artifacts from the project root first.
-    await this.artifactRegistry.loadFrom(this.projectRoot)
+    // Load all contracts from the project root first
+    await this.contractRepository.loadFrom(this.projectRoot)
 
     // Load standard library templates (unless disabled)
     if (this.options.loadStdTemplates !== false) {
@@ -45,9 +43,6 @@ export class ProjectLoader {
     if (await this.pathExists(jobsPath)) {
         await this.loadJobsFromDir(jobsPath)
     }
-
-    // Resolve relative artifact paths to absolute paths
-    this.resolveArtifactPaths()
   }
 
   private async loadTemplatesFromDir(dir: string) {
@@ -126,33 +121,7 @@ export class ProjectLoader {
     return results
   }
 
-  /**
-   * Resolves relative artifact paths to absolute paths in all jobs and templates.
-   * This is called after loading to ensure all artifact references are absolute paths.
-   * @private
-   */
-  private resolveArtifactPaths(): void {
-    const resolver = new ArtifactPathResolver(this.artifactRegistry)
 
-    // Resolve artifact paths in all jobs
-    for (const job of this.jobs.values()) {
-      resolver.resolveJobArtifacts(job)
-    }
-
-    // Resolve artifact paths in all templates
-    for (const template of this.templates.values()) {
-      resolver.resolveTemplateArtifacts(template)
-    }
-  }
-
-  /**
-   * Validates that all artifact references in jobs and templates exist in the registry.
-   * @returns Array of validation errors (empty if all references are valid)
-   */
-  public validateArtifactReferences(): ArtifactReferenceError[] {
-    const validator = new ArtifactReferenceValidator(this.artifactRegistry)
-    return validator.validateAll(this.jobs, this.templates)
-  }
 
   private async pathExists(p: string): Promise<boolean> {
       try {

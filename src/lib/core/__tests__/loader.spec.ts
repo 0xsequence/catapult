@@ -219,7 +219,7 @@ actions: []`
       const loader = new ProjectLoader(tempDir)
       await loader.load()
 
-      expect(loader.artifactRegistry.lookup('TestContract')).toBeDefined()
+      expect(loader.contractRepository.lookup('TestContract')).toBeDefined()
     })
   })
 

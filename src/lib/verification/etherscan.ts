@@ -1,10 +1,11 @@
 import { Network } from '../types/network'
 import { BuildInfo } from '../types/buildinfo'
+import { Contract } from '../types/contracts'
 
 export interface VerificationRequest {
-  address: string
+  contract: Contract  // Contract object 
   buildInfo: BuildInfo
-  contractName: string  // Fully qualified name like "contracts/MyToken.sol:MyToken"
+  address: string
   constructorArguments?: string  // Hex encoded constructor args
   apiKey: string
   network: Network
@@ -71,6 +72,9 @@ function getEtherscanApiUrl(chainId: number): string {
 async function submitVerificationAttempt(request: VerificationRequest): Promise<VerificationResult> {
   const apiUrl = getEtherscanApiUrl(request.network.chainId)
   
+  // Extract the fully qualified contract name from the contract object
+  const contractName = `${request.contract.sourceName}:${request.contract.contractName}`
+  
   // Clean the input to only include standard Solidity compiler input format keys
   const cleanedInput = {
     language: request.buildInfo.input.language,
@@ -98,7 +102,7 @@ async function submitVerificationAttempt(request: VerificationRequest): Promise<
     codeformat: 'solidity-standard-json-input',
     sourceCode,
     contractaddress: request.address,
-    contractname: request.contractName,
+    contractname: contractName,
     compilerversion: `v${fullCompilerVersion}`,
     apikey: request.apiKey,
   })

@@ -1,4 +1,5 @@
 import { Job, Template, Action, JobAction, isPrimitiveActionType, Condition } from '../types'
+import { Contract } from '../types/contracts'
 import { ExecutionContext } from './context'
 import { ValueResolver, ResolutionScope } from './resolver'
 import { validateAddress, validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
@@ -338,8 +339,7 @@ export class ExecutionEngine {
         
         // Resolve arguments
         const resolvedAddress = await this.resolver.resolve(action.arguments.address, context, scope)
-        const resolvedBuildInfo = await this.resolver.resolve(action.arguments.buildInfo, context, scope)
-        const resolvedContractName = await this.resolver.resolve(action.arguments.contractName, context, scope)
+        const resolvedContract = await this.resolver.resolve(action.arguments.contract, context, scope)
         const resolvedConstructorArgs = action.arguments.constructorArguments 
           ? await this.resolver.resolve(action.arguments.constructorArguments, context, scope)
           : undefined
@@ -350,16 +350,28 @@ export class ExecutionEngine {
         // Validate inputs
         const address = validateAddress(resolvedAddress, actionName)
         
-        if (typeof resolvedBuildInfo !== 'string') {
-          throw new Error(`Action "${actionName}": buildInfo must be a string reference`)
+        if (!resolvedContract || typeof resolvedContract !== 'object') {
+          throw new Error(`Action "${actionName}": contract must be a Contract object`)
         }
-        
-        if (typeof resolvedContractName !== 'string') {
-          throw new Error(`Action "${actionName}": contractName must be a string`)
-        }
+
+        const contract = resolvedContract as Contract
 
         if (typeof resolvedPlatform !== 'string') {
           throw new Error(`Action "${actionName}": platform must be a string`)
+        }
+
+        // Validate that the contract has the necessary information for verification
+        if (!contract.sourceName) {
+          throw new Error(`Action "${actionName}": Contract is missing sourceName required for verification`)
+        }
+        if (!contract.contractName) {
+          throw new Error(`Action "${actionName}": Contract is missing contractName required for verification`)
+        }
+        if (!contract.compiler) {
+          throw new Error(`Action "${actionName}": Contract is missing compiler information required for verification`)
+        }
+        if (!contract.buildInfoId) {
+          throw new Error(`Action "${actionName}": Contract is missing buildInfoId required for verification`)
         }
 
         // Validate constructor arguments if provided
@@ -400,21 +412,17 @@ export class ExecutionEngine {
           throw new Error(`Action "${actionName}": Unsupported verification platform "${resolvedPlatform}". Currently only "etherscan_v2" is supported.`)
         }
 
-        // Get build info from artifact registry
-        const artifactRegistry = context.getArtifactRegistry()
-        const artifact = artifactRegistry.lookup(resolvedBuildInfo)
-        
-        if (!artifact) {
-          throw new Error(`Action "${actionName}": Build info "${resolvedBuildInfo}" not found in artifact registry`)
+        // Find the build-info file from the contract's sources
+        let buildInfoPath: string | undefined
+        for (const sourcePath of contract._sources) {
+          if (sourcePath.includes('/build-info/') && sourcePath.endsWith('.json')) {
+            buildInfoPath = sourcePath
+            break
+          }
         }
 
-        // Extract build-info file path from artifact path
-        // For build-info artifacts, _path is in format: "/path/to/buildinfo.json#contractName"
-        let buildInfoPath: string
-        if (artifact._path.includes('#')) {
-          buildInfoPath = artifact._path.split('#')[0]
-        } else {
-          throw new Error(`Action "${actionName}": Artifact "${resolvedBuildInfo}" does not appear to be from a build-info file`)
+        if (!buildInfoPath) {
+          throw new Error(`Action "${actionName}": No build-info file found in contract sources`)
         }
 
         // Load the actual build info file
@@ -433,13 +441,15 @@ export class ExecutionEngine {
           throw new Error(`Action "${actionName}": Failed to parse build info JSON: ${error instanceof Error ? error.message : String(error)}`)
         }
 
+        const contractName = `${contract.sourceName}:${contract.contractName}`
+
         this.events.emitEvent({
           type: 'verification_started',
           level: 'info',
           data: {
             actionName: actionName,
             address,
-            contractName: resolvedContractName,
+            contractName,
             platform: resolvedPlatform,
             networkName: network.name
           }
@@ -448,9 +458,9 @@ export class ExecutionEngine {
         try {
           // Submit verification
           const verificationResult = await submitVerification({
-            address,
+            contract,
             buildInfo,
-            contractName: resolvedContractName,
+            address,
             constructorArguments,
             apiKey: etherscanApiKey,
             network
@@ -482,7 +492,7 @@ export class ExecutionEngine {
               data: {
                 actionName: actionName,
                 address,
-                contractName: resolvedContractName,
+                contractName,
                 message: 'Contract verified successfully'
               }
             })
@@ -502,7 +512,7 @@ export class ExecutionEngine {
             data: {
               actionName: actionName,
               address,
-              contractName: resolvedContractName,
+              contractName,
               error: error instanceof Error ? error.message : String(error)
             }
           })
