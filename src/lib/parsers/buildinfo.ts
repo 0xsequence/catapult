@@ -23,23 +23,6 @@ function isValidBuildInfo(data: any): data is BuildInfo {
 }
 
 /**
- * Validates the build-info id by recomputing the hash
- */
-function validateBuildInfoId(buildInfo: BuildInfo): boolean {
-  try {
-    // Recreate the stable JSON string as per spec (alphabetical key sort, no whitespace)
-    const stableInput = JSON.stringify(buildInfo.input, Object.keys(buildInfo.input).sort())
-    const inputString = buildInfo.solcVersion + stableInput
-    const expectedId = keccak256(toUtf8Bytes(inputString)).slice(2) // Remove '0x' prefix
-    
-    return expectedId === buildInfo.id
-  } catch (error) {
-    // If we can't validate, we'll warn but continue
-    return false
-  }
-}
-
-/**
  * Parses a build-info file and extracts individual contracts
  * @param content The raw string content of the build-info file
  * @param filePath The path to the build-info file
@@ -52,12 +35,7 @@ export function parseBuildInfo(content: string, filePath: string): ExtractedCont
     if (!isValidBuildInfo(data)) {
       return null
     }
-    
-    // Validate the build-info id (warn if invalid but continue parsing)
-    if (!validateBuildInfoId(data)) {
-      console.warn(`⚠️ build-info id mismatch in ${filePath}; file may be tampered`)
-    }
-    
+
     const extractedContracts: ExtractedContract[] = []
     
     // Extract contracts from output.contracts
