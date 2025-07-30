@@ -160,7 +160,7 @@ actions:
     arguments: {}
 `
     expect(() => parseJob(yamlContent)).toThrow(
-      'Invalid job "my-job": action "my-action" is missing the required "template" field.',
+      'Invalid job "my-job": action "my-action" must have either a "template" field (for template actions) or a "type" field (for primitive actions).',
     )
   })
 

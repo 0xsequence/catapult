@@ -7,7 +7,7 @@ actions:
   - name: "factory"
     template: "sequence-universal-deployer-2"
     arguments:
-      creationCode: "{{creationCode(sequence/v1/factory)}}"
+      creationCode: "{{Contract(sequence/v1/factory).creationCode}}"
       salt: "0"
 
   - name: "main-module"
@@ -18,7 +18,7 @@ actions:
       creationCode:
         type: "constructor-encode"
         arguments:
-          creationCode: "{{creationCode(sequence/v1/main-module)}}"
+          creationCode: "{{Contract(sequence/v1/main-module).creationCode}}"
           types: ["address"]
           values: ["{{factory.address}}"]
 
@@ -26,13 +26,13 @@ actions:
     template: "sequence-universal-deployer-2"
     arguments:
       salt: "0"
-      creationCode: "{{creationCode(sequence/v1/main-module-upgradeable)}}"
+      creationCode: "{{Contract(sequence/v1/main-module-upgradeable).creationCode}}"
 
   - name: "guest-module"
     template: "sequence-universal-deployer-2"
     arguments:
       salt: "0"
-      creationCode: "{{creationCode(sequence/v1/guest-module)}}"
+      creationCode: "{{Contract(sequence/v1/guest-module).creationCode}}"
 
   - name: "sequence-utils"
     template: "sequence-universal-deployer-2"
@@ -42,7 +42,7 @@ actions:
       creationCode:
         type: "constructor-encode"
         arguments:
-          creationCode: "{{creationCode(sequence/v1/sequence-utils)}}"
+          creationCode: "{{Contract(sequence/v1/sequence-utils).creationCode}}"
           types: ["address", "address"]
           values: ["{{factory.address}}", "{{main-module.address}}"]
 
@@ -54,6 +54,6 @@ actions:
       creationCode:
         type: "constructor-encode"
         arguments:
-          creationCode: "{{creationCode(sequence/v1/require-fresh-signer-lib)}}"
+          creationCode: "{{Contract(sequence/v1/require-fresh-signer-lib).creationCode}}"
           types: ["address"]
           values: ["{{sequence-utils.address}}"]
