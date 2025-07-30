@@ -153,14 +153,17 @@ export class ContractRepository {
         references.push(`${contract.sourceName}:${contract.contractName}`)
       }
 
-      // Add file paths from sources
+      // Add file paths from sources (excluding build-info files since they can contain multiple contracts)
       for (const sourcePath of contract._sources) {
-        references.push(sourcePath)
-        
-        // Add relative paths (both forward and backward variants)
-        const relativePath = path.relative(process.cwd(), sourcePath)
-        if (relativePath !== sourcePath) {
-          references.push(relativePath)
+        // Skip build-info files as they legitimately contain multiple contracts
+        if (!isBuildInfoFile(sourcePath)) {
+          references.push(sourcePath)
+          
+          // Add relative paths (both forward and backward variants)
+          const relativePath = path.relative(process.cwd(), sourcePath)
+          if (relativePath !== sourcePath) {
+            references.push(relativePath)
+          }
         }
       }
 

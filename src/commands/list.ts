@@ -64,7 +64,7 @@ export function makeListCommand(): Command {
           const name = contract.contractName || 'Unknown'
           const source = contract.sourceName || 'Unknown'
           console.log(`- ${chalk.cyan(name)} (${source})`)
-          console.log(`  ${chalk.gray('Unique Hash:')} ${contract.uniqueHash.substring(0, 12)}...`)
+          console.log(`  ${chalk.gray('Unique Hash:')} ${contract.uniqueHash}`)
           if (contract.buildInfoId) {
             console.log(`  ${chalk.gray('Build Info ID:')} ${contract.buildInfoId}`)
           }

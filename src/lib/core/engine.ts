@@ -75,7 +75,14 @@ export class ExecutionEngine {
     scope: ResolutionScope,
   ): Promise<void> {
     const actionName = 'name' in action ? action.name : action.type
-    const templateName = 'template' in action ? action.template : action.type
+    // For JobAction, get template or type; for Action, get type
+    const templateName = 'template' in action 
+      ? (action.template || action.type) 
+      : action.type
+    
+    if (!templateName) {
+      throw new Error(`Action "${actionName}": missing both template and type fields`)
+    }
     
     this.events.emitEvent({
       type: 'action_started',
@@ -104,7 +111,7 @@ export class ExecutionEngine {
       // Convert JobAction to Action for primitive execution
       const primitiveAction: Action = 'template' in action 
         ? {
-            type: action.template as any,
+            type: (action.type || action.template) as any,
             name: action.name,
             arguments: action.arguments,
             skip_condition: action.skip_condition,

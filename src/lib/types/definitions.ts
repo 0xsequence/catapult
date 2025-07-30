@@ -28,7 +28,8 @@ export interface Template {
 
 export interface JobAction {
     name: string; // Unique name for this action within the job
-    template: string; // Name of the template to use
+    template?: string; // Name of the template to use (for template actions)
+    type?: string; // Type of primitive action (for primitive actions)
     arguments: Record<string, Value<any>>;
     skip_condition?: Condition[];
     depends_on?: string[];

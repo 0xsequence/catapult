@@ -74,14 +74,20 @@ export class DependencyGraph {
 
     // 2. Find dependencies within the templates used by the job's actions.
     for (const action of job.actions) {
+      // Get the template or type name
+      const templateName = action.template || action.type
+      if (!templateName) {
+        throw new Error(`Invalid configuration: Action in job "${jobName}" has no template or type field.`)
+      }
+      
       // If the action is a primitive, it cannot have job dependencies. Skip it.
-      if (isPrimitiveActionType(action.template)) {
+      if (isPrimitiveActionType(templateName)) {
         continue
       }
       
-      const template = this.templates.get(action.template)
+      const template = this.templates.get(templateName)
       if (!template) {
-        throw new Error(`Invalid configuration: Template "${action.template}" used by job "${jobName}" not found.`)
+        throw new Error(`Invalid configuration: Template "${templateName}" used by job "${jobName}" not found.`)
       }
 
       // Recursively find dependencies in the template's setup block.
@@ -162,10 +168,11 @@ export class DependencyGraph {
 
     const directDependencies = new Set(job.depends_on || [])
     for (const action of job.actions) {
-      if (isPrimitiveActionType(action.template)) {
+      const templateName = action.template || action.type
+      if (!templateName || isPrimitiveActionType(templateName)) {
         continue
       }
-      const template = this.templates.get(action.template)!
+      const template = this.templates.get(templateName)!
       this.findTemplateSetupDependencies(template).forEach(dep => directDependencies.add(dep))
     }
     

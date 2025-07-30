@@ -4,7 +4,7 @@ import { loadProject } from './common'
 import { loadNetworks } from '../lib/network-loader'
 import { DependencyGraph } from '../lib/core/graph'
 import { projectOption, noStdOption } from './common'
-import { validateContractReferences } from '../lib/validation/contract-references'
+import { validateContractReferences, extractUsedContractReferences } from '../lib/validation/contract-references'
 
 interface DryRunOptions {
   project: string
@@ -38,16 +38,20 @@ export function makeDryRunCommand(): Command {
       console.log(chalk.blue('\nContract Repository:'))
       console.log(chalk.green(`   - Found ${loader.contractRepository.getAll().length} unique contracts.`))
       
-      // Check for ambiguous references
-      const ambiguousRefs = loader.contractRepository.getAmbiguousReferences()
-      if (ambiguousRefs.length > 0) {
-        console.log(chalk.red('\n   - Found ambiguous contract references:'))
-        for (const ref of ambiguousRefs) {
+      // Check for ambiguous references that are actually being used
+      const usedRefs = await extractUsedContractReferences(loader)
+      const allAmbiguousRefs = loader.contractRepository.getAmbiguousReferences()
+      const usedRefNames = usedRefs.map(ref => ref.reference)
+      const usedAmbiguousRefs = allAmbiguousRefs.filter(ref => usedRefNames.includes(ref))
+      
+      if (usedAmbiguousRefs.length > 0) {
+        console.log(chalk.red('\n   - Found ambiguous contract references being used:'))
+        for (const ref of usedAmbiguousRefs) {
           console.log(chalk.red(`     ✗ "${ref}" could refer to multiple contracts`))
         }
-        throw new Error(`Found ${ambiguousRefs.length} ambiguous contract reference(s). Please use more specific references to resolve ambiguity.`)
+        throw new Error(`Found ${usedAmbiguousRefs.length} ambiguous contract reference(s) being used. Please use more specific references to resolve ambiguity.`)
       }
-      console.log(chalk.green('   - All contract references are unambiguous.'))
+      console.log(chalk.green('   - All used contract references are unambiguous.'))
       
       // Validate that all Contract() references point to existing contracts
       console.log(chalk.blue('\nValidating contract references...'))

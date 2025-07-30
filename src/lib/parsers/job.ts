@@ -48,9 +48,18 @@ export function parseJob(yamlContent: string): Job {
     if (!action.name || typeof action.name !== 'string') {
       throw new Error(`Invalid job "${rawObject.name}": an action is missing the required "name" field.`)
     }
-    if (!action.template || typeof action.template !== 'string') {
-      throw new Error(`Invalid job "${rawObject.name}": action "${action.name}" is missing the required "template" field.`)
+    
+    // Validate that the action has either a template or type field, but not both
+    const hasTemplate = action.template && typeof action.template === 'string'
+    const hasType = action.type && typeof action.type === 'string'
+    
+    if (!hasTemplate && !hasType) {
+      throw new Error(`Invalid job "${rawObject.name}": action "${action.name}" must have either a "template" field (for template actions) or a "type" field (for primitive actions).`)
     }
+    if (hasTemplate && hasType) {
+      throw new Error(`Invalid job "${rawObject.name}": action "${action.name}" cannot have both "template" and "type" fields. Use only one.`)
+    }
+    
     if (!action.arguments || typeof action.arguments !== 'object' || Array.isArray(action.arguments)) {
       throw new Error(`Invalid job "${rawObject.name}": action "${action.name}" is missing the required "arguments" field or it is not an object.`)
     }
