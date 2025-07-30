@@ -81,8 +81,8 @@ export class ValueResolver {
       const [, reference, property] = contractMatch
       const contractRef = reference.trim()
 
-      // Look up the contract (contextPath is not available in resolver, but relative paths should be resolved at validation time)
-      const contract = context.contractRepository.lookup(contractRef)
+      // Look up the contract with context path for relative artifact resolution
+      const contract = context.contractRepository.lookup(contractRef, context.getContextPath())
       if (!contract) {
         throw new Error(`Artifact not found for reference: "${contractRef}"`)
       }

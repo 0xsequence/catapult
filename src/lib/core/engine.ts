@@ -40,15 +40,24 @@ export class ExecutionEngine {
        }
      })
 
-    const executionOrder = this.topologicalSortActions(job)
+    // Set context path for relative artifact resolution
+    const previousContextPath = context.getContextPath()
+    context.setContextPath(job._path)
 
-    for (const actionName of executionOrder) {
-      const action = job.actions.find(a => a.name === actionName)
-      if (!action) {
-        // This should be unreachable if topological sort is correct
-        throw new Error(`Internal error: Action "${actionName}" not found in job "${job.name}".`)
+    try {
+      const executionOrder = this.topologicalSortActions(job)
+
+      for (const actionName of executionOrder) {
+        const action = job.actions.find(a => a.name === actionName)
+        if (!action) {
+          // This should be unreachable if topological sort is correct
+          throw new Error(`Internal error: Action "${actionName}" not found in job "${job.name}".`)
+        }
+        await this.executeAction(action, context, new Map())
       }
-      await this.executeAction(action, context, new Map())
+    } finally {
+      // Restore previous context path
+      context.setContextPath(previousContextPath)
     }
 
          this.events.emitEvent({
@@ -149,6 +158,9 @@ export class ExecutionEngine {
         })
 
     // 1. Create and populate a new resolution scope for this template call.
+    // NOTE: We resolve arguments in the CURRENT context (which should be the job's context)
+    // before changing to the template's context. This ensures artifact references in
+    // job arguments are resolved relative to the job, not the template.
     const templateScope: ResolutionScope = new Map()
     if ('arguments' in callingAction) {
       for (const [key, value] of Object.entries(callingAction.arguments)) {
@@ -157,6 +169,12 @@ export class ExecutionEngine {
         templateScope.set(key, resolvedValue)
       }
     }
+
+    // Set context path for relative artifact resolution within the template
+    const previousContextPath = context.getContextPath()
+    context.setContextPath(template._path)
+
+    try {
     
     // 2. Handle template-level setup block.
     if (template.setup) {
@@ -229,13 +247,17 @@ export class ExecutionEngine {
       }
     }
 
-    this.events.emitEvent({
-      type: 'template_exited',
-      level: 'debug',
-      data: {
-        templateName: template.name
-      }
-    })
+      this.events.emitEvent({
+        type: 'template_exited',
+        level: 'debug',
+        data: {
+          templateName: template.name
+        }
+      })
+    } finally {
+      // Restore previous context path
+      context.setContextPath(previousContextPath)
+    }
   }
 
   /**

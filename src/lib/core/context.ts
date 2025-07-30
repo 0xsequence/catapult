@@ -9,6 +9,7 @@ export class ExecutionContext {
   private outputs: Map<string, any> = new Map()
   private network: Network
   private etherscanApiKey?: string
+  private currentContextPath?: string
 
   constructor(
     network: Network, 
@@ -50,5 +51,14 @@ export class ExecutionContext {
 
   public getOutputs(): Map<string, any> {
     return this.outputs
+  }
+
+  // Context path for relative artifact resolution
+  public setContextPath(path?: string): void {
+    this.currentContextPath = path
+  }
+
+  public getContextPath(): string | undefined {
+    return this.currentContextPath
   }
 }
