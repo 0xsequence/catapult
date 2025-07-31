@@ -5,21 +5,6 @@ import { SourcifyVerificationPlatform } from '../sourcify'
 const mockFetch = jest.fn()
 global.fetch = mockFetch as any
 
-// Mock JSZip
-jest.mock('jszip', () => {
-  return jest.fn().mockImplementation(() => ({
-    file: jest.fn(),
-    generateAsync: jest.fn().mockResolvedValue(Buffer.from('mock-zip-data'))
-  }))
-})
-
-// Mock form-data
-jest.mock('form-data', () => {
-  return jest.fn().mockImplementation(() => ({
-    append: jest.fn()
-  }))
-})
-
 describe('Sourcify Verification Platform', () => {
   let platform: SourcifyVerificationPlatform
   let mockNetwork: Network

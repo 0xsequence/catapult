@@ -227,28 +227,4 @@ export class SourcifyVerificationPlatform implements VerificationPlatform {
 
     return { metadata, sourceFiles }
   }
-
-  // Legacy method - keeping for now but not used
-  private async createSourceZip(contract: any, buildInfo: any): Promise<Buffer> {
-    const { metadata, sourceFiles } = await this.createVerificationData(contract, buildInfo)
-    
-    const JSZip = await import('jszip')
-    const zip = new JSZip.default()
-
-    // Add source files to zip
-    for (const [sourcePath, sourceContent] of sourceFiles) {
-      zip.file(sourcePath, sourceContent)
-    }
-
-    // Add metadata.json
-    zip.file('metadata.json', JSON.stringify(metadata, null, 2))
-
-    return await zip.generateAsync({
-      type: 'nodebuffer',
-      compression: 'DEFLATE',
-      compressionOptions: {
-        level: 6
-      }
-    })
-  }
 }
