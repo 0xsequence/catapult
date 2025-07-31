@@ -199,6 +199,25 @@ export class ContractRepository {
       resolvedReference = path.resolve(path.dirname(contextPath), reference)
     }
     
+    // Handle build-info file:contract references (e.g., "./build-info/file.json:ContractName")
+    if (resolvedReference.includes(':')) {
+      const colonIndex = resolvedReference.lastIndexOf(':')
+      const filePath = resolvedReference.substring(0, colonIndex)
+      const contractName = resolvedReference.substring(colonIndex + 1)
+      
+      // Check if this looks like a build-info file reference
+      if (isBuildInfoFile(filePath)) {
+        // Find contract that came from this specific file with this specific contract name
+        for (const contract of this.contracts.values()) {
+          if (contract.contractName === contractName && contract._sources.has(filePath)) {
+            return contract
+          }
+        }
+        // If not found, return null (will be handled by the error in resolver)
+        return null
+      }
+    }
+    
     // Check if reference is ambiguous
     if (this.ambiguousReferences.has(resolvedReference)) {
       const hashes = this.referenceMap.get(resolvedReference) || []
