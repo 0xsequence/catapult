@@ -98,7 +98,8 @@ function getFullCompilerVersion(buildInfo: BuildInfo): string {
   }
   
   // Fallback to the basic version if metadata extraction fails
-  return buildInfo.solcLongVersion
+  // Use solcLongVersion if available, otherwise fallback to solcVersion
+  return buildInfo.solcLongVersion || buildInfo.solcVersion
 }
 
 /**

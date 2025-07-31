@@ -87,10 +87,10 @@ export interface BuildInfoOutput {
 }
 
 export interface BuildInfo {
-  _format: 'hh-sol-build-info-1' | 'ethers-rs-sol-build-info-1'
+  _format?: 'hh-sol-build-info-1' | 'ethers-rs-sol-build-info-1' // Optional for factory-style formats
   id: string
   solcVersion: string
-  solcLongVersion: string
+  solcLongVersion?: string // Optional for factory-style formats
   input: BuildInfoInput
   output: BuildInfoOutput
   // Optional extension keys for zkSync/zkEVM

@@ -4,15 +4,18 @@ import { BuildInfo, ExtractedContract } from '../types'
 
 /**
  * Validates if a parsed object is a valid build-info file
+ * Supports standard build-info formats and factory-style formats
  */
 function isValidBuildInfo(data: any): data is BuildInfo {
   return (
     data &&
     typeof data === 'object' &&
-    (data._format === 'hh-sol-build-info-1' || data._format === 'ethers-rs-sol-build-info-1') &&
+    // _format field is optional (for factory-style formats)
+    (data._format === undefined || data._format === 'hh-sol-build-info-1' || data._format === 'ethers-rs-sol-build-info-1') &&
     typeof data.id === 'string' &&
     typeof data.solcVersion === 'string' &&
-    typeof data.solcLongVersion === 'string' &&
+    // solcLongVersion is optional (for factory-style formats)
+    (data.solcLongVersion === undefined || typeof data.solcLongVersion === 'string') &&
     data.input &&
     typeof data.input === 'object' &&
     data.output &&
@@ -76,7 +79,8 @@ export function parseBuildInfo(content: string, filePath: string): ExtractedCont
           deployedBytecode,
           source: sourceContent,
           compiler: {
-            version: data.solcLongVersion
+            // Use solcLongVersion if available, otherwise fallback to solcVersion
+            version: data.solcLongVersion || data.solcVersion
           },
           buildInfoId: data.id,
           buildInfoPath: filePath
@@ -99,7 +103,12 @@ export function parseBuildInfo(content: string, filePath: string): ExtractedCont
  * Follows the conventions: artifacts/build-info/*.json or out/build-info/*.json
  */
 export function isBuildInfoFile(filePath: string): boolean {
-  return filePath.includes('/build-info/') && filePath.endsWith('.json')
+  // Standard build-info file patterns
+  if (filePath.includes('/build-info/') && filePath.endsWith('.json')) {
+    return true
+  }
+
+  return false
 }
 
 /**
