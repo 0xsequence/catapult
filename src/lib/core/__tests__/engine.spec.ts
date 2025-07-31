@@ -3,6 +3,7 @@ import { ExecutionEngine } from '../engine'
 import { ExecutionContext } from '../context'
 import { ContractRepository } from '../../contracts/repository'
 import { Job, Template, JobAction, Action, Network } from '../../types'
+import { VerificationPlatformRegistry } from '../../verification/etherscan'
 
 describe('ExecutionEngine', () => {
   let engine: ExecutionEngine
@@ -33,7 +34,10 @@ describe('ExecutionEngine', () => {
 
     // Initialize templates map
     templates = new Map()
-    engine = new ExecutionEngine(templates)
+    
+    // Create empty verification registry for tests
+    const verificationRegistry = new VerificationPlatformRegistry()
+    engine = new ExecutionEngine(templates, undefined, verificationRegistry)
   })
 
   describe('executeJob', () => {

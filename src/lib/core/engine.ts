@@ -4,7 +4,7 @@ import { ExecutionContext } from './context'
 import { ValueResolver, ResolutionScope } from './resolver'
 import { validateAddress, validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
 import { DeploymentEventEmitter, deploymentEvents } from '../events'
-import { submitVerification, waitForVerification, isContractAlreadyVerified } from '../verification/etherscan'
+import { createDefaultVerificationRegistry, VerificationPlatformRegistry } from '../verification/etherscan'
 import { BuildInfo } from '../types/buildinfo'
 
 /**
@@ -16,11 +16,13 @@ export class ExecutionEngine {
   private readonly resolver: ValueResolver
   private readonly templates: Map<string, Template>
   private readonly events: DeploymentEventEmitter
+  private readonly verificationRegistry: VerificationPlatformRegistry
 
-  constructor(templates: Map<string, Template>, eventEmitter?: DeploymentEventEmitter) {
+  constructor(templates: Map<string, Template>, eventEmitter?: DeploymentEventEmitter, verificationRegistry?: VerificationPlatformRegistry) {
     this.resolver = new ValueResolver()
     this.templates = templates
     this.events = eventEmitter || deploymentEvents
+    this.verificationRegistry = verificationRegistry || createDefaultVerificationRegistry()
   }
 
   /**
@@ -409,9 +411,17 @@ export class ExecutionEngine {
           constructorArguments = validateHexData(resolvedConstructorArgs, actionName, 'constructorArguments')
         }
 
-        // Check if network supports verification
         const network = context.getNetwork()
-        if (network.supports && !network.supports.includes(resolvedPlatform)) {
+        const contractName = `${contract.sourceName}:${contract.contractName}`
+
+        // Get the verification platform
+        const platform = this.verificationRegistry.get(resolvedPlatform)
+        if (!platform) {
+          throw new Error(`Action "${actionName}": Unsupported verification platform "${resolvedPlatform}"`)
+        }
+
+        // Check if platform supports this network
+        if (!platform.supportsNetwork(network)) {
           this.events.emitEvent({
             type: 'action_skipped',
             level: 'info',
@@ -423,25 +433,20 @@ export class ExecutionEngine {
           return
         }
 
-        // Check if API key is available
-        const etherscanApiKey = context.getEtherscanApiKey()
-        if (!etherscanApiKey) {
+        // Check if platform is properly configured
+        if (!platform.isConfigured()) {
           this.events.emitEvent({
             type: 'action_skipped',
             level: 'warn',
             data: {
               actionName: actionName,
-              reason: 'Verification skipped because Etherscan API key is not provided. Set --etherscan-api-key or ETHERSCAN_API_KEY environment variable.'
+              reason: `Verification skipped: ${platform.getConfigurationRequirements()}`
             }
           })
           return
         }
 
-        if (resolvedPlatform !== 'etherscan_v2') {
-          throw new Error(`Action "${actionName}": Unsupported verification platform "${resolvedPlatform}". Currently only "etherscan_v2" is supported.`)
-        }
-
-        // Find the build-info file from the contract's sources
+        // Find and load build info
         let buildInfoPath: string | undefined
         for (const sourcePath of contract._sources) {
           if (sourcePath.includes('/build-info/') && sourcePath.endsWith('.json')) {
@@ -454,7 +459,6 @@ export class ExecutionEngine {
           throw new Error(`Action "${actionName}": No build-info file found in contract sources`)
         }
 
-        // Load the actual build info file
         const fs = await import('fs/promises')
         let buildInfoContent: string
         try {
@@ -470,8 +474,6 @@ export class ExecutionEngine {
           throw new Error(`Action "${actionName}": Failed to parse build info JSON: ${error instanceof Error ? error.message : String(error)}`)
         }
 
-        const contractName = `${contract.sourceName}:${contract.contractName}`
-
         this.events.emitEvent({
           type: 'verification_started',
           level: 'info',
@@ -485,78 +487,21 @@ export class ExecutionEngine {
         })
 
         try {
-          // First check if the contract is already verified
-          const alreadyVerified = await isContractAlreadyVerified(address, etherscanApiKey, network)
-          
-          if (alreadyVerified) {
-            // Contract is already verified, skip verification attempt
-            this.events.emitEvent({
-              type: 'verification_completed',
-              level: 'info',
-              data: {
-                actionName: actionName,
-                address,
-                contractName,
-                message: 'Contract was already verified (checked before attempting verification)'
-              }
-            })
-
-            if (action.name) {
-              context.setOutput(`${action.name}.verified`, true)
-            }
-            return
-          }
-
-          // Submit verification
-          const verificationResult = await submitVerification({
+          // Use the platform to verify the contract
+          const verificationResult = await platform.verifyContract({
             contract,
             buildInfo,
             address,
             constructorArguments,
-            apiKey: etherscanApiKey,
             network
           })
 
           if (!verificationResult.success) {
-            throw new Error(`Verification submission failed: ${verificationResult.message}`)
+            throw new Error(`Verification failed: ${verificationResult.message}`)
           }
 
-          this.events.emitEvent({
-            type: 'verification_submitted',
-            level: 'info',
-            data: {
-              actionName: actionName,
-              guid: verificationResult.guid || 'N/A',
-              message: verificationResult.message
-            }
-          })
-
-          // If we have a guid, wait for verification to complete
-          // If no guid (contract already verified), skip waiting and mark as successful
-          if (verificationResult.guid) {
-            const verificationStatus = await waitForVerification(verificationResult.guid, etherscanApiKey, network)
-
-            if (verificationStatus.isSuccess) {
-              this.events.emitEvent({
-                type: 'verification_completed',
-                level: 'info',
-                data: {
-                  actionName: actionName,
-                  address,
-                  contractName,
-                  message: 'Contract verified successfully'
-                }
-              })
-
-              if (action.name) {
-                context.setOutput(`${action.name}.verified`, true)
-                context.setOutput(`${action.name}.guid`, verificationResult.guid)
-              }
-            } else {
-              throw new Error(`Verification failed: ${verificationStatus.message}`)
-            }
-          } else {
-            // Contract was already verified, mark as completed
+          // Emit appropriate events based on verification result
+          if (verificationResult.isAlreadyVerified) {
             this.events.emitEvent({
               type: 'verification_completed',
               level: 'info',
@@ -564,12 +509,37 @@ export class ExecutionEngine {
                 actionName: actionName,
                 address,
                 contractName,
-                message: 'Contract was already verified'
+                message: verificationResult.message
+              }
+            })
+          } else {
+            this.events.emitEvent({
+              type: 'verification_submitted',
+              level: 'info',
+              data: {
+                actionName: actionName,
+                guid: verificationResult.guid || 'N/A',
+                message: verificationResult.message
               }
             })
 
-            if (action.name) {
-              context.setOutput(`${action.name}.verified`, true)
+            this.events.emitEvent({
+              type: 'verification_completed',
+              level: 'info',
+              data: {
+                actionName: actionName,
+                address,
+                contractName,
+                message: 'Contract verified successfully'
+              }
+            })
+          }
+
+          // Set outputs
+          if (action.name) {
+            context.setOutput(`${action.name}.verified`, true)
+            if (verificationResult.guid) {
+              context.setOutput(`${action.name}.guid`, verificationResult.guid)
             }
           }
 

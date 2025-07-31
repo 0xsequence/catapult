@@ -2,12 +2,44 @@ import { Network } from '../types/network'
 import { BuildInfo } from '../types/buildinfo'
 import { Contract } from '../types/contracts'
 
+// Generic verification platform interface
+export interface VerificationPlatform {
+  /**
+   * The name of this verification platform (e.g., 'etherscan_v2', 'sourcify')
+   */
+  readonly name: string
+
+  /**
+   * Check if this platform supports verification on the given network
+   */
+  supportsNetwork(network: Network): boolean
+
+  /**
+   * Check if the required configuration (API keys, etc.) is available
+   */
+  isConfigured(): boolean
+
+  /**
+   * Get a description of what configuration is missing (for error messages)
+   */
+  getConfigurationRequirements(): string
+
+  /**
+   * Check if a contract is already verified on this platform
+   */
+  isContractAlreadyVerified(address: string, network: Network): Promise<boolean>
+
+  /**
+   * Submit a contract for verification
+   */
+  verifyContract(request: VerificationRequest): Promise<VerificationResult>
+}
+
 export interface VerificationRequest {
   contract: Contract  // Contract object 
   buildInfo: BuildInfo
   address: string
   constructorArguments?: string  // Hex encoded constructor args
-  apiKey: string
   network: Network
   maxRetries?: number  // Number of retries for "contract not found" errors
   retryDelayMs?: number  // Delay between retries in milliseconds
@@ -17,6 +49,7 @@ export interface VerificationResult {
   success: boolean
   guid?: string
   message: string
+  isAlreadyVerified?: boolean  // Indicates if verification was skipped because already verified
 }
 
 export interface VerificationStatus {
@@ -121,7 +154,7 @@ export async function isContractAlreadyVerified(
 /**
  * Internal function to perform a single verification attempt
  */
-async function submitVerificationAttempt(request: VerificationRequest): Promise<VerificationResult> {
+async function submitVerificationAttempt(request: VerificationRequest, apiKey: string): Promise<VerificationResult> {
   const apiUrl = getEtherscanApiUrl(request.network.chainId)
   
   // Extract the fully qualified contract name from the contract object
@@ -156,7 +189,7 @@ async function submitVerificationAttempt(request: VerificationRequest): Promise<
     contractaddress: request.address,
     contractname: contractName,
     compilerversion: `v${fullCompilerVersion}`,
-    apikey: request.apiKey,
+    apikey: apiKey,
   })
   
   if (request.constructorArguments) {
@@ -209,7 +242,7 @@ async function submitVerificationAttempt(request: VerificationRequest): Promise<
 /**
  * Submits a contract for verification to Etherscan using the v2 API with retry logic
  */
-export async function submitVerification(request: VerificationRequest): Promise<VerificationResult> {
+export async function submitVerification(request: VerificationRequest, apiKey: string): Promise<VerificationResult> {
   const maxRetries = request.maxRetries ?? 3
   const retryDelayMs = request.retryDelayMs ?? 5000 // 5 seconds default
   
@@ -217,7 +250,7 @@ export async function submitVerification(request: VerificationRequest): Promise<
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const result = await submitVerificationAttempt(request)
+      const result = await submitVerificationAttempt(request, apiKey)
       
       // If successful or if it's not a "contract not found" error, return immediately
       if (result.success || !isContractNotFoundError(result.message)) {
@@ -355,4 +388,140 @@ export async function waitForVerification(
   }
   
   throw new Error(`Verification timed out after ${timeoutMs / 1000} seconds`)
+}
+
+/**
+ * Etherscan verification platform implementation
+ */
+export class EtherscanVerificationPlatform implements VerificationPlatform {
+  readonly name = 'etherscan_v2'
+  private apiKey?: string
+
+  constructor(apiKey?: string) {
+    this.apiKey = apiKey
+  }
+
+  supportsNetwork(network: Network): boolean {
+    return !network.supports || network.supports.includes(this.name)
+  }
+
+  isConfigured(): boolean {
+    return !!this.apiKey
+  }
+
+  getConfigurationRequirements(): string {
+    return 'Etherscan API key is required. Set --etherscan-api-key or ETHERSCAN_API_KEY environment variable.'
+  }
+
+  async isContractAlreadyVerified(address: string, network: Network): Promise<boolean> {
+    if (!this.apiKey) {
+      throw new Error('Etherscan API key not configured')
+    }
+    return isContractAlreadyVerified(address, this.apiKey, network)
+  }
+
+  async verifyContract(request: VerificationRequest): Promise<VerificationResult> {
+    if (!this.apiKey) {
+      throw new Error('Etherscan API key not configured')
+    }
+
+    // Check if already verified first
+    const alreadyVerified = await this.isContractAlreadyVerified(request.address, request.network)
+    if (alreadyVerified) {
+      return {
+        success: true,
+        message: 'Contract was already verified (checked before attempting verification)',
+        isAlreadyVerified: true
+      }
+    }
+
+    // Submit verification with API key
+    const verificationResult = await submitVerification(request, this.apiKey)
+
+    if (!verificationResult.success) {
+      return verificationResult
+    }
+
+    // If we have a guid, wait for verification to complete
+    if (verificationResult.guid) {
+      const verificationStatus = await waitForVerification(verificationResult.guid, this.apiKey, request.network)
+      
+      if (!verificationStatus.isSuccess) {
+        return {
+          success: false,
+          message: `Verification failed: ${verificationStatus.message}`
+        }
+      }
+      
+      return {
+        success: true,
+        guid: verificationResult.guid,
+        message: 'Contract verified successfully'
+      }
+    } else {
+      // Contract was already verified during submission
+      return {
+        success: true,
+        message: 'Contract was already verified',
+        isAlreadyVerified: true
+      }
+    }
+  }
+}
+
+/**
+ * Registry for verification platforms
+ */
+export class VerificationPlatformRegistry {
+  private platforms = new Map<string, VerificationPlatform>()
+
+  /**
+   * Register a verification platform
+   */
+  register(platform: VerificationPlatform): void {
+    this.platforms.set(platform.name, platform)
+  }
+
+  /**
+   * Get a verification platform by name
+   */
+  get(platformName: string): VerificationPlatform | undefined {
+    return this.platforms.get(platformName)
+  }
+
+  /**
+   * Get all available platforms
+   */
+  getAll(): VerificationPlatform[] {
+    return Array.from(this.platforms.values())
+  }
+
+  /**
+   * Get all platforms that support the given network
+   */
+  getSupportedPlatforms(network: Network): VerificationPlatform[] {
+    return this.getAll().filter(platform => platform.supportsNetwork(network))
+  }
+
+  /**
+   * Get all configured platforms that support the given network
+   */
+  getConfiguredPlatforms(network: Network): VerificationPlatform[] {
+    return this.getSupportedPlatforms(network).filter(platform => platform.isConfigured())
+  }
+}
+
+/**
+ * Default verification platform registry instance
+ */
+export function createDefaultVerificationRegistry(etherscanApiKey?: string): VerificationPlatformRegistry {
+  const registry = new VerificationPlatformRegistry()
+  
+  // Register Etherscan platform
+  registry.register(new EtherscanVerificationPlatform(etherscanApiKey))
+  
+  // Future platforms can be registered here
+  // registry.register(new SourceifyVerificationPlatform())
+  
+  return registry
 } 

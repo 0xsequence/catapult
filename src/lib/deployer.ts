@@ -4,6 +4,7 @@ import * as path from 'path'
 import { ProjectLoader, ProjectLoaderOptions } from './core/loader'
 import { DependencyGraph } from './core/graph'
 import { ExecutionEngine } from './core/engine'
+import { createDefaultVerificationRegistry } from './verification/etherscan'
 import { ExecutionContext } from './core/context'
 import { Network, Job } from './types'
 import { DeploymentEventEmitter, deploymentEvents } from './events'
@@ -117,7 +118,8 @@ export class Deployer {
       })
 
       // 4. Execute the plan.
-      const engine = new ExecutionEngine(this.loader.templates, this.events)
+      const verificationRegistry = createDefaultVerificationRegistry(this.options.etherscanApiKey)
+      const engine = new ExecutionEngine(this.loader.templates, this.events, verificationRegistry)
       
       for (const network of targetNetworks) {
         this.events.emitEvent({

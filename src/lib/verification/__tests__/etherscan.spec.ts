@@ -90,9 +90,8 @@ describe('Etherscan Verification', () => {
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
         contract: mockContract,
-        apiKey: 'test-api-key',
         network: mockNetwork
-      })
+      }, 'test-api-key')
 
       expect(result.success).toBe(true)
       expect(result.guid).toBe('test-guid-123')
@@ -119,9 +118,8 @@ describe('Etherscan Verification', () => {
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
         contract: mockContract,
-        apiKey: 'test-api-key',
         network: mockNetwork
-      })
+      }, 'test-api-key')
 
       expect(result.success).toBe(false)
       expect(result.message).toBe('Invalid contract address')
@@ -140,9 +138,8 @@ describe('Etherscan Verification', () => {
         buildInfo: mockBuildInfo,
         contract: mockContract,
         constructorArguments: '0x000000000000000000000000742d35cc6596c743b2c8d12cd84d5b8fba4f3c',
-        apiKey: 'test-api-key',
         network: mockNetwork
-      })
+      }, 'test-api-key')
 
       const fetchCall = mockedFetch.mock.calls[0]
       const requestBody = fetchCall[1]?.body as string
@@ -156,9 +153,8 @@ describe('Etherscan Verification', () => {
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
         contract: mockContract,
-        apiKey: 'test-api-key',
         network: mockNetwork
-      })
+      }, 'test-api-key')
 
       expect(result.success).toBe(false)
       expect(result.message).toContain('API request failed: Network error')
@@ -181,9 +177,8 @@ describe('Etherscan Verification', () => {
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
         contract: mockContract,
-        apiKey: 'test-api-key',
         network: sepoliaNetwork
-      })
+      }, 'test-api-key')
 
       expect(mockedFetch).toHaveBeenCalledWith(
         'https://api.etherscan.io/v2/api?chainid=11155111',
@@ -208,9 +203,8 @@ describe('Etherscan Verification', () => {
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
         contract: mockContract,
-        apiKey: 'test-api-key',
         network: customNetwork
-      })
+      }, 'test-api-key')
 
       expect(result.success).toBe(false)
       expect(result.message).toBe('Invalid chain ID')
@@ -231,9 +225,8 @@ describe('Etherscan Verification', () => {
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
         contract: mockContract,
-        apiKey: 'test-api-key',
         network: mockNetwork
-      })
+      }, 'test-api-key')
 
       expect(result.success).toBe(true)
       expect(result.message).toBe('Contract is already verified')
@@ -251,9 +244,8 @@ describe('Etherscan Verification', () => {
         address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
         buildInfo: mockBuildInfo,
         contract: mockContract,
-        apiKey: 'test-api-key',
         network: mockNetwork
-      })
+      }, 'test-api-key')
 
       expect(result.success).toBe(true)
       expect(result.message).toBe('Contract is already verified')
@@ -293,11 +285,10 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 3,
           retryDelayMs: 100
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(true)
         expect(result.guid).toBe('test-guid-retry')
@@ -325,10 +316,9 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 2
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(true)
         expect(result.guid).toBe('test-guid-retry-2')
@@ -353,9 +343,8 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(true)
         expect(result.guid).toBe('test-guid-retry-3')
@@ -374,10 +363,9 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 3
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(false)
         expect(result.message).toBe('Invalid API key')
@@ -396,11 +384,10 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 2,
           retryDelayMs: 10
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(false)
         expect(result.message).toBe('Verification failed after 3 attempts. Last error: Unable to locate ContractCode')
@@ -419,10 +406,9 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork
           // No maxRetries or retryDelayMs specified - should use defaults
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(false)
         expect(result.message).toBe('Verification failed after 4 attempts. Last error: Contract not found')
@@ -444,10 +430,9 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 2
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(true)
         expect(result.guid).toBe('test-guid-network-retry')
@@ -463,10 +448,9 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 3
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(false)
         expect(result.message).toBe('API request failed: Network timeout')
@@ -482,11 +466,10 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 1,
           retryDelayMs: 10
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(false)
         expect(result.message).toBe('API request failed: Contract source code not verified')
@@ -511,10 +494,9 @@ describe('Etherscan Verification', () => {
           address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
           buildInfo: mockBuildInfo,
           contract: mockContract,
-          apiKey: 'test-api-key',
           network: mockNetwork,
           maxRetries: 1
-        })
+        }, 'test-api-key')
 
         expect(result.success).toBe(true)
         expect(result.guid).toBe('test-guid-case-insensitive')
