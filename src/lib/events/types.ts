@@ -304,6 +304,7 @@ export interface VerificationSubmittedEvent extends BaseEvent {
   level: 'info'
   data: {
     actionName: string
+    platform: string
     guid: string
     message: string
   }
@@ -316,6 +317,7 @@ export interface VerificationCompletedEvent extends BaseEvent {
     actionName: string
     address: string
     contractName: string
+    platform: string
     message: string
   }
 }
@@ -327,6 +329,7 @@ export interface VerificationFailedEvent extends BaseEvent {
     actionName: string
     address: string
     contractName: string
+    platform: string
     error: string
   }
 }

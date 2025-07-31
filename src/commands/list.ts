@@ -1,16 +1,19 @@
 import { Command } from 'commander'
 import chalk from 'chalk'
 import * as path from 'path'
-import { loadProject, projectOption, noStdOption } from './common'
+import { loadProject, projectOption, noStdOption, verbosityOption } from './common'
 import { loadNetworks } from '../lib/network-loader'
+import { setVerbosity } from '../index'
 
 interface ListOptions {
   project: string
   std: boolean
+  verbose: number
 }
 
 interface NetworksListOptions {
   project: string
+  verbose: number
 }
 
 export function makeListCommand(): Command {
@@ -21,8 +24,11 @@ export function makeListCommand(): Command {
     .description('List all available jobs in the project')
   projectOption(listJobs)
   noStdOption(listJobs)
+  verbosityOption(listJobs)
   listJobs.action(async (options: ListOptions) => {
     try {
+      // Set verbosity level for logging
+      setVerbosity(options.verbose as 0 | 1 | 2 | 3)
       const loader = await loadProject(options.project, { 
         loadStdTemplates: options.std !== false 
       })
@@ -47,8 +53,11 @@ export function makeListCommand(): Command {
     .description('List all contracts found in the project')
   projectOption(listContracts)
   noStdOption(listContracts)
+  verbosityOption(listContracts)
   listContracts.action(async (options: ListOptions) => {
     try {
+      // Set verbosity level for logging
+      setVerbosity(options.verbose as 0 | 1 | 2 | 3)
       const loader = await loadProject(options.project, { 
         loadStdTemplates: options.std !== false 
       })
@@ -95,8 +104,11 @@ export function makeListCommand(): Command {
     .description('List all available templates')
   projectOption(listTemplates)
   noStdOption(listTemplates)
+  verbosityOption(listTemplates)
   listTemplates.action(async (options: ListOptions) => {
     try {
+      // Set verbosity level for logging
+      setVerbosity(options.verbose as 0 | 1 | 2 | 3)
       const loader = await loadProject(options.project, { 
         loadStdTemplates: options.std !== false 
       })
@@ -120,8 +132,11 @@ export function makeListCommand(): Command {
   const listNetworks = new Command('networks')
     .description('List all configured networks')
   projectOption(listNetworks)
+  verbosityOption(listNetworks)
   listNetworks.action(async (options: NetworksListOptions) => {
     try {
+      // Set verbosity level for logging
+      setVerbosity(options.verbose as 0 | 1 | 2 | 3)
       const networks = await loadNetworks(options.project)
       console.log(chalk.bold.underline('Available Networks:'))
       if (networks.length === 0) {

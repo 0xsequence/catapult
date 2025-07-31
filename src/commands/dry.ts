@@ -3,13 +3,15 @@ import chalk from 'chalk'
 import { loadProject } from './common'
 import { loadNetworks } from '../lib/network-loader'
 import { DependencyGraph } from '../lib/core/graph'
-import { projectOption, noStdOption } from './common'
+import { projectOption, noStdOption, verbosityOption } from './common'
 import { validateContractReferences, extractUsedContractReferences } from '../lib/validation/contract-references'
+import { setVerbosity } from '../index'
 
 interface DryRunOptions {
   project: string
   std: boolean
   network?: string[]
+  verbose: number
 }
 
 export function makeDryRunCommand(): Command {
@@ -20,9 +22,13 @@ export function makeDryRunCommand(): Command {
   
   projectOption(dryRun)
   noStdOption(dryRun)
+  verbosityOption(dryRun)
   
   dryRun.action(async (jobs: string[], options: DryRunOptions) => {
     try {
+      // Set verbosity level for logging
+      setVerbosity(options.verbose as 0 | 1 | 2 | 3)
+      
       console.log(chalk.bold.inverse(' DRY-RUN MODE '))
       const projectRoot = options.project
       const loader = await loadProject(projectRoot, { 

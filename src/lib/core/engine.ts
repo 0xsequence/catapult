@@ -454,6 +454,8 @@ export class ExecutionEngine {
                 level: 'warn',
                 data: {
                   actionName: actionName,
+                  address,
+                  contractName,
                   platform: platform.name,
                   error: error instanceof Error ? error.message : String(error)
                 }
@@ -600,6 +602,7 @@ export class ExecutionEngine {
             actionName: actionName,
             address,
             contractName,
+            platform: platform.name,
             message: verificationResult.message
           }
         })
@@ -609,6 +612,7 @@ export class ExecutionEngine {
           level: 'info',
           data: {
             actionName: actionName,
+            platform: platform.name,
             guid: verificationResult.guid || 'N/A',
             message: verificationResult.message
           }
@@ -621,6 +625,7 @@ export class ExecutionEngine {
             actionName: actionName,
             address,
             contractName,
+            platform: platform.name,
             message: 'Contract verified successfully'
           }
         })

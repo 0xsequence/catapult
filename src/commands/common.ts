@@ -23,6 +23,12 @@ export const noStdOption = (cmd: Command): Command =>
   cmd.option('--no-std', 'Disable loading built-in standard templates')
 
 /**
+ * Adds verbosity options to a command.
+ */
+export const verbosityOption = (cmd: Command): Command =>
+  cmd.option('-v, --verbose', 'Enable verbose logging (use -vv or -vvv for more detail)', (_, previous) => (previous || 0) + 1, 0)
+
+/**
  * Loads the project using the ProjectLoader and emits corresponding events.
  */
 export async function loadProject(projectRoot: string, options?: ProjectLoaderOptions): Promise<ProjectLoader> {

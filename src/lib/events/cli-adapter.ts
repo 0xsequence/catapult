@@ -3,16 +3,36 @@ import { DeploymentEvent } from './types'
 import { DeploymentEventEmitter } from './emitter'
 
 /**
+ * Verbosity levels for filtering console output:
+ * 0 (default): Critical info only - errors, warnings, main deployment steps
+ * 1 (-v): Add transaction details and verification steps  
+ * 2 (-vv): Add action details and file operations
+ * 3 (-vvv): Full debug - show everything including template transitions
+ */
+export type VerbosityLevel = 0 | 1 | 2 | 3
+
+/**
  * CLI adapter that converts structured deployment events into
  * formatted console output using chalk for colors.
  */
 export class CLIEventAdapter {
   private emitter: DeploymentEventEmitter
+  private verbosity: VerbosityLevel
 
-  constructor(emitter: DeploymentEventEmitter) {
+  constructor(emitter: DeploymentEventEmitter, verbosity: VerbosityLevel = 0) {
     this.emitter = emitter
+    this.verbosity = verbosity
     this.setupListeners()
   }
+
+  /**
+   * Updates the verbosity level for this adapter.
+   */
+  setVerbosity(verbosity: VerbosityLevel): void {
+    this.verbosity = verbosity
+  }
+
+
 
   private setupListeners(): void {
     this.emitter.onAnyEvent((event) => {
@@ -20,7 +40,55 @@ export class CLIEventAdapter {
     })
   }
 
+  /**
+   * Determines the minimum verbosity level required to show an event.
+   */
+  private getEventVerbosityLevel(eventType: string): VerbosityLevel {
+    // Level 0 (default): Critical info only
+    const level0Events = new Set([
+      'deployment_started', 'deployment_completed', 'deployment_failed',
+      'job_started', 'job_completed', 'job_skipped', 'job_execution_failed',
+      'network_started',
+      'duplicate_artifact_warning', 'missing_network_config_warning',
+      'unhandled_rejection', 'uncaught_exception', 'cli_error',
+      'verification_failed'
+    ])
+
+    // Level 1 (-v): Add transaction details and verification
+    const level1Events = new Set([
+      'project_loading_started', 'project_loaded', 'execution_plan',
+      'transaction_sent', 'transaction_confirmed',
+      'verification_started', 'verification_submitted', 'verification_completed',
+      'output_writing_started', 'output_file_written', 'no_outputs'
+    ])
+
+    // Level 2 (-vv): Add action details and operations
+    const level2Events = new Set([
+      'action_started', 'action_skipped',
+      'template_setup_started', 'template_setup_completed', 'template_setup_skipped', 'template_skipped'
+    ])
+
+    // Level 3 (-vvv): Full debug - everything else
+    const level3Events = new Set([
+      'template_entered', 'template_exited',
+      'primitive_action', 'output_stored'
+    ])
+
+    if (level0Events.has(eventType)) return 0
+    if (level1Events.has(eventType)) return 1
+    if (level2Events.has(eventType)) return 2
+    if (level3Events.has(eventType)) return 3
+    
+    // Default to level 3 for any new events we haven't categorized
+    return 3
+  }
+
   private handleEvent(event: DeploymentEvent): void {
+    // Filter events based on verbosity level
+    const requiredLevel = this.getEventVerbosityLevel(event.type)
+    if (this.verbosity < requiredLevel) {
+      return
+    }
     switch (event.type) {
       case 'deployment_started':
         console.log(chalk.bold.inverse(' CATAPULT: STARTING DEPLOYMENT RUN '))
@@ -148,6 +216,28 @@ export class CLIEventAdapter {
 
       case 'cli_error':
         console.error(chalk.red('Error:'), event.data.message)
+        break
+
+      case 'verification_started':
+        console.log(chalk.gray(`        🔍 Verifying contract on ${event.data.platform} (${event.data.networkName})...`))
+        break
+
+      case 'verification_submitted':
+        if (event.data.guid && event.data.guid !== 'N/A') {
+          console.log(chalk.gray(`        📝 Verification submitted to ${event.data.platform} (GUID: ${event.data.guid})`))
+        }
+        break
+
+      case 'verification_completed':
+        if (event.data.message.includes('already verified')) {
+          console.log(chalk.yellow(`        ✓ Already verified on ${event.data.platform}`))
+        } else {
+          console.log(chalk.green(`        ✅ ${event.data.message} on ${event.data.platform}`))
+        }
+        break
+
+      case 'verification_failed':
+        console.log(chalk.red(`        ❌ Verification failed on ${event.data.platform}: ${event.data.error}`))
         break
 
       default:

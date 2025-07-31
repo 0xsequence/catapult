@@ -266,7 +266,6 @@ export async function submitVerification(request: VerificationRequest, apiKey: s
       }
       
       // Wait before retrying
-      console.log(`Verification attempt ${attempt + 1} failed with "contract not found" error. Retrying in ${retryDelayMs}ms...`)
       await new Promise(resolve => setTimeout(resolve, retryDelayMs))
       
     } catch (error) {
@@ -275,7 +274,6 @@ export async function submitVerification(request: VerificationRequest, apiKey: s
       // If it's a "contract not found" type error and we have retries left, continue
       if (isContractNotFoundError(errorMessage) && attempt < maxRetries) {
         lastError = errorMessage
-        console.log(`Verification attempt ${attempt + 1} failed with "contract not found" error. Retrying in ${retryDelayMs}ms...`)
         await new Promise(resolve => setTimeout(resolve, retryDelayMs))
         continue
       }

@@ -5,10 +5,15 @@ import chalk from 'chalk'
 import { setupCommands } from './cli'
 import packageJson from '../package.json'
 
-import { deploymentEvents, CLIEventAdapter } from './lib/events'
+import { deploymentEvents, CLIEventAdapter, VerbosityLevel } from './lib/events'
 
 // Set up CLI event adapter to convert events to console output
 const cliAdapter = new CLIEventAdapter(deploymentEvents)
+
+// Export function to update CLI verbosity
+export function setVerbosity(level: VerbosityLevel): void {
+  cliAdapter.setVerbosity(level)
+}
 
 // Setup global error handling
 process.on('unhandledRejection', (reason, promise) => {

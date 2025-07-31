@@ -2,7 +2,8 @@ import { Command } from 'commander'
 import { Deployer, DeployerOptions } from '../lib/deployer'
 import { loadNetworks } from '../lib/network-loader'
 import { deploymentEvents } from '../lib/events'
-import { projectOption, dotenvOption, noStdOption, loadDotenv } from './common'
+import { projectOption, dotenvOption, noStdOption, verbosityOption, loadDotenv } from './common'
+import { setVerbosity } from '../index'
 
 interface RunOptions {
   project: string
@@ -11,6 +12,7 @@ interface RunOptions {
   dotenv?: string
   std: boolean
   etherscanApiKey?: string
+  verbose: number
 }
 
 export function makeRunCommand(): Command {
@@ -24,10 +26,14 @@ export function makeRunCommand(): Command {
   projectOption(run)
   dotenvOption(run)
   noStdOption(run)
+  verbosityOption(run)
 
   run.action(async (jobs: string[], options: RunOptions) => {
     try {
       loadDotenv(options)
+      
+      // Set verbosity level for logging
+      setVerbosity(options.verbose as 0 | 1 | 2 | 3)
       
       const privateKey = options.privateKey || process.env.PRIVATE_KEY
       if (!privateKey) {
