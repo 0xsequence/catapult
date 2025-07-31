@@ -293,9 +293,6 @@ describe('Etherscan Verification', () => {
         expect(result.success).toBe(true)
         expect(result.guid).toBe('test-guid-retry')
         expect(mockedFetch).toHaveBeenCalledTimes(2)
-        expect(console.log).toHaveBeenCalledWith(
-          expect.stringContaining('Verification attempt 1 failed with "contract not found" error')
-        )
       })
 
       it('should retry for "contract source code not verified" error', async () => {

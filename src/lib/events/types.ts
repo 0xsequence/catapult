@@ -334,6 +334,17 @@ export interface VerificationFailedEvent extends BaseEvent {
   }
 }
 
+export interface VerificationRetryEvent extends BaseEvent {
+  type: 'verification_retry'
+  level: 'info'
+  data: {
+    platform: string
+    attempt: number
+    maxRetries: number
+    error: string
+  }
+}
+
 // Union type of all events
 export type DeploymentEvent =
   | DeploymentStartedEvent
@@ -370,4 +381,5 @@ export type DeploymentEvent =
   | VerificationStartedEvent
   | VerificationSubmittedEvent
   | VerificationCompletedEvent
-  | VerificationFailedEvent 
+  | VerificationFailedEvent
+  | VerificationRetryEvent 

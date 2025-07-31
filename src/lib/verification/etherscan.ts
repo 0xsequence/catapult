@@ -1,6 +1,7 @@
 import { Network } from '../types/network'
 import { BuildInfo } from '../types/buildinfo'
 import { Contract } from '../types/contracts'
+import { DeploymentEventEmitter } from '../events/emitter'
 
 // Generic verification platform interface
 export interface VerificationPlatform {
@@ -242,7 +243,11 @@ async function submitVerificationAttempt(request: VerificationRequest, apiKey: s
 /**
  * Submits a contract for verification to Etherscan using the v2 API with retry logic
  */
-export async function submitVerification(request: VerificationRequest, apiKey: string): Promise<VerificationResult> {
+export async function submitVerification(
+  request: VerificationRequest, 
+  apiKey: string, 
+  eventEmitter?: DeploymentEventEmitter
+): Promise<VerificationResult> {
   const maxRetries = request.maxRetries ?? 3
   const retryDelayMs = request.retryDelayMs ?? 5000 // 5 seconds default
   
@@ -263,6 +268,20 @@ export async function submitVerification(request: VerificationRequest, apiKey: s
       // If this is the last attempt, don't wait
       if (attempt === maxRetries) {
         break
+      }
+      
+      // Emit retry event if emitter is available
+      if (eventEmitter) {
+        eventEmitter.emitEvent({
+          type: 'verification_retry',
+          level: 'info',
+          data: {
+            platform: 'etherscan_v2',
+            attempt: attempt + 1,
+            maxRetries: maxRetries + 1,
+            error: lastError
+          }
+        })
       }
       
       // Wait before retrying

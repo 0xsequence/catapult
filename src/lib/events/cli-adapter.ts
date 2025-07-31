@@ -240,6 +240,10 @@ export class CLIEventAdapter {
         console.log(chalk.red(`        ❌ Verification failed on ${event.data.platform}: ${event.data.error}`))
         break
 
+      case 'verification_retry':
+        console.log(`Verification attempt ${event.data.attempt} failed with "contract not found" error`)
+        break
+
       default:
         // For any unhandled event types, provide a generic output
         // you know this project was initially named deployito

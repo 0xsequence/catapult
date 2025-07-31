@@ -10,7 +10,7 @@ describe('Event System', () => {
 
   beforeEach(() => {
     eventEmitter = new DeploymentEventEmitter()
-    cliAdapter = new CLIEventAdapter(eventEmitter)
+    cliAdapter = new CLIEventAdapter(eventEmitter, 3)
     
     // Mock console methods
     consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
@@ -128,7 +128,7 @@ describe('Event System', () => {
         expect.stringContaining('1. Loading project from: /test/project')
       )
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Loaded 3 jobs, 5 templates')
+        expect.stringContaining('Loaded 3 jobs, 5 templates, and registered artifacts.')
       )
     })
 
@@ -149,10 +149,10 @@ describe('Event System', () => {
         expect.stringContaining('2. Execution Plan')
       )
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('localhost (ChainID: 1337), sepolia (ChainID: 11155111)')
+        expect.stringContaining('Target Networks: localhost (ChainID: 1337), sepolia (ChainID: 11155111)')
       )
       expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('deploy-factory -> deploy-proxy')
+        expect.stringContaining('Job Execution Order: deploy-factory -> deploy-proxy')
       )
     })
 
