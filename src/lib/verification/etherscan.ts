@@ -520,8 +520,9 @@ export function createDefaultVerificationRegistry(etherscanApiKey?: string): Ver
   // Register Etherscan platform
   registry.register(new EtherscanVerificationPlatform(etherscanApiKey))
   
-  // Future platforms can be registered here
-  // registry.register(new SourceifyVerificationPlatform())
+  // Register Sourcify platform
+  const { SourcifyVerificationPlatform } = require('./sourcify')
+  registry.register(new SourcifyVerificationPlatform())
   
   return registry
 } 

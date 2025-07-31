@@ -61,7 +61,7 @@ export class CLIEventAdapter {
         break
 
       case 'action_skipped':
-        console.log(chalk.yellow(`    ↪ Skipping "${event.data.actionName}" due to met condition.`))
+        console.log(chalk.yellow(`    ↪ Skipping "${event.data.actionName}": ${event.data.reason}`))
         break
 
       case 'template_entered':

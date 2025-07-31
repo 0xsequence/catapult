@@ -214,7 +214,8 @@ export class ExecutionEngine {
 
     // 3. Evaluate template-level skip conditions.
     const templateSkipConditions = template.skip_condition
-    if (await this.evaluateSkipConditions(templateSkipConditions, context, templateScope)) {
+    const templateShouldSkip = await this.evaluateSkipConditions(templateSkipConditions, context, templateScope)
+    if (templateShouldSkip) {
       this.events.emitEvent({
         type: 'template_skipped',
         level: 'info',
@@ -376,7 +377,7 @@ export class ExecutionEngine {
           : undefined
         const resolvedPlatform = action.arguments.platform 
           ? await this.resolver.resolve(action.arguments.platform, context, scope)
-          : 'etherscan_v2'
+          : 'all'
 
         // Validate inputs
         const address = validateAddress(resolvedAddress, actionName)
@@ -414,153 +415,238 @@ export class ExecutionEngine {
         const network = context.getNetwork()
         const contractName = `${contract.sourceName}:${contract.contractName}`
 
-        // Get the verification platform
+        // Handle "all" platform - try all configured platforms for this network
+        if (resolvedPlatform === 'all') {
+          const configuredPlatforms = this.verificationRegistry.getConfiguredPlatforms(network)
+          
+          if (configuredPlatforms.length === 0) {
+            this.events.emitEvent({
+              type: 'action_skipped',
+              level: 'warn',
+              data: {
+                actionName: actionName,
+                reason: `No configured verification platforms available for network ${network.name}`
+              }
+            })
+            return
+          }
+
+          // Try verification on all configured platforms
+          let anySuccess = false
+          for (const platform of configuredPlatforms) {
+            try {
+              await this.verifyOnSinglePlatform(
+                platform, 
+                contract, 
+                address, 
+                constructorArguments, 
+                network, 
+                actionName, 
+                contractName, 
+                action,
+                context
+              )
+              anySuccess = true
+            } catch (error) {
+              // Log the error but continue with other platforms
+              this.events.emitEvent({
+                type: 'verification_failed',
+                level: 'warn',
+                data: {
+                  actionName: actionName,
+                  platform: platform.name,
+                  error: error instanceof Error ? error.message : String(error)
+                }
+              })
+            }
+          }
+
+          if (!anySuccess) {
+            throw new Error(`Verification failed on all configured platforms for network ${network.name}`)
+          }
+
+          return
+        }
+
+        // Handle single platform verification
         const platform = this.verificationRegistry.get(resolvedPlatform)
         if (!platform) {
           throw new Error(`Action "${actionName}": Unsupported verification platform "${resolvedPlatform}"`)
         }
 
-        // Check if platform supports this network
-        if (!platform.supportsNetwork(network)) {
-          this.events.emitEvent({
-            type: 'action_skipped',
-            level: 'info',
-            data: {
-              actionName: actionName,
-              reason: `Network ${network.name} does not support ${resolvedPlatform} verification`
-            }
-          })
-          return
-        }
-
-        // Check if platform is properly configured
-        if (!platform.isConfigured()) {
-          this.events.emitEvent({
-            type: 'action_skipped',
-            level: 'warn',
-            data: {
-              actionName: actionName,
-              reason: `Verification skipped: ${platform.getConfigurationRequirements()}`
-            }
-          })
-          return
-        }
-
-        // Find and load build info
-        let buildInfoPath: string | undefined
-        for (const sourcePath of contract._sources) {
-          if (sourcePath.includes('/build-info/') && sourcePath.endsWith('.json')) {
-            buildInfoPath = sourcePath
-            break
-          }
-        }
-
-        if (!buildInfoPath) {
-          throw new Error(`Action "${actionName}": No build-info file found in contract sources`)
-        }
-
-        const fs = await import('fs/promises')
-        let buildInfoContent: string
-        try {
-          buildInfoContent = await fs.readFile(buildInfoPath, 'utf-8')
-        } catch (error) {
-          throw new Error(`Action "${actionName}": Failed to read build info file at ${buildInfoPath}: ${error instanceof Error ? error.message : String(error)}`)
-        }
-
-        let buildInfo: BuildInfo
-        try {
-          buildInfo = JSON.parse(buildInfoContent)
-        } catch (error) {
-          throw new Error(`Action "${actionName}": Failed to parse build info JSON: ${error instanceof Error ? error.message : String(error)}`)
-        }
-
-        this.events.emitEvent({
-          type: 'verification_started',
-          level: 'info',
-          data: {
-            actionName: actionName,
-            address,
-            contractName,
-            platform: resolvedPlatform,
-            networkName: network.name
-          }
-        })
-
-        try {
-          // Use the platform to verify the contract
-          const verificationResult = await platform.verifyContract({
-            contract,
-            buildInfo,
-            address,
-            constructorArguments,
-            network
-          })
-
-          if (!verificationResult.success) {
-            throw new Error(`Verification failed: ${verificationResult.message}`)
-          }
-
-          // Emit appropriate events based on verification result
-          if (verificationResult.isAlreadyVerified) {
-            this.events.emitEvent({
-              type: 'verification_completed',
-              level: 'info',
-              data: {
-                actionName: actionName,
-                address,
-                contractName,
-                message: verificationResult.message
-              }
-            })
-          } else {
-            this.events.emitEvent({
-              type: 'verification_submitted',
-              level: 'info',
-              data: {
-                actionName: actionName,
-                guid: verificationResult.guid || 'N/A',
-                message: verificationResult.message
-              }
-            })
-
-            this.events.emitEvent({
-              type: 'verification_completed',
-              level: 'info',
-              data: {
-                actionName: actionName,
-                address,
-                contractName,
-                message: 'Contract verified successfully'
-              }
-            })
-          }
-
-          // Set outputs
-          if (action.name) {
-            context.setOutput(`${action.name}.verified`, true)
-            if (verificationResult.guid) {
-              context.setOutput(`${action.name}.guid`, verificationResult.guid)
-            }
-          }
-
-        } catch (error) {
-          this.events.emitEvent({
-            type: 'verification_failed',
-            level: 'error',
-            data: {
-              actionName: actionName,
-              address,
-              contractName,
-              error: error instanceof Error ? error.message : String(error)
-            }
-          })
-          throw error
-        }
+        // Use the helper method for single platform verification
+        await this.verifyOnSinglePlatform(
+          platform,
+          contract,
+          address,
+          constructorArguments,
+          network,
+          actionName,
+          contractName,
+          action,
+          context
+        )
 
         break
       }
       default:
         throw new Error(`Unknown or unimplemented primitive action type: ${(action as any).type}`)
+    }
+  }
+
+  /**
+   * Helper method to verify a contract on a single platform
+   * @private
+   */
+  private async verifyOnSinglePlatform(
+    platform: any,
+    contract: Contract,
+    address: string,
+    constructorArguments: string | undefined,
+    network: any,
+    actionName: string,
+    contractName: string,
+    action: Action,
+    context: ExecutionContext
+  ): Promise<void> {
+    // Check if platform supports this network
+    const supportsNetwork = platform.supportsNetwork(network)
+    if (!supportsNetwork) {
+      this.events.emitEvent({
+        type: 'action_skipped',
+        level: 'info',
+        data: {
+          actionName: actionName,
+          reason: `Network ${network.name} does not support ${platform.name} verification`
+        }
+      })
+      return
+    }
+
+    // Check if platform is properly configured
+    const isConfigured = platform.isConfigured()
+    if (!isConfigured) {
+      this.events.emitEvent({
+        type: 'action_skipped',
+        level: 'warn',
+        data: {
+          actionName: actionName,
+          reason: `Verification skipped: ${platform.getConfigurationRequirements()}`
+        }
+      })
+      return
+    }
+
+    // Find and load build info
+    let buildInfoPath: string | undefined
+    for (const sourcePath of contract._sources) {
+      if (sourcePath.includes('/build-info/') && sourcePath.endsWith('.json')) {
+        buildInfoPath = sourcePath
+        break
+      }
+    }
+
+    if (!buildInfoPath) {
+      throw new Error(`Action "${actionName}": No build-info file found in contract sources`)
+    }
+
+    const fs = await import('fs/promises')
+    let buildInfoContent: string
+    try {
+      buildInfoContent = await fs.readFile(buildInfoPath, 'utf-8')
+    } catch (error) {
+      throw new Error(`Action "${actionName}": Failed to read build info file at ${buildInfoPath}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    let buildInfo: BuildInfo
+    try {
+      buildInfo = JSON.parse(buildInfoContent)
+    } catch (error) {
+      throw new Error(`Action "${actionName}": Failed to parse build info JSON: ${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    this.events.emitEvent({
+      type: 'verification_started',
+      level: 'info',
+      data: {
+        actionName: actionName,
+        address,
+        contractName,
+        platform: platform.name,
+        networkName: network.name
+      }
+    })
+
+    try {
+      // Use the platform to verify the contract
+      const verificationResult = await platform.verifyContract({
+        contract,
+        buildInfo,
+        address,
+        constructorArguments,
+        network
+      })
+
+      if (!verificationResult.success) {
+        throw new Error(`Verification failed: ${verificationResult.message}`)
+      }
+
+      // Emit appropriate events based on verification result
+      if (verificationResult.isAlreadyVerified) {
+        this.events.emitEvent({
+          type: 'verification_completed',
+          level: 'info',
+          data: {
+            actionName: actionName,
+            address,
+            contractName,
+            message: verificationResult.message
+          }
+        })
+      } else {
+        this.events.emitEvent({
+          type: 'verification_submitted',
+          level: 'info',
+          data: {
+            actionName: actionName,
+            guid: verificationResult.guid || 'N/A',
+            message: verificationResult.message
+          }
+        })
+
+        this.events.emitEvent({
+          type: 'verification_completed',
+          level: 'info',
+          data: {
+            actionName: actionName,
+            address,
+            contractName,
+            message: 'Contract verified successfully'
+          }
+        })
+      }
+
+      // Set outputs (only for successful verifications)
+      if (action.name) {
+        context.setOutput(`${action.name}.verified`, true)
+        if (verificationResult.guid) {
+          context.setOutput(`${action.name}.guid`, verificationResult.guid)
+        }
+      }
+
+    } catch (error) {
+      this.events.emitEvent({
+        type: 'verification_failed',
+        level: 'error',
+        data: {
+          actionName: actionName,
+          address,
+          contractName,
+          platform: platform.name,
+          error: error instanceof Error ? error.message : String(error)
+        }
+      })
+      throw error
     }
   }
 

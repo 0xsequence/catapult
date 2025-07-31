@@ -346,7 +346,7 @@ Verify deployed contracts on block explorers:
     address: "{{deploy-factory.address}}"
     contract: "{{Contract(MyContract)}}"  # Reference to the contract to verify
     constructorArguments: "0x000000000000000000000000..."  # Optional hex-encoded args
-    platform: "etherscan_v2"  # Optional, defaults to etherscan_v2
+    platform: "etherscan_v2"  # Optional, defaults to "all" (tries all configured platforms)
 ```
 
 ## Skip Conditions
