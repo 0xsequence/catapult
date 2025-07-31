@@ -190,4 +190,100 @@ actions:
       'Invalid job "my-job": action "my-action" is missing the required "arguments" field or it is not an object.',
     )
   })
+
+  // --- Output Field Tests ---
+
+  it('should correctly parse actions with output: true', () => {
+    const yamlContent = `
+name: "my-job"
+version: "1"
+actions:
+  - name: "action-with-output"
+    template: "my-template"
+    arguments: {}
+    output: true
+`
+    const job = parseJob(yamlContent)
+    expect(job.actions[0].output).toBe(true)
+  })
+
+  it('should correctly parse actions with output: false', () => {
+    const yamlContent = `
+name: "my-job"
+version: "1"
+actions:
+  - name: "action-without-output"
+    template: "my-template"
+    arguments: {}
+    output: false
+`
+    const job = parseJob(yamlContent)
+    expect(job.actions[0].output).toBe(false)
+  })
+
+  it('should correctly parse actions with no output field (undefined)', () => {
+    const yamlContent = `
+name: "my-job"
+version: "1"
+actions:
+  - name: "action-no-output"
+    template: "my-template"
+    arguments: {}
+`
+    const job = parseJob(yamlContent)
+    expect(job.actions[0].output).toBeUndefined()
+  })
+
+  it('should throw an error if output field is not a boolean', () => {
+    const yamlContent = `
+name: "my-job"
+version: "1"
+actions:
+  - name: "my-action"
+    template: "my-template"
+    arguments: {}
+    output: "not-a-boolean"
+`
+    expect(() => parseJob(yamlContent)).toThrow(
+      'Invalid job "my-job": action "my-action" has an invalid "output" field. It must be a boolean (true/false).',
+    )
+  })
+
+  it('should throw an error if output field is a number', () => {
+    const yamlContent = `
+name: "my-job"
+version: "1"
+actions:
+  - name: "my-action"
+    template: "my-template"
+    arguments: {}
+    output: 1
+`
+    expect(() => parseJob(yamlContent)).toThrow(
+      'Invalid job "my-job": action "my-action" has an invalid "output" field. It must be a boolean (true/false).',
+    )
+  })
+
+  it('should correctly parse mixed actions with and without output fields', () => {
+    const yamlContent = `
+name: "my-job"
+version: "1"
+actions:
+  - name: "action1"
+    template: "template1"
+    arguments: {}
+    output: true
+  - name: "action2"
+    template: "template2"
+    arguments: {}
+  - name: "action3"
+    template: "template3"
+    arguments: {}
+    output: false
+`
+    const job = parseJob(yamlContent)
+    expect(job.actions[0].output).toBe(true)
+    expect(job.actions[1].output).toBeUndefined()
+    expect(job.actions[2].output).toBe(false)
+  })
 })

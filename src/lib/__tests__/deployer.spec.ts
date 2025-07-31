@@ -287,6 +287,130 @@ describe('Deployer', () => {
         expect(mockEngine.executeJob).not.toHaveBeenCalled()
         expect(mockFs.writeFile).not.toHaveBeenCalled()
       })
+
+      it('should filter outputs based on action output flags', async () => {
+        // Create a job with mixed output flags
+        const jobWithOutputFlags: Job = {
+          name: 'job-with-output-flags',
+          version: '1.0.0',
+          description: 'Job with output filtering',
+          actions: [
+            { name: 'deploy-action', template: 'template1', arguments: {}, output: true },
+            { name: 'verify-action', template: 'template1', arguments: {}, output: false },
+            { name: 'other-action', template: 'template1', arguments: {} } // no output flag
+          ]
+        }
+        
+        mockLoader.jobs.clear()
+        mockLoader.jobs.set('job-with-output-flags', jobWithOutputFlags)
+        mockGraph.getExecutionOrder.mockReturnValue(['job-with-output-flags'])
+        
+        // Mock context to return outputs from all actions
+        mockContext.getOutputs.mockReturnValue(new Map<string, any>([
+          ['deploy-action.address', '0xdeployaddress'],
+          ['deploy-action.hash', '0xdeployhash'],
+          ['verify-action.guid', 'verification-guid'],
+          ['other-action.result', 'some-result']
+        ]))
+
+        const deployer = new Deployer(deployerOptions)
+        await deployer.run()
+
+        // Verify output file was written
+        expect(mockFs.writeFile).toHaveBeenCalledTimes(1)
+        
+        const outputCall = mockFs.writeFile.mock.calls[0]
+        expect(outputCall[0]).toBe('/test/project/output/job-with-output-flags.json')
+        
+        const outputContent = JSON.parse(outputCall[1] as string)
+        expect(outputContent.networks).toHaveLength(1)
+        expect(outputContent.networks[0].status).toBe('success')
+        
+        // Should only include outputs from deploy-action (output: true)
+        // Should NOT include verify-action (output: false) or other-action (no flag)
+        expect(outputContent.networks[0].outputs).toEqual({
+          'deploy-action.address': '0xdeployaddress',
+          'deploy-action.hash': '0xdeployhash'
+        })
+      })
+
+      it('should include all outputs when no actions have output: true (backward compatibility)', async () => {
+        // Create a job where no actions explicitly set output: true
+        const jobWithoutOutputFlags: Job = {
+          name: 'job-without-output-flags',
+          version: '1.0.0',
+          description: 'Job without output flags',
+          actions: [
+            { name: 'action1', template: 'template1', arguments: {} },
+            { name: 'action2', template: 'template1', arguments: {}, output: false }
+          ]
+        }
+        
+        mockLoader.jobs.clear()
+        mockLoader.jobs.set('job-without-output-flags', jobWithoutOutputFlags)
+        mockGraph.getExecutionOrder.mockReturnValue(['job-without-output-flags'])
+        
+        // Mock context to return outputs from all actions
+        mockContext.getOutputs.mockReturnValue(new Map<string, any>([
+          ['action1.result', 'result1'],
+          ['action2.result', 'result2']
+        ]))
+
+        const deployer = new Deployer(deployerOptions)
+        await deployer.run()
+
+        // Verify output file was written
+        expect(mockFs.writeFile).toHaveBeenCalledTimes(1)
+        
+        const outputCall = mockFs.writeFile.mock.calls[0]
+        const outputContent = JSON.parse(outputCall[1] as string)
+        
+        // Should include all outputs (backward compatibility)
+        expect(outputContent.networks[0].outputs).toEqual({
+          'action1.result': 'result1',
+          'action2.result': 'result2'
+        })
+      })
+
+      it('should filter outputs correctly when multiple actions have output: true', async () => {
+        // Create a job with multiple actions marked for output
+        const jobWithMultipleOutputs: Job = {
+          name: 'job-multiple-outputs',
+          version: '1.0.0',
+          description: 'Job with multiple output actions',
+          actions: [
+            { name: 'deploy1', template: 'template1', arguments: {}, output: true },
+            { name: 'deploy2', template: 'template1', arguments: {}, output: true },
+            { name: 'verify1', template: 'template1', arguments: {}, output: false },
+            { name: 'verify2', template: 'template1', arguments: {}, output: false }
+          ]
+        }
+        
+        mockLoader.jobs.clear()
+        mockLoader.jobs.set('job-multiple-outputs', jobWithMultipleOutputs)
+        mockGraph.getExecutionOrder.mockReturnValue(['job-multiple-outputs'])
+        
+        // Mock context to return outputs from all actions
+        mockContext.getOutputs.mockReturnValue(new Map<string, any>([
+          ['deploy1.address', '0xdeploy1'],
+          ['deploy2.address', '0xdeploy2'],
+          ['verify1.guid', 'verify1-guid'],
+          ['verify2.guid', 'verify2-guid']
+        ]))
+
+        const deployer = new Deployer(deployerOptions)
+        await deployer.run()
+
+        // Verify output file was written
+        const outputCall = mockFs.writeFile.mock.calls[0]
+        const outputContent = JSON.parse(outputCall[1] as string)
+        
+        // Should include outputs from both deploy actions, but not verify actions
+        expect(outputContent.networks[0].outputs).toEqual({
+          'deploy1.address': '0xdeploy1',
+          'deploy2.address': '0xdeploy2'
+        })
+      })
     })
 
     describe('error handling', () => {
