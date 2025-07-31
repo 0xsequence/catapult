@@ -36,6 +36,9 @@ export interface DeployerOptions {
   
   /** Optional Etherscan API key for contract verification. */
   etherscanApiKey?: string
+  
+  /** Optional: Stop execution as soon as any job fails. Defaults to false. */
+  failEarly?: boolean
 }
 
 /**
@@ -121,6 +124,9 @@ export class Deployer {
       const verificationRegistry = createDefaultVerificationRegistry(this.options.etherscanApiKey)
       const engine = new ExecutionEngine(this.loader.templates, this.events, verificationRegistry)
       
+      // Track if any jobs have failed
+      let hasFailures = false
+      
       for (const network of targetNetworks) {
         this.events.emitEvent({
           type: 'network_started',
@@ -185,13 +191,35 @@ export class Deployer {
               }
             })
             
-            // Continue to next job/network instead of failing the entire deployment
+            // Mark that we have failures
+            hasFailures = true
+            
+            // If fail-early is enabled, throw the error immediately
+            if (this.options.failEarly) {
+              throw error
+            }
+            
+            // Otherwise, continue to next job/network
           }
         }
       }
       
       // 5. Write results to output files.
       await this.writeOutputFiles()
+
+      // Check if any jobs failed and exit with error if so
+      if (hasFailures) {
+        const error = new Error('One or more jobs failed during execution')
+        this.events.emitEvent({
+          type: 'deployment_failed',
+          level: 'error',
+          data: {
+            error: error.message,
+            stack: error.stack
+          }
+        })
+        throw error
+      }
 
       this.events.emitEvent({
         type: 'deployment_completed',

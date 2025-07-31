@@ -433,14 +433,14 @@ describe('Deployer', () => {
         await expect(deployer.run()).rejects.toThrow('Circular dependency detected')
       })
 
-            it('should capture job execution failures and continue', async () => {
+            it('should capture job execution failures and then throw', async () => {
         mockEngine.executeJob.mockRejectedValue(new Error('Transaction failed'))
         
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).resolves.not.toThrow()
+        await expect(deployer.run()).rejects.toThrow('One or more jobs failed during execution')
         
-        // Should still write output files with error entries
+        // Should still write output files with error entries before throwing
         expect(mockFs.writeFile).toHaveBeenCalled()
         
         // Check that error entries are recorded
@@ -470,16 +470,16 @@ describe('Deployer', () => {
         await expect(deployer.run()).rejects.toThrow('Disk full')
       })
 
-      it('should handle execution context creation failure', async () => {
+      it('should handle execution context creation failure and then throw', async () => {
         MockExecutionContext.mockImplementation(() => {
           throw new Error('Invalid private key')
         })
 
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).resolves.not.toThrow()
+        await expect(deployer.run()).rejects.toThrow('One or more jobs failed during execution')
         
-        // Should record context creation failures as error entries
+        // Should record context creation failures as error entries before throwing
         const writeFileCalls = mockFs.writeFile.mock.calls
         const outputFile = writeFileCalls[0]
         const outputContent = JSON.parse(outputFile[1] as string)
@@ -558,7 +558,7 @@ describe('Deployer', () => {
         )
       })
 
-      it('should handle execution context without getOutputs method', async () => {
+      it('should handle execution context without getOutputs method and then throw', async () => {
         const brokenContext = {
           // Missing getOutputs method
         } as any
@@ -567,9 +567,9 @@ describe('Deployer', () => {
 
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).resolves.not.toThrow()
+        await expect(deployer.run()).rejects.toThrow('One or more jobs failed during execution')
         
-        // Should record the missing method error
+        // Should record the missing method error before throwing
         const writeFileCalls = mockFs.writeFile.mock.calls
         const outputFile = writeFileCalls[0]
         const outputContent = JSON.parse(outputFile[1] as string)
@@ -640,7 +640,7 @@ describe('Deployer', () => {
         expect(usedNetworks).toEqual(expect.arrayContaining([1, 137]))
       })
 
-      it('should write output files even when all executions fail', async () => {
+      it('should write output files even when all executions fail and then throw', async () => {
         // Make all executions fail
         mockEngine.executeJob.mockImplementation(() => {
           throw new Error('Execution failed')
@@ -648,9 +648,9 @@ describe('Deployer', () => {
 
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).resolves.not.toThrow()
+        await expect(deployer.run()).rejects.toThrow('One or more jobs failed during execution')
         
-        // Should write output files with error entries
+        // Should write output files with error entries before throwing
         expect(mockFs.writeFile).toHaveBeenCalled()
         
         const writeFileCalls = mockFs.writeFile.mock.calls
@@ -824,9 +824,9 @@ describe('Deployer', () => {
 
         const deployer = new Deployer(deployerOptions)
         
-        await expect(deployer.run()).resolves.not.toThrow()
+        await expect(deployer.run()).rejects.toThrow('One or more jobs failed during execution')
         
-        // Should capture the partial failure in output files
+        // Should capture the partial failure in output files before throwing
         const writeFileCalls = mockFs.writeFile.mock.calls
         const job2Output = writeFileCalls.find(call => 
           String(call[0]).includes('job2.json')
@@ -925,9 +925,9 @@ describe('Deployer', () => {
         } as any))
 
         const deployer = new Deployer(deployerOptions)
-        await expect(deployer.run()).resolves.not.toThrow() // Should not throw, just continue
+        await expect(deployer.run()).rejects.toThrow('One or more jobs failed during execution')
 
-        // Verify outputs show both success and error states
+        // Verify outputs show both success and error states before throwing
         const writeFileCalls = mockFs.writeFile.mock.calls
         const job1Output = writeFileCalls.find(call => 
           call[0] === '/test/project/output/job1.json'
@@ -948,6 +948,87 @@ describe('Deployer', () => {
         expect(errorEntry.chainId).toBe('137')
         expect(errorEntry.error).toBe('Polygon execution failed')
       })
+    })
+  })
+
+  describe('fail-early functionality', () => {
+    beforeEach(() => {
+      // Clear mock call counts for this test suite
+      mockEngine.executeJob.mockClear()
+    })
+
+    it('should stop execution immediately when failEarly is true', async () => {
+      const options: DeployerOptions = {
+        ...deployerOptions,
+        runJobs: ['job1'], // Only run job1 to have predictable call count
+        failEarly: true
+      }
+
+      // Make the first execution fail
+      mockEngine.executeJob.mockRejectedValueOnce(new Error('First job failed'))
+
+      const deployer = new Deployer(options)
+      
+      await expect(deployer.run()).rejects.toThrow('First job failed')
+      
+      // Should only attempt the first execution, not continue to other networks/jobs
+      expect(mockEngine.executeJob).toHaveBeenCalledTimes(1)
+    })
+
+    it('should continue through all jobs/networks when failEarly is false', async () => {
+      const options: DeployerOptions = {
+        ...deployerOptions,
+        runJobs: ['job1'], // Only run job1 to have predictable call count
+        failEarly: false // explicit false
+      }
+
+      // Make the first execution fail but others succeed
+      mockEngine.executeJob.mockRejectedValueOnce(new Error('First job failed'))
+      mockEngine.executeJob.mockResolvedValue(undefined)
+
+      const deployer = new Deployer(options)
+      
+      await expect(deployer.run()).rejects.toThrow('One or more jobs failed during execution')
+      
+      // Should attempt all executions (2 networks * 1 job = 2 calls)
+      expect(mockEngine.executeJob).toHaveBeenCalledTimes(2)
+    })
+
+    it('should default to failEarly: false when option is not provided', async () => {
+      const options: DeployerOptions = {
+        ...deployerOptions,
+        runJobs: ['job1'] // Only run job1 to have predictable call count
+        // failEarly not specified, should default to false
+      }
+
+      // Make the first execution fail but others succeed
+      mockEngine.executeJob.mockRejectedValueOnce(new Error('First job failed'))
+      mockEngine.executeJob.mockResolvedValue(undefined)
+
+      const deployer = new Deployer(options)
+      
+      await expect(deployer.run()).rejects.toThrow('One or more jobs failed during execution')
+      
+      // Should attempt all executions
+      expect(mockEngine.executeJob).toHaveBeenCalledTimes(2)
+    })
+
+    it('should not throw when all jobs succeed, regardless of failEarly setting', async () => {
+      const options: DeployerOptions = {
+        ...deployerOptions,
+        runJobs: ['job1'], // Only run job1 to have predictable call count
+        failEarly: true
+      }
+
+      // All executions succeed
+      mockEngine.executeJob.mockResolvedValue(undefined)
+
+      const deployer = new Deployer(options)
+      
+      await expect(deployer.run()).resolves.not.toThrow()
+      
+      // Should complete all executions
+      expect(mockEngine.executeJob).toHaveBeenCalledTimes(2)
     })
   })
 }) 

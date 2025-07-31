@@ -107,3 +107,7 @@ examples/output/
 
 # Examples 2
 examples2/
+examples3/
+
+# Any tmp files
+*.tmp

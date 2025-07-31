@@ -244,6 +244,11 @@ export class CLIEventAdapter {
         console.log(`Verification attempt ${event.data.attempt} failed with "contract not found" error`)
         break
 
+      case 'job_execution_failed':
+        console.error(chalk.red.bold(`❌ Job "${event.data.jobName}" failed on ${event.data.networkName} (Chain ID: ${event.data.chainId})`))
+        console.error(chalk.red(`   Error: ${event.data.error}`))
+        break
+
       default:
         // For any unhandled event types, provide a generic output
         // you know this project was initially named deployito
