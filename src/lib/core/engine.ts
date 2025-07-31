@@ -499,22 +499,42 @@ export class ExecutionEngine {
             throw new Error(`Verification submission failed: ${verificationResult.message}`)
           }
 
-          const guid = verificationResult.guid!
-
           this.events.emitEvent({
             type: 'verification_submitted',
             level: 'info',
             data: {
               actionName: actionName,
-              guid,
+              guid: verificationResult.guid || 'N/A',
               message: verificationResult.message
             }
           })
 
-          // Wait for verification to complete
-          const verificationStatus = await waitForVerification(guid, etherscanApiKey, network)
+          // If we have a guid, wait for verification to complete
+          // If no guid (contract already verified), skip waiting and mark as successful
+          if (verificationResult.guid) {
+            const verificationStatus = await waitForVerification(verificationResult.guid, etherscanApiKey, network)
 
-          if (verificationStatus.isSuccess) {
+            if (verificationStatus.isSuccess) {
+              this.events.emitEvent({
+                type: 'verification_completed',
+                level: 'info',
+                data: {
+                  actionName: actionName,
+                  address,
+                  contractName,
+                  message: 'Contract verified successfully'
+                }
+              })
+
+              if (action.name) {
+                context.setOutput(`${action.name}.verified`, true)
+                context.setOutput(`${action.name}.guid`, verificationResult.guid)
+              }
+            } else {
+              throw new Error(`Verification failed: ${verificationStatus.message}`)
+            }
+          } else {
+            // Contract was already verified, mark as completed
             this.events.emitEvent({
               type: 'verification_completed',
               level: 'info',
@@ -522,16 +542,13 @@ export class ExecutionEngine {
                 actionName: actionName,
                 address,
                 contractName,
-                message: 'Contract verified successfully'
+                message: 'Contract was already verified'
               }
             })
 
             if (action.name) {
               context.setOutput(`${action.name}.verified`, true)
-              context.setOutput(`${action.name}.guid`, guid)
             }
-          } else {
-            throw new Error(`Verification failed: ${verificationStatus.message}`)
           }
 
         } catch (error) {

@@ -35,6 +35,14 @@ function isContractNotFoundError(message: string): boolean {
 }
 
 /**
+ * Checks if an error message indicates that the contract is already verified
+ */
+function isAlreadyVerifiedError(message: string): boolean {
+  return message.toLowerCase().includes('already verified') ||
+         message.toLowerCase().includes('contract source code already verified')
+}
+
+/**
  * Extracts the full compiler version with commit hash from contract metadata
  */
 function getFullCompilerVersion(buildInfo: BuildInfo): string {
@@ -137,9 +145,19 @@ async function submitVerificationAttempt(request: VerificationRequest): Promise<
       message: 'Verification submitted successfully'
     }
   } else {
+    const errorMessage = data.result || 'Unknown error occurred'
+    
+    // Treat "Already Verified" as a success case
+    if (isAlreadyVerifiedError(errorMessage)) {
+      return {
+        success: true,
+        message: 'Contract is already verified'
+      }
+    }
+    
     return {
       success: false,
-      message: data.result || 'Unknown error occurred'
+      message: errorMessage
     }
   }
 }
@@ -242,6 +260,13 @@ export async function checkVerificationStatus(
           isComplete: false,
           isSuccess: false,
           message: 'Verification pending'
+        }
+      } else if (isAlreadyVerifiedError(result)) {
+        // Treat "Already Verified" as success during status check
+        return {
+          isComplete: true,
+          isSuccess: true,
+          message: 'Contract is already verified'
         }
       } else {
         return {

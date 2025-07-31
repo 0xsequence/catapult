@@ -220,6 +220,46 @@ describe('Etherscan Verification', () => {
       )
     })
 
+    it('should treat "Already Verified" as success', async () => {
+      const mockResponseData = {
+        status: '0',
+        result: 'Already Verified'
+      }
+      mockedFetch.mockResolvedValueOnce(createMockResponse(mockResponseData))
+
+      const result = await submitVerification({
+        address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
+        buildInfo: mockBuildInfo,
+        contract: mockContract,
+        apiKey: 'test-api-key',
+        network: mockNetwork
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.message).toBe('Contract is already verified')
+      expect(result.guid).toBeUndefined()
+    })
+
+    it('should treat "Contract source code already verified" as success', async () => {
+      const mockResponseData = {
+        status: '0',
+        result: 'Contract source code already verified'
+      }
+      mockedFetch.mockResolvedValueOnce(createMockResponse(mockResponseData))
+
+      const result = await submitVerification({
+        address: '0x742d35Cc6596C743B2c8d12Cd84d5B8FbA4F3C',
+        buildInfo: mockBuildInfo,
+        contract: mockContract,
+        apiKey: 'test-api-key',
+        network: mockNetwork
+      })
+
+      expect(result.success).toBe(true)
+      expect(result.message).toBe('Contract is already verified')
+      expect(result.guid).toBeUndefined()
+    })
+
     describe('retry logic', () => {
       beforeEach(() => {
         // Mock console.log to avoid noise in test output
@@ -524,6 +564,20 @@ describe('Etherscan Verification', () => {
       expect(status.isComplete).toBe(true)
       expect(status.isSuccess).toBe(false)
       expect(status.message).toBe('Fail - Unable to verify')
+    })
+
+    it('should treat "Already Verified" as success in status check', async () => {
+      const mockResponseData = {
+        status: '0',
+        result: 'Already Verified'
+      }
+      mockedFetch.mockResolvedValueOnce(createMockResponse(mockResponseData))
+
+      const status = await checkVerificationStatus('test-guid', 'test-api-key', mockNetwork)
+
+      expect(status.isComplete).toBe(true)
+      expect(status.isSuccess).toBe(true)
+      expect(status.message).toBe('Contract is already verified')
     })
   })
 
