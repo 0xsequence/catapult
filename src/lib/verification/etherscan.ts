@@ -75,6 +75,50 @@ function getEtherscanApiUrl(chainId: number): string {
 }
 
 /**
+ * Checks if a contract is already verified on Etherscan using the v2 API
+ */
+export async function isContractAlreadyVerified(
+  address: string,
+  apiKey: string,
+  network: Network
+): Promise<boolean> {
+  const apiUrl = getEtherscanApiUrl(network.chainId)
+  
+  const params = new URLSearchParams({
+    module: 'contract',
+    action: 'getsourcecode',
+    address: address,
+    apikey: apiKey
+  })
+
+  try {
+    const response = await fetch(`${apiUrl}&${params.toString()}`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(15000), // 15 second timeout
+    })
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+    }
+
+    const data = await response.json() as { status: string; result: any }
+
+    // If status is "1" and result contains source code, the contract is verified
+    if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
+      const sourceCode = data.result[0]?.SourceCode
+      return !!(sourceCode && sourceCode.length > 0)
+    }
+
+    return false
+  } catch (error) {
+    // If we can't determine the verification status, assume it's not verified
+    // and let the verification attempt proceed (which will handle any errors)
+    console.warn(`Failed to check verification status for ${address}: ${error instanceof Error ? error.message : String(error)}`)
+    return false
+  }
+}
+
+/**
  * Internal function to perform a single verification attempt
  */
 async function submitVerificationAttempt(request: VerificationRequest): Promise<VerificationResult> {

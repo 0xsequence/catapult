@@ -1,4 +1,4 @@
-import { submitVerification, checkVerificationStatus, waitForVerification } from '../etherscan'
+import { submitVerification, checkVerificationStatus, waitForVerification, isContractAlreadyVerified } from '../etherscan'
 import { Network } from '../../types/network'
 import { BuildInfo } from '../../types/buildinfo'
 
@@ -608,6 +608,124 @@ describe('Etherscan Verification', () => {
       ).rejects.toThrow('Verification timed out after 1 seconds')
 
       expect(mockedFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('isContractAlreadyVerified', () => {
+    const testAddress = '0x1234567890123456789012345678901234567890'
+    const testApiKey = 'test-api-key'
+
+    beforeEach(() => {
+      mockedFetch.mockClear()
+    })
+
+    it('should return true when contract is verified', async () => {
+      mockedFetch.mockResolvedValueOnce(createMockResponse({
+        status: '1',
+        result: [{
+          SourceCode: 'pragma solidity ^0.8.0; contract MyToken { }'
+        }]
+      }))
+
+      const result = await isContractAlreadyVerified(testAddress, testApiKey, mockNetwork)
+
+      expect(result).toBe(true)
+      expect(mockedFetch).toHaveBeenCalledWith(
+        expect.stringContaining('chainid=1'),
+        expect.objectContaining({
+          method: 'GET'
+        })
+      )
+    })
+
+    it('should return false when contract is not verified (empty source code)', async () => {
+      mockedFetch.mockResolvedValueOnce(createMockResponse({
+        status: '1',
+        result: [{
+          SourceCode: ''
+        }]
+      }))
+
+      const result = await isContractAlreadyVerified(testAddress, testApiKey, mockNetwork)
+
+      expect(result).toBe(false)
+    })
+
+    it('should return false when API returns status 0', async () => {
+      mockedFetch.mockResolvedValueOnce(createMockResponse({
+        status: '0',
+        result: 'Contract source code not verified'
+      }))
+
+      const result = await isContractAlreadyVerified(testAddress, testApiKey, mockNetwork)
+
+      expect(result).toBe(false)
+    })
+
+    it('should return false when result array is empty', async () => {
+      mockedFetch.mockResolvedValueOnce(createMockResponse({
+        status: '1',
+        result: []
+      }))
+
+      const result = await isContractAlreadyVerified(testAddress, testApiKey, mockNetwork)
+
+      expect(result).toBe(false)
+    })
+
+    it('should return false and log warning when API request fails', async () => {
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation()
+      mockedFetch.mockRejectedValueOnce(new Error('Network error'))
+
+      const result = await isContractAlreadyVerified(testAddress, testApiKey, mockNetwork)
+
+      expect(result).toBe(false)
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`Failed to check verification status for ${testAddress}`)
+      )
+
+      consoleSpy.mockRestore()
+    })
+
+    it('should return false when HTTP response is not ok', async () => {
+      const consoleSpy = jest.spyOn(console, 'warn').mockImplementation()
+      mockedFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error'
+      } as Response)
+
+      const result = await isContractAlreadyVerified(testAddress, testApiKey, mockNetwork)
+
+      expect(result).toBe(false)
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to check verification status')
+      )
+
+      consoleSpy.mockRestore()
+    })
+
+    it('should use correct chainId in API call for different networks', async () => {
+      const arbitrumNetwork: Network = {
+        name: 'Arbitrum One',
+        chainId: 42161,
+        rpcUrl: 'https://arb1.arbitrum.io/rpc',
+        supports: ['etherscan_v2']
+      }
+
+      mockedFetch.mockResolvedValueOnce(createMockResponse({
+        status: '1',
+        result: [{
+          SourceCode: 'contract code'
+        }]
+      }))
+
+      await isContractAlreadyVerified(testAddress, testApiKey, arbitrumNetwork)
+
+      expect(mockedFetch).toHaveBeenCalledWith(
+        expect.stringContaining('chainid=42161'),
+        expect.any(Object)
+      )
     })
   })
 }) 

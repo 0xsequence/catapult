@@ -4,7 +4,7 @@ import { ExecutionContext } from './context'
 import { ValueResolver, ResolutionScope } from './resolver'
 import { validateAddress, validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
 import { DeploymentEventEmitter, deploymentEvents } from '../events'
-import { submitVerification, waitForVerification } from '../verification/etherscan'
+import { submitVerification, waitForVerification, isContractAlreadyVerified } from '../verification/etherscan'
 import { BuildInfo } from '../types/buildinfo'
 
 /**
@@ -485,6 +485,28 @@ export class ExecutionEngine {
         })
 
         try {
+          // First check if the contract is already verified
+          const alreadyVerified = await isContractAlreadyVerified(address, etherscanApiKey, network)
+          
+          if (alreadyVerified) {
+            // Contract is already verified, skip verification attempt
+            this.events.emitEvent({
+              type: 'verification_completed',
+              level: 'info',
+              data: {
+                actionName: actionName,
+                address,
+                contractName,
+                message: 'Contract was already verified (checked before attempting verification)'
+              }
+            })
+
+            if (action.name) {
+              context.setOutput(`${action.name}.verified`, true)
+            }
+            return
+          }
+
           // Submit verification
           const verificationResult = await submitVerification({
             contract,
