@@ -40,6 +40,27 @@ describe('ExecutionEngine', () => {
     engine = new ExecutionEngine(templates, undefined, verificationRegistry)
   })
 
+  afterEach(async () => {
+    // Clean up providers to prevent hanging connections
+    if (anvilProvider) {
+      try {
+        if (anvilProvider.destroy) {
+          await anvilProvider.destroy()
+        }
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
+    
+    if (context) {
+      try {
+        await context.dispose()
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
+  })
+
   describe('executeJob', () => {
     it('should execute a simple job with no dependencies', async () => {
       const job: Job = {

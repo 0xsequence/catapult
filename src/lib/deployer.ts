@@ -158,8 +158,9 @@ export class Deployer {
             this.results.set(job.name, { job, outputs: new Map() })
           }
           
+          let context: ExecutionContext | undefined
           try {
-            const context = new ExecutionContext(
+            context = new ExecutionContext(
               network, 
               this.options.privateKey, 
               this.loader.contractRepository,
@@ -204,6 +205,24 @@ export class Deployer {
             }
             
             // Otherwise, continue to next job/network
+          } finally {
+            // Clean up the context to prevent hanging connections
+            if (context) {
+              try {
+                await context.dispose()
+              } catch (disposeError) {
+                // Log disposal errors but don't let them interrupt the flow
+                this.events.emitEvent({
+                  type: 'context_disposal_warning',
+                  level: 'warn',
+                  data: {
+                    jobName: job.name,
+                    networkName: network.name,
+                    error: disposeError instanceof Error ? disposeError.message : String(disposeError)
+                  }
+                })
+              }
+            }
           }
         }
       }
@@ -382,7 +401,8 @@ export class Deployer {
 
   /**
    * Filters outputs to only include those from actions marked with output: true.
-   * If no actions have output: true, includes all outputs (backward compatibility).
+   * If no actions have output: true, includes all outputs (backward compatibility),
+   * but excludes dependency outputs when there are explicit dependencies defined.
    */
   private filterOutputsByActionFlags(outputs: Map<string, unknown>, job: Job): Record<string, unknown> {
     // Get list of actions that should contribute to output
@@ -390,6 +410,11 @@ export class Deployer {
     
     // If no actions explicitly set output: true, include all outputs (backward compatibility)
     if (outputActions.length === 0) {
+      // Only filter out dependency outputs if the job has explicit dependencies
+      // This prevents dependency outputs from polluting the job's own output file
+      if (job.depends_on && job.depends_on.length > 0) {
+        return this.filterOutDependencyOutputs(outputs, job)
+      }
       return Object.fromEntries(outputs)
     }
     
@@ -402,6 +427,29 @@ export class Deployer {
           filtered.set(key, value)
           break
         }
+      }
+    }
+    
+    return Object.fromEntries(filtered)
+  }
+
+  /**
+   * Filters out dependency outputs from the outputs map.
+   * Dependency outputs are identified by being prefixed with dependency job names.
+   */
+  private filterOutDependencyOutputs(outputs: Map<string, unknown>, job: Job): Record<string, unknown> {
+    const filtered = new Map<string, unknown>()
+    
+    // Get list of dependency job names
+    const dependencyNames = job.depends_on || []
+    
+    for (const [key, value] of outputs) {
+      // Check if this output key starts with any dependency job name prefix
+      const isDependencyOutput = dependencyNames.some(depName => key.startsWith(`${depName}.`))
+      
+      // Only include outputs that are NOT from dependencies
+      if (!isDependencyOutput) {
+        filtered.set(key, value)
       }
     }
     

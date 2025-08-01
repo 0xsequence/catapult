@@ -24,6 +24,17 @@ describe('ValueResolver', () => {
     await (context.provider as ethers.JsonRpcProvider).getNetwork()
   })
 
+  afterEach(async () => {
+    // Clean up context to prevent hanging connections
+    if (context) {
+      try {
+        await context.dispose()
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
+  })
+
   describe('basic-arithmetic', () => {
     it('should add two numbers', async () => {
       const value: BasicArithmeticValue = {

@@ -116,6 +116,17 @@ describe('Multi-Platform Verification Integration', () => {
     mockReadFile.mockResolvedValue(JSON.stringify(mockBuildInfo))
   })
 
+  afterEach(async () => {
+    // Clean up context to prevent hanging connections
+    if (context) {
+      try {
+        await context.dispose()
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
+  })
+
   describe('Platform Selection', () => {
     it('should verify on single specified platform', async () => {
       const job: Job = {

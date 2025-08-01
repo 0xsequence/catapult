@@ -61,4 +61,19 @@ export class ExecutionContext {
   public getContextPath(): string | undefined {
     return this.currentContextPath
   }
+
+  /**
+   * Cleanup method to properly dispose of provider connections.
+   * This should be called when the context is no longer needed to prevent hanging connections.
+   */
+  public async dispose(): Promise<void> {
+    try {
+      // Destroy the provider to close any open connections
+      if (this.provider.destroy) {
+        await this.provider.destroy()
+      }
+    } catch (error) {
+      // Ignore errors during cleanup
+    }
+  }
 }

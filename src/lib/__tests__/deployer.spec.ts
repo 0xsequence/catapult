@@ -107,14 +107,17 @@ describe('Deployer', () => {
     } as any
 
     mockEngine = {
-      executeJob: jest.fn()
+      executeJob: jest.fn().mockResolvedValue(undefined)
     } as any
 
     mockContext = {
       getOutputs: jest.fn().mockReturnValue(new Map<string, any>([
         ['action1.hash', '0xhash1'],
         ['action1.receipt', { status: 1 }]
-      ]))
+      ])),
+      dispose: jest.fn().mockResolvedValue(undefined),
+      setOutput: jest.fn(),
+      getOutput: jest.fn()
     } as any
 
     MockProjectLoader.mockImplementation(() => mockLoader)
@@ -848,7 +851,10 @@ describe('Deployer', () => {
           getOutputs: jest.fn().mockReturnValue(new Map<string, any>([
             [`action.hash`, `0xhash-${network.chainId}`],
             [`action.receipt`, { status: 1, blockNumber: network.chainId * 100 }]
-          ]))
+          ])),
+          dispose: jest.fn().mockResolvedValue(undefined),
+          setOutput: jest.fn(),
+          getOutput: jest.fn()
         } as any))
 
         const deployer = new Deployer(deployerOptions)
@@ -882,7 +888,10 @@ describe('Deployer', () => {
           getOutputs: jest.fn().mockReturnValue(new Map<string, any>([
             [`contract.address`, `0x1234567890123456789012345678901234567890`],
             [`contract.txHash`, `0xabcdef1234567890abcdef1234567890abcdef12`]
-          ]))
+          ])),
+          dispose: jest.fn().mockResolvedValue(undefined),
+          setOutput: jest.fn(),
+          getOutput: jest.fn()
         } as any))
 
         const deployer = new Deployer(deployerOptions)
@@ -921,7 +930,10 @@ describe('Deployer', () => {
           network,
           getOutputs: jest.fn().mockReturnValue(new Map<string, any>([
             [`contract.address`, `0x1234567890123456789012345678901234567890`]
-          ]))
+          ])),
+          dispose: jest.fn().mockResolvedValue(undefined),
+          setOutput: jest.fn(),
+          getOutput: jest.fn()
         } as any))
 
         const deployer = new Deployer(deployerOptions)

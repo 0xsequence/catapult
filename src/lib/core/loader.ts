@@ -43,6 +43,11 @@ export class ProjectLoader {
     if (await this.pathExists(jobsPath)) {
         await this.loadJobsFromDir(jobsPath)
     }
+
+    // Load templates from within job directories
+    if (await this.pathExists(jobsPath)) {
+        await this.loadTemplatesFromJobDirs(jobsPath)
+    }
   }
 
   private async loadTemplatesFromDir(dir: string) {
@@ -119,6 +124,38 @@ export class ProjectLoader {
       // Ignore errors from trying to read directories we don't have access to, etc.
     }
     return results
+  }
+
+  /**
+   * Loads templates from within job directories by scanning for 'templates' subdirectories.
+   */
+  private async loadTemplatesFromJobDirs(jobsRootDir: string) {
+    await this.findAndLoadTemplatesInJobDirs(jobsRootDir)
+  }
+
+  /**
+   * Recursively searches for 'templates' directories within job directories and loads templates from them.
+   */
+  private async findAndLoadTemplatesInJobDirs(dir: string, ignoreDirs: Set<string> = new Set(['node_modules', 'dist', '.git', '.idea', '.vscode'])): Promise<void> {
+    try {
+      const list = await fs.readdir(dir, { withFileTypes: true })
+
+      for (const dirent of list) {
+        const fullPath = path.resolve(dir, dirent.name)
+        if (dirent.isDirectory()) {
+          if (!ignoreDirs.has(dirent.name)) {
+            // If this directory is named 'templates', load templates from it
+            if (dirent.name === 'templates') {
+              await this.loadTemplatesFromDir(fullPath)
+            }
+            // Continue recursively searching for more template directories
+            await this.findAndLoadTemplatesInJobDirs(fullPath, ignoreDirs)
+          }
+        }
+      }
+    } catch (err) {
+      // Ignore errors from trying to read directories we don't have access to, etc.
+    }
   }
 
 
