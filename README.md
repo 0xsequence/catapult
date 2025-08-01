@@ -75,11 +75,14 @@ Create a `networks.yaml` file in your project root to define target networks:
   chainId: 137
   rpcUrl: "https://polygon-rpc.com"
   supports: ["etherscan_v2"]  # Optional: verification platforms supported
+  gasLimit: 500000            # Optional: gas limit for all transactions on this network
 ```
 
 The `supports` field is optional and specifies which verification platforms are available for the network. Currently supported platforms:
 
 - `etherscan_v2`: Etherscan v2 verification API (supports Ethereum, Polygon, Arbitrum, BSC, etc.)
+
+The `gasLimit` field is optional and specifies a fixed gas limit to use for all transactions on this network. If not specified, the system will use ethers.js default gas estimation.
 
 If a network doesn't specify `supports` or doesn't include a verification platform, verification jobs will be silently skipped on that network.
 

@@ -13,4 +13,7 @@ export interface Network {
 
   /** Supported verification platforms */
   supports?: string[]
+
+  /** Optional gas limit to use for all transactions on this network */
+  gasLimit?: number
 } 

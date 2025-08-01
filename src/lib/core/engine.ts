@@ -294,7 +294,16 @@ export class ExecutionEngine {
         const data = validateHexData(resolvedData, actionName, 'data')
         const value = validateBigNumberish(resolvedValue, actionName, 'value')
         
-        const tx = await context.signer.sendTransaction({ to, data, value })
+        // Prepare transaction parameters
+        const txParams: any = { to, data, value }
+        
+        // Use network gas limit if specified
+        const network = context.getNetwork()
+        if (network.gasLimit) {
+          txParams.gasLimit = network.gasLimit
+        }
+        
+        const tx = await context.signer.sendTransaction(txParams)
         
         this.events.emitEvent({
           type: 'transaction_sent',

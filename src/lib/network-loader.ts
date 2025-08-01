@@ -16,7 +16,9 @@ function isValidNetwork(obj: unknown): obj is Network {
     // supports field is optional and should be an array of strings if present
     (!('supports' in obj) || 
      (Array.isArray((obj as Record<string, unknown>).supports) && 
-      ((obj as Record<string, unknown>).supports as unknown[]).every((item: unknown) => typeof item === 'string')))
+      ((obj as Record<string, unknown>).supports as unknown[]).every((item: unknown) => typeof item === 'string'))) &&
+    // gasLimit field is optional and should be a number if present
+    (!('gasLimit' in obj) || typeof (obj as Record<string, unknown>).gasLimit === 'number')
   )
 }
 
