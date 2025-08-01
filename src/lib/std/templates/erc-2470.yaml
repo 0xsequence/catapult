@@ -32,7 +32,7 @@ actions:
       data:
         type: "abi-encode"
         arguments:
-          signature: "deploy(bytes,uint256)"
+          signature: "deploy(bytes,bytes32)"
           values:
             - "{{creationCode}}"
             - "{{salt}}"
