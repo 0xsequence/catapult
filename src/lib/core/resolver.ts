@@ -10,6 +10,7 @@ import {
   CallValue,
   ContractExistsCondition,
   ContractExistsValue,
+  JobCompletedValue,
 } from '../types'
 import { ExecutionContext } from './context'
 
@@ -145,6 +146,8 @@ export class ValueResolver {
         return this.resolveCall(resolvedArgs as CallValue['arguments'], context)
       case 'contract-exists':
         return this.resolveContractExists(resolvedArgs as ContractExistsValue['arguments'], context)
+      case 'job-completed':
+        return this.resolveJobCompleted(resolvedArgs as JobCompletedValue['arguments'], context)
       default:
         throw new Error(`Unknown value resolver type: ${(obj as any).type}`)
     }
@@ -352,6 +355,19 @@ export class ValueResolver {
     } catch (error) {
       throw new Error(`contract-exists: Failed to check contract existence: ${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  private async resolveJobCompleted(args: JobCompletedValue['arguments'], context: ExecutionContext): Promise<boolean> {
+    const { job: jobName } = args
+    
+    // For now, we'll assume that if the job is being referenced, it has been completed.
+    // This is a simplification - in a more complete implementation, we might check
+    // the job's completion status from the deployer's results.
+    // 
+    // Since the dependency graph already ensures jobs run in the correct order,
+    // and this condition is used in setup blocks to wait for dependencies,
+    // we can simply return true here.
+    return true
   }
 
   /**

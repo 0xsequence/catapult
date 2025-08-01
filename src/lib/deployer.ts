@@ -159,12 +159,16 @@ export class Deployer {
           }
           
           try {
-                      const context = new ExecutionContext(
-            network, 
-            this.options.privateKey, 
-            this.loader.contractRepository,
-            this.options.etherscanApiKey
-          )
+            const context = new ExecutionContext(
+              network, 
+              this.options.privateKey, 
+              this.loader.contractRepository,
+              this.options.etherscanApiKey
+            )
+            
+            // Populate context with outputs from previously executed dependent jobs
+            this.populateContextWithDependentJobOutputs(job, context, network)
+            
             await engine.executeJob(job, context)
             
             // Store successful results
@@ -307,6 +311,30 @@ export class Deployer {
     
     return false // Run by default
   }
+
+  /**
+   * Populates the execution context with outputs from previously executed dependent jobs.
+   */
+  private populateContextWithDependentJobOutputs(job: Job, context: ExecutionContext, network: Network): void {
+    if (!job.depends_on) return
+
+    for (const dependentJobName of job.depends_on) {
+      const dependentJobResults = this.results.get(dependentJobName)
+      if (!dependentJobResults) continue
+
+      const networkResult = dependentJobResults.outputs.get(network.chainId)
+      if (!networkResult || networkResult.status !== 'success') continue
+
+      // Add outputs with job name prefixes for cross-job access
+      const outputs = networkResult.data as Map<string, unknown>
+      for (const [key, value] of outputs.entries()) {
+        const prefixedKey = `${dependentJobName}.${key}`
+        context.setOutput(prefixedKey, value)
+      }
+    }
+  }
+
+
 
   /**
    * Writes the collected deployment results to JSON files in the output directory.
