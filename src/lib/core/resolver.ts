@@ -191,6 +191,22 @@ export class ValueResolver {
   private resolveConstructorEncode(args: ConstructorEncodeValue['arguments']): string {
     const { creationCode, types, values } = args
 
+    // Validate that types and values arrays have the same length
+    if (types && values && types.length !== values.length) {
+      throw new Error(`constructor-encode: types array length (${types.length}) must match values array length (${values.length})`)
+    }
+
+    // If no creationCode is provided, just do ABI encoding of constructor arguments
+    if (!creationCode) {
+      // If no constructor arguments either, return empty string
+      if (!types || !values || types.length === 0 || values.length === 0) {
+        return '0x'
+      }
+      
+      // ABI encode the constructor arguments using the explicit types
+      return ethers.AbiCoder.defaultAbiCoder().encode(types as string[], values)
+    }
+
     // Validate that creation code is valid bytecode
     if (!ethers.isBytesLike(creationCode)) {
       throw new Error(`Invalid creation code: ${creationCode}`)
@@ -199,11 +215,6 @@ export class ValueResolver {
     // If no constructor arguments, return the creation code as-is
     if (!types || !values || types.length === 0 || values.length === 0) {
       return creationCode
-    }
-
-    // Validate that types and values arrays have the same length
-    if (types.length !== values.length) {
-      throw new Error(`constructor-encode: types array length (${types.length}) must match values array length (${values.length})`)
     }
 
     // ABI encode the constructor arguments using the explicit types

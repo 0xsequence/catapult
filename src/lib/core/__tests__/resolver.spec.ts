@@ -566,6 +566,60 @@ describe('ValueResolver', () => {
         'Invalid creation code: not-valid-bytecode'
       )
     })
+
+    it('should encode just constructor arguments when no creationCode provided', async () => {
+      const value = {
+        type: 'constructor-encode' as const,
+        arguments: {
+          types: ['address'],
+          values: ['0x1234567890123456789012345678901234567890']
+        }
+      }
+      const result = await resolver.resolve(value, context)
+      // Should just be the ABI-encoded address (padded to 32 bytes with 0x prefix)
+      expect(result).toBe('0x0000000000000000000000001234567890123456789012345678901234567890')
+    })
+
+    it('should encode multiple constructor arguments when no creationCode provided', async () => {
+      const value = {
+        type: 'constructor-encode' as const,
+        arguments: {
+          types: ['address', 'uint256'],
+          values: ['0x1234567890123456789012345678901234567890', '42']
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      // Should be ABI-encoded constructor args only
+      expect(result.startsWith('0x')).toBe(true)
+      // Address should be encoded first (32 bytes), then uint256 (32 bytes)
+      expect(result).toBe('0x0000000000000000000000001234567890123456789012345678901234567890000000000000000000000000000000000000000000000000000000000000002a')
+    })
+
+    it('should return 0x when no creationCode and no constructor arguments', async () => {
+      const value = {
+        type: 'constructor-encode' as const,
+        arguments: {
+          types: [],
+          values: []
+        }
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0x')
+    })
+
+    it('should validate that types and values arrays have same length when no creationCode', async () => {
+      const value = {
+        type: 'constructor-encode' as const,
+        arguments: {
+          types: ['address'],
+          values: ['0x1234567890123456789012345678901234567890', '42'] // extra value
+        }
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow(
+        'constructor-encode: types array length (1) must match values array length (2)'
+      )
+    })
   })
 
   describe('abi-encode', () => {

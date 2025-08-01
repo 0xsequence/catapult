@@ -18,7 +18,7 @@ export interface AbiEncodeValue {
 export interface ConstructorEncodeValue {
   type: 'constructor-encode';
   arguments: {
-    creationCode: Value<string>;
+    creationCode?: Value<string>;
     types: Value<string>[];
     values: Value<any>[];
   };
