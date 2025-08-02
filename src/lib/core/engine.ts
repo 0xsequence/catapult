@@ -288,7 +288,7 @@ export class ExecutionEngine {
         const resolvedTo = await this.resolver.resolve(action.arguments.to, context, scope)
         const resolvedData = action.arguments.data ? await this.resolver.resolve(action.arguments.data, context, scope) : '0x'
         const resolvedValue = action.arguments.value ? await this.resolver.resolve(action.arguments.value, context, scope) : 0
-        const resolvedGasMultiplier = action.arguments.gasMultiplier ? await this.resolver.resolve(action.arguments.gasMultiplier, context, scope) : undefined
+        const resolvedGasMultiplier = action.arguments.gasMultiplier !== undefined ? await this.resolver.resolve(action.arguments.gasMultiplier, context, scope) : undefined
         
         // Validate and convert types
         const to = validateAddress(resolvedTo, actionName)
