@@ -255,7 +255,13 @@ Send a transaction to the blockchain:
     to: "0x742..."
     value: "1000000000000000000"  # 1 ETH in wei
     data: "0x..."
+    gasMultiplier: 1.5  # Optional: multiply gas limit by this factor
 ```
+
+The `gasMultiplier` parameter is optional and allows you to tune the gas limit before sending the transaction:
+- If a network gas limit is configured, it will be multiplied by this factor
+- If no network gas limit is set, gas will be estimated first, then multiplied by this factor
+- Must be a positive number (e.g., 1.5 for 50% more gas, 0.8 for 20% less gas)
 
 ### `send-signed-transaction`
 Broadcast a pre-signed transaction:

@@ -288,19 +288,34 @@ export class ExecutionEngine {
         const resolvedTo = await this.resolver.resolve(action.arguments.to, context, scope)
         const resolvedData = action.arguments.data ? await this.resolver.resolve(action.arguments.data, context, scope) : '0x'
         const resolvedValue = action.arguments.value ? await this.resolver.resolve(action.arguments.value, context, scope) : 0
+        const resolvedGasMultiplier = action.arguments.gasMultiplier ? await this.resolver.resolve(action.arguments.gasMultiplier, context, scope) : undefined
         
         // Validate and convert types
         const to = validateAddress(resolvedTo, actionName)
         const data = validateHexData(resolvedData, actionName, 'data')
         const value = validateBigNumberish(resolvedValue, actionName, 'value')
         
+        // Validate gas multiplier if provided
+        let gasMultiplier: number | undefined
+        if (resolvedGasMultiplier !== undefined) {
+          if (typeof resolvedGasMultiplier !== 'number' || resolvedGasMultiplier <= 0) {
+            throw new Error(`Action "${actionName}": gasMultiplier must be a positive number, got: ${resolvedGasMultiplier}`)
+          }
+          gasMultiplier = resolvedGasMultiplier
+        }
+        
         // Prepare transaction parameters
         const txParams: any = { to, data, value }
         
-        // Use network gas limit if specified
+        // Handle gas limit with optional multiplier
         const network = context.getNetwork()
         if (network.gasLimit) {
-          txParams.gasLimit = network.gasLimit
+          const baseGasLimit = network.gasLimit
+          txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
+        } else if (gasMultiplier) {
+          // If gasMultiplier is specified but no network gasLimit, estimate gas first
+          const estimatedGas = await context.signer.estimateGas({ to, data, value })
+          txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
         
         const tx = await context.signer.sendTransaction(txParams)

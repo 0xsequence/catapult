@@ -536,6 +536,128 @@ describe('ExecutionEngine', () => {
         await expect((engine as any).executePrimitive(action, context, new Map()))
           .rejects.toThrow()
       })
+
+      it('should apply gas multiplier when network gasLimit is set', async () => {
+        // Mock the network to have a gasLimit
+        const mockNetwork = { gasLimit: 100000 }
+        jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork as any)
+
+        const action: Action = {
+          type: 'send-transaction',
+          name: 'gas-multiplier-tx',
+          arguments: {
+            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+            value: '1000000000000000000',
+            gasMultiplier: 1.5
+          }
+        }
+
+        const mockSendTransaction = jest.fn().mockResolvedValue({
+          hash: '0x123',
+          wait: jest.fn().mockResolvedValue({ status: 1, blockNumber: 123 })
+        })
+        jest.spyOn(context.signer, 'sendTransaction').mockImplementation(mockSendTransaction)
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(mockSendTransaction).toHaveBeenCalledWith(
+          expect.objectContaining({
+            gasLimit: 150000 // 100000 * 1.5
+          })
+        )
+      })
+
+      it('should estimate gas and apply multiplier when no network gasLimit is set', async () => {
+        // Mock the network to have no gasLimit
+        const mockNetwork = {}
+        jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork as any)
+
+        const mockEstimateGas = jest.fn().mockResolvedValue(BigInt(80000))
+        jest.spyOn(context.signer, 'estimateGas').mockImplementation(mockEstimateGas)
+
+        const mockSendTransaction = jest.fn().mockResolvedValue({
+          hash: '0x123',
+          wait: jest.fn().mockResolvedValue({ status: 1, blockNumber: 123 })
+        })
+        jest.spyOn(context.signer, 'sendTransaction').mockImplementation(mockSendTransaction)
+
+        const action: Action = {
+          type: 'send-transaction',
+          name: 'gas-estimate-tx',
+          arguments: {
+            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+            gasMultiplier: 2.0
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(mockEstimateGas).toHaveBeenCalledWith(
+          expect.objectContaining({
+            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+          })
+        )
+        expect(mockSendTransaction).toHaveBeenCalledWith(
+          expect.objectContaining({
+            gasLimit: 160000 // 80000 * 2.0
+          })
+        )
+      })
+
+      it('should work with resolved gasMultiplier value', async () => {
+        context.setOutput('multiplier', 1.25)
+        const mockNetwork = { gasLimit: 100000 }
+        jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork as any)
+
+        const mockSendTransaction = jest.fn().mockResolvedValue({
+          hash: '0x123',
+          wait: jest.fn().mockResolvedValue({ status: 1, blockNumber: 123 })
+        })
+        jest.spyOn(context.signer, 'sendTransaction').mockImplementation(mockSendTransaction)
+
+        const action: Action = {
+          type: 'send-transaction',
+          name: 'resolved-multiplier-tx',
+          arguments: {
+            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+            gasMultiplier: '{{multiplier}}'
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(mockSendTransaction).toHaveBeenCalledWith(
+          expect.objectContaining({
+            gasLimit: 125000 // 100000 * 1.25
+          })
+        )
+      })
+
+      it('should throw error for invalid gasMultiplier', async () => {
+        const action: Action = {
+          type: 'send-transaction',
+          arguments: {
+            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+            gasMultiplier: -1.0
+          }
+        }
+
+        await expect((engine as any).executePrimitive(action, context, new Map()))
+          .rejects.toThrow('gasMultiplier must be a positive number')
+      })
+
+      it('should throw error for zero gasMultiplier', async () => {
+        const action: Action = {
+          type: 'send-transaction',
+          arguments: {
+            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+            gasMultiplier: 0
+          }
+        }
+
+        await expect((engine as any).executePrimitive(action, context, new Map()))
+          .rejects.toThrow('gasMultiplier must be a positive number')
+      })
     })
 
     describe('send-signed-transaction', () => {

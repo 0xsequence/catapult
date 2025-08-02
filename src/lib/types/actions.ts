@@ -11,6 +11,7 @@ export interface SendTransactionAction {
     to: AddressValue;
     value?: Uint256Value;
     data?: BytesValue;
+    gasMultiplier?: number;
   };
 }
 
