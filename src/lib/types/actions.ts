@@ -32,13 +32,21 @@ export interface VerifyContractAction {
   };
 }
 
+export interface StaticAction {
+  type: 'static';
+  arguments: {
+    value: Value<any>;
+  };
+}
+
 // A union of all primitive action types.
-export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction;
+export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction;
 
 const primitiveActionTypes = [
   'send-transaction',
   'send-signed-transaction',
   'verify-contract',
+  'static',
 ] as const;
 
 /**

@@ -446,7 +446,7 @@ export class Deployer {
    */
   private filterOutputsByActionFlags(outputs: Map<string, unknown>, job: Job): Record<string, unknown> {
     // Partition actions by output config
-    const actionsWithCustomMap = job.actions.filter(a => a.output && typeof a.output === 'object' && a.output !== null) as Array<Job['actions'][number] & { output: Record<string, any> }>
+    const actionsWithCustomMap = job.actions.filter(a => a.output && typeof a.output === 'object' && a.output !== null) as Array<Job['actions'][number] & { output: Record<string, unknown> }>
     const actionsWithTrue = job.actions.filter(a => a.output === true)
     const actionsWithFalse = new Set(job.actions.filter(a => a.output === false).map(a => a.name))
 

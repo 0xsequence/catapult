@@ -775,6 +775,114 @@ describe('ExecutionEngine', () => {
       })
     })
 
+    describe('static', () => {
+      it('should return the provided value unchanged', async () => {
+        const action: Action = {
+          type: 'static',
+          name: 'test-static',
+          arguments: {
+            value: 'hello world'
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(context.getOutput('test-static.value')).toBe('hello world')
+      })
+
+      it('should resolve and return complex values', async () => {
+        context.setOutput('input_value', { foo: 'bar', number: 42 })
+
+        const action: Action = {
+          type: 'static',
+          name: 'complex-static',
+          arguments: {
+            value: '{{input_value}}'
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(context.getOutput('complex-static.value')).toEqual({ foo: 'bar', number: 42 })
+      })
+
+      it('should work with numeric values', async () => {
+        const action: Action = {
+          type: 'static',
+          name: 'numeric-static',
+          arguments: {
+            value: 12345
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(context.getOutput('numeric-static.value')).toBe(12345)
+      })
+
+      it('should work with boolean values', async () => {
+        const action: Action = {
+          type: 'static',
+          name: 'boolean-static',
+          arguments: {
+            value: true
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(context.getOutput('boolean-static.value')).toBe(true)
+      })
+
+      it('should work with array values', async () => {
+        const testArray = [1, 2, 3, 'test']
+        const action: Action = {
+          type: 'static',
+          name: 'array-static',
+          arguments: {
+            value: testArray
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(context.getOutput('array-static.value')).toEqual(testArray)
+      })
+
+      it('should not store outputs when action has no name', async () => {
+        const action: Action = {
+          type: 'static',
+          arguments: {
+            value: 'test value'
+          }
+        }
+
+        const outputsBefore = Object.keys((context as any).outputs || {}).length
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        const outputsAfter = Object.keys((context as any).outputs || {}).length
+        expect(outputsAfter).toBe(outputsBefore)
+      })
+
+      it('should resolve template variables in scope', async () => {
+        const scope = new Map()
+        scope.set('template_var', 'resolved from scope')
+
+        const action: Action = {
+          type: 'static',
+          name: 'scope-static',
+          arguments: {
+            value: '{{template_var}}'
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, scope)
+
+        expect(context.getOutput('scope-static.value')).toBe('resolved from scope')
+      })
+    })
+
     it('should throw on unknown primitive action type', async () => {
       const action: any = {
         type: 'unknown-action',

@@ -285,6 +285,32 @@ Broadcast a pre-signed transaction:
     transaction: "0x..."  # Raw signed transaction
 ```
 
+### `static`
+Sets a static value that can be referenced in subsequent steps. Useful for defining constants or passing data between actions.
+
+```yaml
+- type: "static"
+  name: "my-value"
+  arguments:
+    value: "hello world"
+```
+
+The `name` field is optional. When provided, the value is stored under [`name.value`](src/lib/core/engine.ts:560) in the context. If omitted, the value is computed but not stored. Supports all JSON data types including strings, numbers, booleans, objects, and arrays.
+
+Example with complex data:
+
+```yaml
+- type: "static"
+  name: "config"
+  arguments:
+    value:
+      endpoint: "https://api.example.com"
+      timeout: 5000
+      enabled: true
+```
+
+This would make `config.value.endpoint`, `config.value.timeout`, and `config.value.enabled` available for use in subsequent actions.
+
 ## Value Resolvers
 
 Catapult includes powerful value resolvers for computing complex values:

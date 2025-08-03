@@ -556,6 +556,14 @@ export class ExecutionEngine {
 
         break
       }
+      case 'static': {
+        const resolvedValue = await this.resolver.resolve(action.arguments.value, context, scope)
+        
+        if (action.name) {
+          context.setOutput(`${action.name}.value`, resolvedValue)
+        }
+        break
+      }
       default:
         throw new Error(`Unknown or unimplemented primitive action type: ${(action as any).type}`)
     }
