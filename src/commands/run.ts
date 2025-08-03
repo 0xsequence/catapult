@@ -14,6 +14,7 @@ interface RunOptions {
   etherscanApiKey?: string
   verbose: number
   failEarly: boolean
+  noPostCheckConditions: boolean
 }
 
 export function makeRunCommand(): Command {
@@ -24,6 +25,7 @@ export function makeRunCommand(): Command {
     .option('-n, --network <chainIds...>', 'One or more network chain IDs to run on. If not provided, runs on all configured networks.')
     .option('--etherscan-api-key <key>', 'Etherscan API key for contract verification. Can also be set via ETHERSCAN_API_KEY env var.')
     .option('--fail-early', 'Stop execution as soon as any job fails. Default: false', false)
+    .option('--no-post-check-conditions', 'Skip post-execution check of skip conditions. Default: false (post-check enabled)', false)
 
   projectOption(run)
   dotenvOption(run)
@@ -59,6 +61,7 @@ export function makeRunCommand(): Command {
         runOnNetworks: options.network?.map(Number),
         etherscanApiKey,
         failEarly: options.failEarly,
+        noPostCheckConditions: options.noPostCheckConditions,
         loaderOptions: {
           loadStdTemplates: options.std !== false
         }

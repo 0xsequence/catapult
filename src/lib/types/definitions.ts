@@ -44,5 +44,6 @@ export interface Job {
     actions: JobAction[];
     only_networks?: number[]
     skip_networks?: number[]
+    skip_condition?: Condition[];
     _path?: string; // Path to the job file for relative artifact resolution
 }

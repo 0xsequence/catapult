@@ -17,12 +17,14 @@ export class ExecutionEngine {
   private readonly templates: Map<string, Template>
   private readonly events: DeploymentEventEmitter
   private readonly verificationRegistry: VerificationPlatformRegistry
+  private readonly noPostCheckConditions: boolean
 
-  constructor(templates: Map<string, Template>, eventEmitter?: DeploymentEventEmitter, verificationRegistry?: VerificationPlatformRegistry) {
+  constructor(templates: Map<string, Template>, eventEmitter?: DeploymentEventEmitter, verificationRegistry?: VerificationPlatformRegistry, noPostCheckConditions?: boolean) {
     this.resolver = new ValueResolver()
     this.templates = templates
     this.events = eventEmitter || deploymentEvents
     this.verificationRegistry = verificationRegistry || createDefaultVerificationRegistry()
+    this.noPostCheckConditions = noPostCheckConditions ?? false
   }
 
   /**
@@ -31,16 +33,16 @@ export class ExecutionEngine {
    * @param context The ExecutionContext for the target network.
    */
   public async executeJob(job: Job, context: ExecutionContext): Promise<void> {
-         this.events.emitEvent({
-       type: 'job_started',
-       level: 'info',
-       data: {
-         jobName: job.name,
-         jobVersion: job.version,
-         networkName: context.getNetwork().name,
-         chainId: context.getNetwork().chainId
-       }
-     })
+    this.events.emitEvent({
+      type: 'job_started',
+      level: 'info',
+      data: {
+        jobName: job.name,
+        jobVersion: job.version,
+        networkName: context.getNetwork().name,
+        chainId: context.getNetwork().chainId
+      }
+    })
 
     // Set context path for relative artifact resolution
     const previousContextPath = context.getContextPath()
@@ -57,20 +59,29 @@ export class ExecutionEngine {
         }
         await this.executeAction(action, context, new Map())
       }
+
+      // If post-check conditions are enabled, re-evaluate job-level skip conditions
+      if (!this.noPostCheckConditions && job.skip_condition) {
+        const shouldSkip = await this.evaluateSkipConditions(job.skip_condition, context, new Map())
+        if (!shouldSkip) {
+          // If skip conditions don't evaluate to true after execution, the job failed
+          throw new Error(`Job "${job.name}" failed post-execution check: skip conditions did not evaluate to true`)
+        }
+      }
     } finally {
       // Restore previous context path
       context.setContextPath(previousContextPath)
     }
 
-         this.events.emitEvent({
-       type: 'job_completed',
-       level: 'info',
-       data: {
-         jobName: job.name,
-         networkName: context.getNetwork().name,
-         chainId: context.getNetwork().chainId
-       }
-     })
+    this.events.emitEvent({
+      type: 'job_completed',
+      level: 'info',
+      data: {
+        jobName: job.name,
+        networkName: context.getNetwork().name,
+        chainId: context.getNetwork().chainId
+      }
+    })
   }
 
   /**
@@ -233,6 +244,15 @@ export class ExecutionEngine {
       }
     }
 
+    // If post-check conditions are enabled, re-evaluate template-level skip conditions
+    if (!this.noPostCheckConditions && template.skip_condition) {
+      const shouldSkip = await this.evaluateSkipConditions(template.skip_condition, context, templateScope)
+      if (!shouldSkip) {
+        // If skip conditions don't evaluate to true after execution, the template failed
+        throw new Error(`Template "${template.name}" failed post-execution check: skip conditions did not evaluate to true`)
+      }
+    }
+
     // 5. Resolve and store the template's outputs into the global context.
     if (template.outputs && 'name' in callingAction) {
       for (const [key, value] of Object.entries(template.outputs)) {
@@ -250,18 +270,18 @@ export class ExecutionEngine {
       }
     }
 
-      this.events.emitEvent({
-        type: 'template_exited',
-        level: 'debug',
-        data: {
-          templateName: template.name
-        }
-      })
-    } finally {
-      // Restore previous context path
-      context.setContextPath(previousContextPath)
-    }
+    this.events.emitEvent({
+      type: 'template_exited',
+      level: 'debug',
+      data: {
+        templateName: template.name
+      }
+    })
+  } finally {
+    // Restore previous context path
+    context.setContextPath(previousContextPath)
   }
+}
 
   /**
    * Executes a primitive, built-in action.

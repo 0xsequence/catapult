@@ -39,6 +39,9 @@ export interface DeployerOptions {
   
   /** Optional: Stop execution as soon as any job fails. Defaults to false. */
   failEarly?: boolean
+  
+  /** Optional: Skip post-execution check of skip conditions. Defaults to false (post-check enabled). */
+  noPostCheckConditions?: boolean
 }
 
 /**
@@ -50,11 +53,12 @@ export class Deployer {
   private readonly options: DeployerOptions
   public readonly events: DeploymentEventEmitter
   private readonly loader: ProjectLoader
+  private readonly noPostCheckConditions: boolean
   
   // Store both successful and failed execution results
-  private readonly results = new Map<string, { 
-    job: Job; 
-    outputs: Map<number, { status: 'success' | 'error'; data: Map<string, unknown> | string }> 
+  private readonly results = new Map<string, {
+    job: Job;
+    outputs: Map<number, { status: 'success' | 'error'; data: Map<string, unknown> | string }>
   }>()
   private graph?: DependencyGraph
 
@@ -63,6 +67,7 @@ export class Deployer {
     this.options = options
     this.events = options.eventEmitter || deploymentEvents
     this.loader = new ProjectLoader(options.projectRoot, options.loaderOptions)
+    this.noPostCheckConditions = options.noPostCheckConditions ?? false
   }
 
 
@@ -122,7 +127,7 @@ export class Deployer {
 
       // 4. Execute the plan.
       const verificationRegistry = createDefaultVerificationRegistry(this.options.etherscanApiKey)
-      const engine = new ExecutionEngine(this.loader.templates, this.events, verificationRegistry)
+      const engine = new ExecutionEngine(this.loader.templates, this.events, verificationRegistry, this.noPostCheckConditions)
       
       // Track if any jobs have failed
       let hasFailures = false
