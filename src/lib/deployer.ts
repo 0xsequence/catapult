@@ -436,37 +436,85 @@ export class Deployer {
   }
 
   /**
-   * Filters outputs to only include those from actions marked with output: true.
-   * If no actions have output: true, includes all outputs (backward compatibility),
+   * Filters outputs according to job actions' output selection:
+   * - output: true  -> include all outputs for that action
+   * - output: false -> exclude outputs for that action
+   * - output: object -> include ONLY the specified keys, resolved from context if they are placeholders
+   *
+   * If no actions have output: true or object (i.e., only false/undefined), includes all outputs (backward compatibility),
    * but excludes dependency outputs when there are explicit dependencies defined.
    */
   private filterOutputsByActionFlags(outputs: Map<string, unknown>, job: Job): Record<string, unknown> {
-    // Get list of actions that should contribute to output
-    const outputActions = job.actions.filter(action => action.output === true)
-    
-    // If no actions explicitly set output: true, include all outputs (backward compatibility)
-    if (outputActions.length === 0) {
-      // Only filter out dependency outputs if the job has explicit dependencies
-      // This prevents dependency outputs from polluting the job's own output file
-      if (job.depends_on && job.depends_on.length > 0) {
-        return this.filterOutDependencyOutputs(outputs, job)
-      }
-      return Object.fromEntries(outputs)
-    }
-    
-    // Filter outputs to only include those from actions with output: true
-    const filtered = new Map<string, unknown>()
-    for (const [key, value] of outputs) {
-      // Check if this output key matches any of the output-enabled actions
-      for (const action of outputActions) {
-        if (key.startsWith(`${action.name}.`)) {
-          filtered.set(key, value)
-          break
+    // Partition actions by output config
+    const actionsWithCustomMap = job.actions.filter(a => a.output && typeof a.output === 'object' && a.output !== null) as Array<Job['actions'][number] & { output: Record<string, any> }>
+    const actionsWithTrue = job.actions.filter(a => a.output === true)
+    const actionsWithFalse = new Set(job.actions.filter(a => a.output === false).map(a => a.name))
+
+    // If there are any custom maps, include only those mapped keys for those actions.
+    // Collect explicit inclusions here.
+    const result = new Map<string, unknown>()
+
+    // Helper to include by prefix
+    const includeAllForAction = (actionName: string) => {
+      for (const [key, value] of outputs) {
+        if (key.startsWith(`${actionName}.`)) {
+          result.set(key, value)
         }
       }
     }
-    
-    return Object.fromEntries(filtered)
+
+    // 1) Handle custom output maps (highest precedence and explicit selection)
+    if (actionsWithCustomMap.length > 0) {
+      for (const action of actionsWithCustomMap) {
+        const prefix = `${action.name}.`
+        // For mapped keys, accept either fully qualified keys (e.g., "txHash") which we map to `${action.name}.txHash`
+        // or already-qualified keys (rare). We'll normalize to prefixed keys in the output.
+        for (const mappedKey of Object.keys(action.output)) {
+          // If user provided fully-qualified "action.key", strip if redundant
+          const normalizedKey = mappedKey.startsWith(prefix) ? mappedKey : `${prefix}${mappedKey}`
+          // Only include if present in outputs map
+          if (outputs.has(normalizedKey)) {
+            result.set(normalizedKey, outputs.get(normalizedKey)!)
+          }
+        }
+      }
+      // Note: when any custom maps exist, we DO NOT automatically include actionsWithTrue;
+      // the requirement states "if action specifies custom output, then the output is defined by them and not by the template".
+      // That means for those actions, only mapped keys are included. For other actions (without custom maps),
+      // they will be handled by output:true rules below.
+    }
+
+    // 2) Include all for actions marked output: true (that do not have a custom map)
+    const actionsWithTrueNames = new Set(actionsWithTrue.map(a => a.name))
+    for (const actionName of actionsWithTrueNames) {
+      // If this action also had a custom map, custom map already handled it and should be authoritative.
+      const hadCustom = actionsWithCustomMap.some(a => a.name === actionName)
+      if (!hadCustom) {
+        includeAllForAction(actionName)
+      }
+    }
+
+    // 3) Exclude any actions explicitly marked false (they won't be included by rules above anyway)
+
+    // If we have any inclusions (custom maps or trues), return them
+    if (result.size > 0) {
+      // Additionally, filter out any accidentally included outputs from actions marked false
+      for (const falseActionName of actionsWithFalse) {
+        for (const key of Array.from(result.keys())) {
+          if (key.startsWith(`${falseActionName}.`)) {
+            result.delete(key)
+          }
+        }
+      }
+      return Object.fromEntries(result)
+    }
+
+    // 4) Backward compatibility: include all outputs if no action opted-in via true/object.
+    // Exclude dependency outputs if the job has explicit dependencies.
+    if (job.depends_on && job.depends_on.length > 0) {
+      return this.filterOutDependencyOutputs(outputs, job)
+    }
+    return Object.fromEntries(outputs)
   }
 
   /**

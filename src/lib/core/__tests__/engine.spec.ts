@@ -438,6 +438,62 @@ describe('ExecutionEngine', () => {
       expect(context.getOutput('test-param-call.doubled_amount')).toBe('2000000000000000000')
     })
 
+    it('should allow job action custom output map to override template outputs', async () => {
+      // Mock executeAction so the inner action sets expected outputs
+      const originalExecuteAction = (engine as any).executeAction
+      ;(engine as any).executeAction = async function(action: JobAction | Action, ctx: ExecutionContext, scope: any) {
+        const actionName = 'name' in action ? action.name : action.type
+        if (actionName === 'param-action') {
+          ctx.setOutput('param-action.hash', '0xhash123')
+          ctx.setOutput('param-action.receipt', { status: 1, blockNumber: 111 })
+        }
+      }
+
+      const template: Template = {
+        name: 'tpl-custom-output',
+        actions: [
+          {
+            type: 'send-transaction',
+            name: 'param-action',
+            arguments: {
+              to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+              value: '1000000000000000000',
+              data: '0x'
+            }
+          }
+        ],
+        outputs: {
+          transaction_hash: '{{param-action.hash}}',
+          receipt_block: '{{param-action.receipt.blockNumber}}'
+        }
+      }
+      templates.set('tpl-custom-output', template)
+
+      const callingAction: JobAction = {
+        name: 'custom-call',
+        template: 'tpl-custom-output',
+        arguments: {},
+        // Custom output overrides template outputs
+        output: {
+          myHash: '{{param-action.hash}}',
+          staticValue: '42'
+        } as any
+      }
+
+      await (engine as any).executeTemplate(callingAction, 'tpl-custom-output', context)
+
+      // Restore original method
+      ;(engine as any).executeAction = originalExecuteAction
+
+      // Expect only custom outputs to be present for action name "custom-call"
+      expect(context.getOutput('custom-call.myHash')).toBe('0xhash123')
+      expect(context.getOutput('custom-call.staticValue')).toBe('42')
+
+      // Template outputs should NOT be set since custom output overrides them
+      expect(() => context.getOutput('custom-call.transaction_hash')).toThrow()
+      expect(() => context.getOutput('custom-call.receipt_block')).toThrow()
+    })
+
     it('should throw when template is not found', async () => {
       const callingAction: JobAction = {
         name: 'test-call',

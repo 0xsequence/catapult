@@ -65,8 +65,12 @@ export function parseJob(yamlContent: string): Job {
     }
     
     // Validate the optional output field
-    if (action.output !== undefined && typeof action.output !== 'boolean') {
-      throw new Error(`Invalid job "${rawObject.name}": action "${action.name}" has an invalid "output" field. It must be a boolean (true/false).`)
+    if (action.output !== undefined) {
+      const t = typeof action.output
+      const isObject = t === 'object' && action.output !== null && !Array.isArray(action.output)
+      if (t !== 'boolean' && !isObject) {
+        throw new Error(`Invalid job "${rawObject.name}": action "${action.name}" has an invalid "output" field. It must be either a boolean (true/false) or an object mapping custom outputs.`)
+      }
     }
   }
 

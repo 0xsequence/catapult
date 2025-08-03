@@ -192,7 +192,7 @@ actions:
   })
 
   // --- Output Field Tests ---
-
+  
   it('should correctly parse actions with output: true', () => {
     const yamlContent = `
 name: "my-job"
@@ -206,7 +206,7 @@ actions:
     const job = parseJob(yamlContent)
     expect(job.actions[0].output).toBe(true)
   })
-
+  
   it('should correctly parse actions with output: false', () => {
     const yamlContent = `
 name: "my-job"
@@ -220,7 +220,7 @@ actions:
     const job = parseJob(yamlContent)
     expect(job.actions[0].output).toBe(false)
   })
-
+  
   it('should correctly parse actions with no output field (undefined)', () => {
     const yamlContent = `
 name: "my-job"
@@ -234,7 +234,27 @@ actions:
     expect(job.actions[0].output).toBeUndefined()
   })
 
-  it('should throw an error if output field is not a boolean', () => {
+  it('should correctly parse actions with output: object (custom map)', () => {
+    const yamlContent = `
+name: "my-job"
+version: "1"
+actions:
+  - name: "action-custom"
+    template: "my-template"
+    arguments: {}
+    output:
+      address: "{{someAddress}}"
+      txHash: "{{action-custom.hash}}"
+`
+    const job = parseJob(yamlContent)
+    expect(typeof job.actions[0].output).toBe('object')
+    expect(job.actions[0].output).toEqual({
+      address: '{{someAddress}}',
+      txHash: '{{action-custom.hash}}'
+    } as any)
+  })
+  
+  it('should throw an error if output field is not a boolean or object', () => {
     const yamlContent = `
 name: "my-job"
 version: "1"
@@ -245,10 +265,10 @@ actions:
     output: "not-a-boolean"
 `
     expect(() => parseJob(yamlContent)).toThrow(
-      'Invalid job "my-job": action "my-action" has an invalid "output" field. It must be a boolean (true/false).',
+      'Invalid job "my-job": action "my-action" has an invalid "output" field. It must be either a boolean (true/false) or an object mapping custom outputs.',
     )
   })
-
+  
   it('should throw an error if output field is a number', () => {
     const yamlContent = `
 name: "my-job"
@@ -260,10 +280,10 @@ actions:
     output: 1
 `
     expect(() => parseJob(yamlContent)).toThrow(
-      'Invalid job "my-job": action "my-action" has an invalid "output" field. It must be a boolean (true/false).',
+      'Invalid job "my-job": action "my-action" has an invalid "output" field. It must be either a boolean (true/false) or an object mapping custom outputs.',
     )
   })
-
+  
   it('should correctly parse mixed actions with and without output fields', () => {
     const yamlContent = `
 name: "my-job"
@@ -280,11 +300,17 @@ actions:
     template: "template3"
     arguments: {}
     output: false
+  - name: "action4"
+    template: "template4"
+    arguments: {}
+    output:
+      important: "{{action4.hash}}"
 `
     const job = parseJob(yamlContent)
     expect(job.actions[0].output).toBe(true)
     expect(job.actions[1].output).toBeUndefined()
     expect(job.actions[2].output).toBe(false)
+    expect(job.actions[3].output).toEqual({ important: '{{action4.hash}}' } as any)
   })
 
   // --- New: Job-level constants field parsing ---

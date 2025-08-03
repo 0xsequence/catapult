@@ -33,7 +33,13 @@ export interface JobAction {
     arguments: Record<string, Value<any>>;
     skip_condition?: Condition[];
     depends_on?: string[];
-    output?: boolean; // Whether this action's outputs should be included in the final output file
+    /**
+     * Output selection/override for this action when writing job outputs.
+     * - boolean: legacy flag. true marks the whole action for inclusion, false excludes.
+     * - object: custom output map. Keys become output keys under this action's name,
+     *           values are Value<any> that will be resolved at job time, overriding template outputs.
+     */
+    output?: boolean | Record<string, Value<any>>;
 }
 
 export interface Job {

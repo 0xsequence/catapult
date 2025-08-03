@@ -254,19 +254,40 @@ export class ExecutionEngine {
     }
 
     // 5. Resolve and store the template's outputs into the global context.
-    if (template.outputs && 'name' in callingAction) {
-      for (const [key, value] of Object.entries(template.outputs)) {
-        const resolvedOutput = await this.resolver.resolve(value, context, templateScope)
-        const outputKey = `${callingAction.name}.${key}`
-        context.setOutput(outputKey, resolvedOutput)
-        this.events.emitEvent({
-          type: 'output_stored',
-          level: 'debug',
-          data: {
-            outputKey,
-            value: resolvedOutput
-          }
-        })
+    // If the calling action (job action) specified a custom "output" map, that overrides the template outputs.
+    if ('name' in callingAction) {
+      const actionName = callingAction.name
+      const customOutput = (callingAction as any).output
+      if (customOutput && typeof customOutput === 'object' && !Array.isArray(customOutput)) {
+        // Custom output map provided by job action: resolve each mapping within the template scope
+        for (const [key, value] of Object.entries(customOutput)) {
+          const resolvedOutput = await this.resolver.resolve(value as any, context, templateScope)
+          const outputKey = `${actionName}.${key}`
+          context.setOutput(outputKey, resolvedOutput)
+          this.events.emitEvent({
+            type: 'output_stored',
+            level: 'debug',
+            data: {
+              outputKey,
+              value: resolvedOutput
+            }
+          })
+        }
+      } else if (template.outputs) {
+        // Default behavior: use template-defined outputs
+        for (const [key, value] of Object.entries(template.outputs)) {
+          const resolvedOutput = await this.resolver.resolve(value, context, templateScope)
+          const outputKey = `${actionName}.${key}`
+          context.setOutput(outputKey, resolvedOutput)
+          this.events.emitEvent({
+            type: 'output_stored',
+            level: 'debug',
+            data: {
+              outputKey,
+              value: resolvedOutput
+            }
+          })
+        }
       }
     }
 
