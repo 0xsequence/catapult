@@ -68,7 +68,16 @@ export class ProjectLoader {
         template._path = filePath
         this.templates.set(template.name, template)
       } catch (error) {
-        // Silently ignore files that can't be read or parsed, as they may not be template files
+        // Surface YAML/template parsing errors so malformed templates fail the load
+        if (error instanceof Error && (error.message.startsWith('Failed to parse template YAML:') || error.message.startsWith('Invalid template'))) {
+          throw new Error(`Template load error in ${filePath}: ${error.message}`)
+        }
+        // If it's a file system error (e.g., permission), rethrow to make it visible as well
+        if (error instanceof Error && (error as any).code) {
+          throw new Error(`Failed to read template file ${filePath}: ${(error as any).code} ${error.message}`)
+        }
+        // Otherwise rethrow to avoid silently ignoring real issues
+        throw error
       }
     }
   }
@@ -112,13 +121,26 @@ export class ProjectLoader {
             }
             (job as any).constants = raw.constants
           }
-        } catch {
-          // If YAML parse for constants peek fails here, ignore (parseJob already validated YAML for job)
+        } catch (peekErr) {
+          // parseJob already validated YAML; if this peek fails due to YAML parsing, surface it
+          if (peekErr instanceof Error && peekErr.message.includes('Failed to parse')) {
+            throw new Error(`Job constants peek failed for ${filePath}: ${peekErr.message}`)
+          }
+          // Otherwise ignore non-YAML related errors here
         }
         job._path = filePath
         this.jobs.set(job.name, job)
       } catch (error) {
-        // Silently ignore files that can't be read or parsed, as they may not be job files
+        // Surface YAML/job parsing errors so malformed jobs fail the load
+        if (error instanceof Error && (error.message.startsWith('Failed to parse job YAML:') || error.message.startsWith('Invalid job'))) {
+          throw new Error(`Job load error in ${filePath}: ${error.message}`)
+        }
+        // If it's a file system error (e.g., permission), rethrow to make it visible as well
+        if (error instanceof Error && (error as any).code) {
+          throw new Error(`Failed to read job file ${filePath}: ${(error as any).code} ${error.message}`)
+        }
+        // Otherwise rethrow to avoid silently ignoring real issues
+        throw error
       }
     }
   }
@@ -208,15 +230,15 @@ export class ProjectLoader {
             }
           } catch (err) {
             // For constants files, surface parsing errors to fail fast
-            if (err instanceof Error && err.message.startsWith('Failed to parse constants YAML:')) {
-              throw err
+            if (err instanceof Error && (err.message.startsWith('Failed to parse constants YAML:') || err.message.startsWith('Invalid constants'))) {
+              throw new Error(`Constants load error in ${fullPath}: ${err.message}`)
             }
             // Otherwise, ignore if not a constants file
           }
         }
       }
     } catch (err) {
-      // Ignore directory read errors
+      // Ignore directory read errors (like permission or non-existent)
     }
   }
 
