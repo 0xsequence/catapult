@@ -31,8 +31,8 @@ export function makeListCommand(): Command {
     try {
       // Set verbosity level for logging
       setVerbosity(options.verbose as 0 | 1 | 2 | 3)
-      const loader = await loadProject(options.project, { 
-        loadStdTemplates: options.std !== false 
+      const loader = await loadProject(options.project, {
+        loadStdTemplates: options.std !== false
       })
       console.log(chalk.bold.underline('Available Jobs:'))
       if (loader.jobs.size === 0) {
@@ -60,8 +60,8 @@ export function makeListCommand(): Command {
     try {
       // Set verbosity level for logging
       setVerbosity(options.verbose as 0 | 1 | 2 | 3)
-      const loader = await loadProject(options.project, { 
-        loadStdTemplates: options.std !== false 
+      const loader = await loadProject(options.project, {
+        loadStdTemplates: options.std !== false
       })
       const contracts = loader.contractRepository.getAll()
       const ambiguousRefs = loader.contractRepository.getAmbiguousReferences()
@@ -111,8 +111,8 @@ export function makeListCommand(): Command {
     try {
       // Set verbosity level for logging
       setVerbosity(options.verbose as 0 | 1 | 2 | 3)
-      const loader = await loadProject(options.project, { 
-        loadStdTemplates: options.std !== false 
+      const loader = await loadProject(options.project, {
+        loadStdTemplates: options.std !== false
       })
       console.log(chalk.bold.underline('Available Templates:'))
       if (loader.templates.size === 0) {
@@ -196,10 +196,53 @@ export function makeListCommand(): Command {
     }
   })
 
+  // New: list constants
+  const listConstants = new Command('constants')
+    .description('List constants defined at top-level and per job')
+  projectOption(listConstants)
+  noStdOption(listConstants)
+  verbosityOption(listConstants)
+  listConstants.action(async (options: ListOptions) => {
+    try {
+      setVerbosity(options.verbose as 0 | 1 | 2 | 3)
+      const loader = await loadProject(options.project, {
+        loadStdTemplates: options.std !== false
+      })
+      console.log(chalk.bold.underline('Top-level Constants:'))
+      if (loader.constants.size === 0) {
+        console.log(chalk.yellow('No top-level constants found.'))
+      } else {
+        for (const [key, value] of loader.constants.entries()) {
+          // Only display keys to avoid dumping large values
+          console.log(`- ${chalk.cyan(key)}${options.verbose ? ` = ${JSON.stringify(value)}` : ''}`)
+        }
+      }
+      console.log(chalk.bold.underline('\nJob-level Constants:'))
+      let anyJobConstants = false
+      for (const job of loader.jobs.values()) {
+        const constants = (job as any).constants as Record<string, any> | undefined
+        if (constants && Object.keys(constants).length > 0) {
+          anyJobConstants = true
+          console.log(`- ${chalk.cyan(job.name)}:`)
+          for (const key of Object.keys(constants)) {
+            console.log(`  • ${key}${options.verbose ? ` = ${JSON.stringify(constants[key])}` : ''}`)
+          }
+        }
+      }
+      if (!anyJobConstants) {
+        console.log(chalk.yellow('No job-level constants found.'))
+      }
+    } catch (error) {
+      console.error(chalk.red('Error listing constants:'), error instanceof Error ? error.message : String(error))
+      process.exit(1)
+    }
+  })
+
   list.addCommand(listJobs)
   list.addCommand(listContracts)
   list.addCommand(listTemplates)
   list.addCommand(listNetworks)
+  list.addCommand(listConstants)
 
   return list
 }

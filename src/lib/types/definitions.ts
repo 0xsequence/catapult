@@ -45,5 +45,15 @@ export interface Job {
     only_networks?: number[]
     skip_networks?: number[]
     skip_condition?: Condition[];
+    constants?: Record<string, Value<any>>; // Optional job-level constants
     _path?: string; // Path to the job file for relative artifact resolution
+}
+
+// --- Constants Definition (top-level documents) ---
+
+export interface ConstantsDocument {
+    type: 'constants';
+    name?: string;
+    constants: Record<string, Value<any>>;
+    _path?: string; // Source file path
 }

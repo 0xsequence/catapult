@@ -286,4 +286,24 @@ actions:
     expect(job.actions[1].output).toBeUndefined()
     expect(job.actions[2].output).toBe(false)
   })
+
+  // --- New: Job-level constants field parsing ---
+
+  it('should allow an optional job-level constants block as an object', () => {
+    const yamlContent = `
+name: "job-with-constants"
+version: "1"
+constants:
+  FEE: "1000"
+  ADMIN: "0x0000000000000000000000000000000000000001"
+actions:
+  - name: "a1"
+    template: "t1"
+    arguments:
+      x: "{{FEE}}"
+`
+    const job = parseJob(yamlContent) as any
+    // parseJob doesn't attach constants; loader attaches it. This test ensures YAML is acceptable and does not throw.
+    expect(job.name).toBe('job-with-constants')
+  })
 })

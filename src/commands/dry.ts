@@ -6,12 +6,43 @@ import { DependencyGraph } from '../lib/core/graph'
 import { projectOption, noStdOption, verbosityOption } from './common'
 import { validateContractReferences, extractUsedContractReferences } from '../lib/validation/contract-references'
 import { setVerbosity } from '../index'
+import { Template } from '../lib/types'
 
 interface DryRunOptions {
   project: string
   std: boolean
   network?: string[]
   verbose: number
+}
+
+/**
+ * Extract only constant-like placeholders from a value, using template metadata when available.
+ * A placeholder is treated as a constant candidate if:
+ * - It is a bare identifier (no dot, no parentheses), AND
+ * - It is NOT declared as a template argument in the current template (when template context provided)
+ */
+function extractConstantRefs(value: any, refs: string[], templateCtx?: Template) {
+  if (typeof value === 'string') {
+    const m = value.match(/^{{(.*)}}$/)
+    if (m) {
+      const expr = m[1].trim()
+
+      // Skip outputs or function-like references
+      if (expr.includes('.') || expr.includes('(') || expr.includes(')')) return
+
+      // If we have a template context, and the expr matches a declared argument, it's NOT a constant
+      if (templateCtx?.arguments && Object.prototype.hasOwnProperty.call(templateCtx.arguments, expr)) {
+        return
+      }
+
+      // Otherwise, treat as a constant candidate
+      refs.push(expr)
+    }
+  } else if (Array.isArray(value)) {
+    for (const v of value) extractConstantRefs(v, refs, templateCtx)
+  } else if (value && typeof value === 'object') {
+    for (const v of Object.values(value)) extractConstantRefs(v, refs, templateCtx)
+  }
 }
 
 export function makeDryRunCommand(): Command {
@@ -31,8 +62,8 @@ export function makeDryRunCommand(): Command {
       
       console.log(chalk.bold.inverse(' DRY-RUN MODE '))
       const projectRoot = options.project
-      const loader = await loadProject(projectRoot, { 
-        loadStdTemplates: options.std !== false 
+      const loader = await loadProject(projectRoot, {
+        loadStdTemplates: options.std !== false
       })
       const allNetworks = await loadNetworks(projectRoot)
 
@@ -70,6 +101,74 @@ export function makeDryRunCommand(): Command {
         throw new Error(`Found ${missingRefs.length} missing contract reference(s). Please ensure all referenced contracts exist.`)
       }
       console.log(chalk.green('   - All contract references are valid.'))
+
+      // Validate constant references exist
+      console.log(chalk.blue('\nValidating constant references...'))
+      const topLevelConstants = loader.constants
+      const missingConstantRefs: Array<{ ref: string; location: string }> = []
+
+      // Check jobs (arguments and outputs within templates are resolved at runtime; here we just check expressions)
+      for (const [jobName, job] of loader.jobs.entries()) {
+        // Collect refs in job actions
+        for (let i = 0; i < job.actions.length; i++) {
+          const action = job.actions[i]
+          const refs: string[] = []
+          extractConstantRefs(action.arguments, refs)
+          const jobConstants = (job as any).constants || {}
+          for (const r of refs) {
+            if (!(r in jobConstants) && !topLevelConstants.has(r)) {
+              missingConstantRefs.push({ ref: r, location: `job '${jobName}', action ${i + 1}${action.name ? ` '${action.name}'` : ''}` })
+            }
+          }
+        }
+      }
+
+      // Check templates (setup/actions/outputs)
+      for (const [templateName, template] of loader.templates.entries()) {
+        // actions
+        for (let i = 0; i < template.actions.length; i++) {
+          const action = template.actions[i]
+          const refs: string[] = []
+          extractConstantRefs(action.arguments, refs, template)
+          for (const r of refs) {
+            if (!topLevelConstants.has(r)) {
+              missingConstantRefs.push({ ref: r, location: `template '${templateName}', action ${i + 1}${action.name ? ` '${action.name}'` : ''}` })
+            }
+          }
+        }
+        // setup actions
+        if (template.setup?.actions) {
+          for (let i = 0; i < (template.setup.actions?.length || 0); i++) {
+            const action = template.setup.actions![i]
+            const refs: string[] = []
+            extractConstantRefs(action.arguments, refs, template)
+            for (const r of refs) {
+              if (!topLevelConstants.has(r)) {
+                missingConstantRefs.push({ ref: r, location: `template '${templateName}' setup, action ${i + 1}${action.name ? ` '${action.name}'` : ''}` })
+              }
+            }
+          }
+        }
+        // outputs
+        if (template.outputs) {
+          const refs: string[] = []
+          extractConstantRefs(template.outputs, refs, template)
+          for (const r of refs) {
+            if (!topLevelConstants.has(r)) {
+              missingConstantRefs.push({ ref: r, location: `template '${templateName}' outputs` })
+            }
+          }
+        }
+      }
+
+      if (missingConstantRefs.length > 0) {
+        console.log(chalk.red('\n   - Found missing constant references:'))
+        for (const m of missingConstantRefs) {
+          console.log(chalk.red(`     ✗ ${m.ref} in ${m.location}`))
+        }
+        throw new Error(`Found ${missingConstantRefs.length} missing constant reference(s). Ensure they are defined at top-level or in the job's constants.`)
+      }
+      console.log(chalk.green('   - All constant references are valid.'))
       
       const runJobs = jobs.length > 0 ? jobs : undefined
       const runOnNetworks = options.network?.map(Number)
@@ -88,7 +187,7 @@ export function makeDryRunCommand(): Command {
       }
 
       const jobExecutionPlan = fullOrder.filter(jobName => jobsToRun.has(jobName))
-      const targetNetworks = runOnNetworks 
+      const targetNetworks = runOnNetworks
         ? allNetworks.filter(n => runOnNetworks.includes(n.chainId))
         : allNetworks
 

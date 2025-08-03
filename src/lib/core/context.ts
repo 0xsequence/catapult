@@ -11,17 +11,25 @@ export class ExecutionContext {
   private etherscanApiKey?: string
   private currentContextPath?: string
 
+  // Constants registries
+  private topLevelConstants: Map<string, any> = new Map()
+  private jobConstants: Map<string, any> = new Map()
+
   constructor(
-    network: Network, 
-    privateKey: string, 
+    network: Network,
+    privateKey: string,
     contractRepository: ContractRepository,
-    etherscanApiKey?: string
+    etherscanApiKey?: string,
+    topLevelConstants?: Map<string, any>
   ) {
     this.network = network
     this.provider = new ethers.JsonRpcProvider(network.rpcUrl)
     this.signer = new ethers.Wallet(privateKey, this.provider)
     this.contractRepository = contractRepository
     this.etherscanApiKey = etherscanApiKey
+    if (topLevelConstants) {
+      this.topLevelConstants = new Map(topLevelConstants)
+    }
   }
 
   public getNetwork(): Network {
@@ -62,6 +70,18 @@ export class ExecutionContext {
     return this.currentContextPath
   }
 
+  // Constants management
+  public setJobConstants(constants?: Record<string, any>): void {
+    this.jobConstants = new Map(Object.entries(constants || {}))
+  }
+
+  public getConstant(name: string): any | undefined {
+    // Resolution order: job-level constants override top-level
+    if (this.jobConstants.has(name)) return this.jobConstants.get(name)
+    if (this.topLevelConstants.has(name)) return this.topLevelConstants.get(name)
+    return undefined
+  }
+
   /**
    * Cleanup method to properly dispose of provider connections.
    * This should be called when the context is no longer needed to prevent hanging connections.
@@ -69,8 +89,8 @@ export class ExecutionContext {
   public async dispose(): Promise<void> {
     try {
       // Destroy the provider to close any open connections
-      if (this.provider.destroy) {
-        await this.provider.destroy()
+      if ((this.provider as any).destroy) {
+        await (this.provider as any).destroy()
       }
     } catch (error) {
       // Ignore errors during cleanup

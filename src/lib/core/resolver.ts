@@ -110,12 +110,18 @@ export class ValueResolver {
       return scope.get(expression)
     }
 
+    // Check constants (job-level then top-level)
+    const constantValue = (context as any).getConstant?.(expression)
+    if (constantValue !== undefined) {
+      return constantValue
+    }
+
     // Check context for global outputs from other jobs/actions
     try {
       return context.getOutput(expression)
     } catch (e) {
       // Provide a more helpful error if an unresolved reference is found
-      throw new Error(`Failed to resolve expression "{{${expression}}}". It is not a valid Contract(...) reference, local scope variable, or a known output.`)
+      throw new Error(`Failed to resolve expression "{{${expression}}}". It is not a valid Contract(...) reference, local scope variable, constant, or a known output.`)
     }
   }
 

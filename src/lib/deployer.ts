@@ -166,11 +166,16 @@ export class Deployer {
           let context: ExecutionContext | undefined
           try {
             context = new ExecutionContext(
-              network, 
-              this.options.privateKey, 
+              network,
+              this.options.privateKey,
               this.loader.contractRepository,
-              this.options.etherscanApiKey
+              this.options.etherscanApiKey,
+              this.loader.constants
             )
+            // Set job-level constants if present (guard for mocked contexts in tests)
+            if (typeof (context as any).setJobConstants === 'function') {
+              (context as any).setJobConstants((job as any).constants)
+            }
             
             // Populate context with outputs from previously executed dependent jobs
             this.populateContextWithDependentJobOutputs(job, context, network)
