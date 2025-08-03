@@ -893,6 +893,30 @@ describe('ExecutionEngine', () => {
       await expect((engine as any).executePrimitive(action, context, new Map()))
         .rejects.toThrow('Unknown or unimplemented primitive action type: unknown-action')
     })
+
+    it('should handle custom outputs for primitive actions', async () => {
+      const action: JobAction = {
+        name: 'custom-primitive',
+        type: 'send-transaction',
+        arguments: {
+          to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+          value: '1000000000000000000',
+          data: '0x'
+        },
+        output: {
+          value: '0xDE280948Af8A9762B6984995C8c3c7F5AEB921Bf'
+        } as any
+      }
+
+      await (engine as any).executeAction(action, context, new Map())
+
+      // Should have the custom static output, not the default transaction outputs
+      expect(context.getOutput('custom-primitive.value')).toBe('0xDE280948Af8A9762B6984995C8c3c7F5AEB921Bf')
+      
+      // Default outputs should not be present when custom output is specified
+      expect(() => context.getOutput('custom-primitive.hash')).toThrow()
+      expect(() => context.getOutput('custom-primitive.receipt')).toThrow()
+    })
   })
 
   describe('evaluateSkipConditions', () => {

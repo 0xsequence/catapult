@@ -116,7 +116,8 @@ export class ExecutionEngine {
     })
 
     // 1. Evaluate skip conditions for the action itself.
-    if (await this.evaluateSkipConditions(action.skip_condition, context, scope)) {
+    const shouldSkip = await this.evaluateSkipConditions(action.skip_condition, context, scope)
+    if (shouldSkip) {
       this.events.emitEvent({
         type: 'action_skipped',
         level: 'info',
@@ -125,13 +126,45 @@ export class ExecutionEngine {
           reason: 'condition met'
         }
       })
+      
+      // Process static outputs even when action is skipped
+      // This is important for static outputs that don't depend on action execution
+      const hasCustomOutput = 'name' in action && action.name &&
+        (action as any).output &&
+        typeof (action as any).output === 'object' &&
+        !Array.isArray((action as any).output)
+      
+      if (hasCustomOutput) {
+        const customOutput = (action as any).output
+        // Custom output map provided by job action: resolve each mapping within the current scope
+        for (const [key, value] of Object.entries(customOutput)) {
+          const resolvedOutput = await this.resolver.resolve(value as any, context, scope)
+          const outputKey = `${action.name}.${key}`
+          context.setOutput(outputKey, resolvedOutput)
+          this.events.emitEvent({
+            type: 'output_stored',
+            level: 'debug',
+            data: {
+              outputKey,
+              value: resolvedOutput
+            }
+          })
+        }
+      }
+      
       return
     }
 
     // 2. Differentiate between a primitive action and a template call.
     if (isPrimitiveActionType(templateName)) {
+      // Check if custom outputs are specified
+      const hasCustomOutput = 'name' in action && action.name &&
+        (action as any).output &&
+        typeof (action as any).output === 'object' &&
+        !Array.isArray((action as any).output)
+      
       // Convert JobAction to Action for primitive execution
-      const primitiveAction: Action = 'template' in action 
+      const primitiveAction: Action = 'template' in action
         ? {
             type: (action.type || action.template) as any,
             name: action.name,
@@ -140,7 +173,28 @@ export class ExecutionEngine {
             depends_on: action.depends_on
           }
         : action as Action
-      await this.executePrimitive(primitiveAction, context, scope)
+      
+      // Execute primitive with information about custom outputs
+      await this.executePrimitive(primitiveAction, context, scope, hasCustomOutput)
+      
+      // Handle custom outputs for primitive actions (similar to template logic)
+      if (hasCustomOutput) {
+        const customOutput = (action as any).output
+        // Custom output map provided by job action: resolve each mapping within the current scope
+        for (const [key, value] of Object.entries(customOutput)) {
+          const resolvedOutput = await this.resolver.resolve(value as any, context, scope)
+          const outputKey = `${action.name}.${key}`
+          context.setOutput(outputKey, resolvedOutput)
+          this.events.emitEvent({
+            type: 'output_stored',
+            level: 'debug',
+            data: {
+              outputKey,
+              value: resolvedOutput
+            }
+          })
+        }
+      }
     } else {
       await this.executeTemplate(action, templateName, context)
     }
@@ -309,11 +363,13 @@ export class ExecutionEngine {
    * @param action The primitive action to execute.
    * @param context The global execution context.
    * @param scope The local resolution scope.
+   * @param hasCustomOutput Whether custom outputs are specified for this action.
    */
   private async executePrimitive(
     action: Action,
     context: ExecutionContext,
     scope: ResolutionScope,
+    hasCustomOutput: boolean = false,
   ): Promise<void> {
     const actionName = action.name || action.type
     this.events.emitEvent({
@@ -386,7 +442,7 @@ export class ExecutionEngine {
           }
         })
         
-        if (action.name) {
+        if (action.name && !hasCustomOutput) {
             context.setOutput(`${action.name}.hash`, tx.hash)
             context.setOutput(`${action.name}.receipt`, receipt)
         }
@@ -425,7 +481,7 @@ export class ExecutionEngine {
           }
         })
         
-        if (action.name) {
+        if (action.name && !hasCustomOutput) {
             context.setOutput(`${action.name}.hash`, tx.hash)
             context.setOutput(`${action.name}.receipt`, receipt)
         }
@@ -501,15 +557,16 @@ export class ExecutionEngine {
           for (const platform of configuredPlatforms) {
             try {
               await this.verifyOnSinglePlatform(
-                platform, 
-                contract, 
-                address, 
-                constructorArguments, 
-                network, 
-                actionName, 
-                contractName, 
+                platform,
+                contract,
+                address,
+                constructorArguments,
+                network,
+                actionName,
+                contractName,
                 action,
-                context
+                context,
+                hasCustomOutput
               )
               anySuccess = true
             } catch (error) {
@@ -551,7 +608,8 @@ export class ExecutionEngine {
           actionName,
           contractName,
           action,
-          context
+          context,
+          hasCustomOutput
         )
 
         break
@@ -559,7 +617,7 @@ export class ExecutionEngine {
       case 'static': {
         const resolvedValue = await this.resolver.resolve(action.arguments.value, context, scope)
         
-        if (action.name) {
+        if (action.name && !hasCustomOutput) {
           context.setOutput(`${action.name}.value`, resolvedValue)
         }
         break
@@ -582,7 +640,8 @@ export class ExecutionEngine {
     actionName: string,
     contractName: string,
     action: Action,
-    context: ExecutionContext
+    context: ExecutionContext,
+    hasCustomOutput: boolean = false
   ): Promise<void> {
     // Check if platform supports this network
     const supportsNetwork = platform.supportsNetwork(network)
@@ -705,7 +764,7 @@ export class ExecutionEngine {
       }
 
       // Set outputs (only for successful verifications)
-      if (action.name) {
+      if (action.name && !hasCustomOutput) {
         context.setOutput(`${action.name}.verified`, true)
         if (verificationResult.guid) {
           context.setOutput(`${action.name}.guid`, verificationResult.guid)
