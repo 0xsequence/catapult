@@ -21,7 +21,7 @@ interface DryRunOptions {
  * - It is a bare identifier (no dot, no parentheses), AND
  * - It is NOT declared as a template argument in the current template (when template context provided)
  */
-function extractConstantRefs(value: any, refs: string[], templateCtx?: Template) {
+function extractConstantRefs(value: unknown, refs: string[], templateCtx?: Template) {
   if (typeof value === 'string') {
     const m = value.match(/^{{(.*)}}$/)
     if (m) {
@@ -114,7 +114,7 @@ export function makeDryRunCommand(): Command {
           const action = job.actions[i]
           const refs: string[] = []
           extractConstantRefs(action.arguments, refs)
-          const jobConstants = (job as any).constants || {}
+          const jobConstants = job.constants || {}
           for (const r of refs) {
             if (!(r in jobConstants) && !topLevelConstants.has(r)) {
               missingConstantRefs.push({ ref: r, location: `job '${jobName}', action ${i + 1}${action.name ? ` '${action.name}'` : ''}` })

@@ -220,7 +220,7 @@ export function makeListCommand(): Command {
       console.log(chalk.bold.underline('\nJob-level Constants:'))
       let anyJobConstants = false
       for (const job of loader.jobs.values()) {
-        const constants = (job as any).constants as Record<string, any> | undefined
+        const constants = job.constants
         if (constants && Object.keys(constants).length > 0) {
           anyJobConstants = true
           console.log(`- ${chalk.cyan(job.name)}:`)

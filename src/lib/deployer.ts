@@ -173,8 +173,8 @@ export class Deployer {
               this.loader.constants
             )
             // Set job-level constants if present (guard for mocked contexts in tests)
-            if (typeof (context as any).setJobConstants === 'function') {
-              (context as any).setJobConstants((job as any).constants)
+            if (typeof (context as unknown as { setJobConstants?: (constants: unknown) => void }).setJobConstants === 'function') {
+              (context as unknown as { setJobConstants: (constants: unknown) => void }).setJobConstants(job.constants)
             }
             
             // Populate context with outputs from previously executed dependent jobs
