@@ -131,15 +131,16 @@ export class ProjectLoader {
         job._path = filePath
         this.jobs.set(job.name, job)
       } catch (error) {
-        // Surface YAML/job parsing errors so malformed jobs fail the load
+        // If job YAML is malformed or invalid, skip this job but continue loading others
         if (error instanceof Error && (error.message.startsWith('Failed to parse job YAML:') || error.message.startsWith('Invalid job'))) {
-          throw new Error(`Job load error in ${filePath}: ${error.message}`)
+          console.warn(`Skipping malformed job at ${filePath}: ${error.message}`)
+          continue
         }
         // If it's a file system error (e.g., permission), rethrow to make it visible as well
         if (error instanceof Error && (error as any).code) {
           throw new Error(`Failed to read job file ${filePath}: ${(error as any).code} ${error.message}`)
         }
-        // Otherwise rethrow to avoid silently ignoring real issues
+        // For other unexpected errors, rethrow
         throw error
       }
     }
