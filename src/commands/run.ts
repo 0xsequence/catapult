@@ -15,6 +15,7 @@ interface RunOptions {
   verbose: number
   failEarly: boolean
   noPostCheckConditions: boolean
+  flatOutput: boolean
 }
 
 export function makeRunCommand(): Command {
@@ -26,6 +27,7 @@ export function makeRunCommand(): Command {
     .option('--etherscan-api-key <key>', 'Etherscan API key for contract verification. Can also be set via ETHERSCAN_API_KEY env var.')
     .option('--fail-early', 'Stop execution as soon as any job fails. Default: false', false)
     .option('--no-post-check-conditions', 'Skip post-execution check of skip conditions. Default: false (post-check enabled)', false)
+    .option('--flat-output', 'Write output files in a single flat directory instead of mirroring the jobs directory structure. Default: false', false)
 
   projectOption(run)
   dotenvOption(run)
@@ -64,8 +66,9 @@ export function makeRunCommand(): Command {
         noPostCheckConditions: options.noPostCheckConditions,
         loaderOptions: {
           loadStdTemplates: options.std !== false
-        }
-      }
+        },
+        flatOutput: options.flatOutput === true
+      } as DeployerOptions
 
       const deployer = new Deployer(deployerOptions)
       await deployer.run()

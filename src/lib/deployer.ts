@@ -42,6 +42,9 @@ export interface DeployerOptions {
   
   /** Optional: Skip post-execution check of skip conditions. Defaults to false (post-check enabled). */
   noPostCheckConditions?: boolean
+
+  /** Optional: When true, write outputs in a flat directory instead of mirroring the jobs dir structure. */
+  flatOutput?: boolean
 }
 
 /**
@@ -367,6 +370,8 @@ export class Deployer {
 
   /**
    * Writes the collected deployment results to JSON files in the output directory.
+   * By default, mirrors the jobs directory structure under output/. When flatOutput
+   * is true, writes all job JSONs directly under output/.
    */
   private async writeOutputFiles(): Promise<void> {
     if (this.results.size === 0) {
@@ -377,8 +382,8 @@ export class Deployer {
       return
     }
 
-    const outputDir = path.join(this.options.projectRoot, 'output')
-    await fs.mkdir(outputDir, { recursive: true })
+    const outputRoot = path.join(this.options.projectRoot, 'output')
+    await fs.mkdir(outputRoot, { recursive: true })
     
     this.events.emitEvent({
       type: 'output_writing_started',
@@ -386,7 +391,28 @@ export class Deployer {
     })
 
     for (const [jobName, resultData] of this.results.entries()) {
-      const outputFilePath = path.join(outputDir, `${jobName}.json`)
+      // Determine relative subpath for this job based on its source path under jobs/
+      let relativeJobSubpath = `${jobName}.json`
+      if (!this.options.flatOutput && resultData.job._path) {
+        // Find jobs directory within project
+        const jobsDir = path.join(this.options.projectRoot, 'jobs')
+        const normalizedJobPath = path.normalize(resultData.job._path)
+        const normalizedJobsDir = path.normalize(jobsDir)
+        if (normalizedJobPath.startsWith(normalizedJobsDir)) {
+          // Compute relative path from jobs dir to the yaml file, and replace extension with .json
+          const relFromJobs = path.relative(normalizedJobsDir, normalizedJobPath)
+          const dirPart = path.dirname(relFromJobs)
+          const fileBase = path.basename(relFromJobs, path.extname(relFromJobs))
+          relativeJobSubpath = dirPart === '.' ? `${fileBase}.json` : path.join(dirPart, `${fileBase}.json`)
+        } else {
+          // Fallback to job name if path isn't within jobs dir
+          relativeJobSubpath = `${jobName}.json`
+        }
+      }
+
+      const outputFilePath = path.join(outputRoot, relativeJobSubpath)
+      const outputFileDir = path.dirname(outputFilePath)
+      await fs.mkdir(outputFileDir, { recursive: true })
       
       // Group networks by identical status and outputs
       const groupedResults = this.groupNetworkResults(resultData.outputs, resultData.job)

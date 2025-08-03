@@ -84,7 +84,8 @@ describe('Deployer', () => {
     deployerOptions = {
       projectRoot: '/test/project',
       privateKey: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-      networks: [mockNetwork1, mockNetwork2]
+      networks: [mockNetwork1, mockNetwork2],
+      flatOutput: true
     }
 
     // Setup mocks
@@ -248,18 +249,18 @@ describe('Deployer', () => {
         expect(usedNetwork.chainId).toBe(1)
       })
 
-      it('should create correct output files', async () => {
-        const deployer = new Deployer(deployerOptions)
+      it('should create correct output files in flat mode', async () => {
+        const deployer = new Deployer({ ...deployerOptions, flatOutput: true })
         await deployer.run()
 
         // Verify output directory creation
         expect(mockFs.mkdir).toHaveBeenCalledWith('/test/project/output', { recursive: true })
 
-        // Verify output files
+        // Verify output files (flat)
         expect(mockFs.writeFile).toHaveBeenCalledTimes(3)
         
-        // Check job1 output file
-        const job1OutputCall = mockFs.writeFile.mock.calls.find(call => 
+        // Check job1 output file (flat path)
+        const job1OutputCall = mockFs.writeFile.mock.calls.find(call =>
           call[0] === '/test/project/output/job1.json'
         )
         expect(job1OutputCall).toBeDefined()
@@ -277,6 +278,41 @@ describe('Deployer', () => {
             }
           ]
         })
+      })
+
+      it('should mirror jobs directory structure by default', async () => {
+        // Attach source paths to jobs to simulate their locations
+        const job1 = mockLoader.jobs.get('job1') as any
+        const job2 = mockLoader.jobs.get('job2') as any
+        const job3 = mockLoader.jobs.get('job3') as any
+        job1._path = '/test/project/jobs/core/job1.yaml'
+        job2._path = '/test/project/jobs/patches/job2.yml'
+        job3._path = '/test/project/jobs/job3.yaml'
+
+        const deployer = new Deployer({ ...deployerOptions, flatOutput: undefined })
+        await deployer.run()
+
+        // Should create nested directories
+        expect(mockFs.mkdir).toHaveBeenCalledWith('/test/project/output/core', { recursive: true })
+        expect(mockFs.mkdir).toHaveBeenCalledWith('/test/project/output/patches', { recursive: true })
+
+        // job1.json under core
+        const job1OutputCall = mockFs.writeFile.mock.calls.find(call =>
+          call[0] === '/test/project/output/core/job1.json'
+        )
+        expect(job1OutputCall).toBeDefined()
+
+        // job2.json under patches
+        const job2OutputCall = mockFs.writeFile.mock.calls.find(call =>
+          call[0] === '/test/project/output/patches/job2.json'
+        )
+        expect(job2OutputCall).toBeDefined()
+
+        // job3 at root (no subdir)
+        const job3OutputCall = mockFs.writeFile.mock.calls.find(call =>
+          call[0] === '/test/project/output/job3.json'
+        )
+        expect(job3OutputCall).toBeDefined()
       })
 
       it('should handle empty project gracefully', async () => {
