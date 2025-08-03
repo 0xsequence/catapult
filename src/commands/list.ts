@@ -137,7 +137,9 @@ export function makeListCommand(): Command {
   verbosityOption(listNetworks)
   listNetworks.option('--only-testnets', 'Show only test networks')
   listNetworks.option('--only-non-testnets', 'Show only non-test networks')
-  listNetworks.action(async (options: NetworksListOptions) => {
+  listNetworks.option('--simple', 'Output only network names, one per line')
+  listNetworks.option('--simple-chain-ids', 'Output only chain IDs, one per line')
+  listNetworks.action(async (options: NetworksListOptions & { simple?: boolean; simpleChainIds?: boolean }) => {
     try {
       // Set verbosity level for logging
       setVerbosity(options.verbose as 0 | 1 | 2 | 3)
@@ -151,6 +153,26 @@ export function makeListCommand(): Command {
         filteredNetworks = networks.filter(network => network.testnet !== true)
       }
       
+      // Handle simple output formats
+      if (options.simple) {
+        if (filteredNetworks.length === 0) {
+          console.log('')
+          return
+        }
+        console.log(filteredNetworks.map(network => network.name).join('\n'))
+        return
+      }
+      
+      if (options.simpleChainIds) {
+        if (filteredNetworks.length === 0) {
+          console.log('')
+          return
+        }
+        console.log(filteredNetworks.map(network => network.chainId.toString()).join('\n'))
+        return
+      }
+      
+      // Default formatted output
       console.log(chalk.bold.underline('Available Networks:'))
       if (filteredNetworks.length === 0) {
         if (options.onlyTestnets) {
