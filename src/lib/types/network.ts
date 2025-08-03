@@ -16,4 +16,7 @@ export interface Network {
 
   /** Optional gas limit to use for all transactions on this network */
   gasLimit?: number
-} 
+  
+  /** Whether this is a test network */
+  testnet?: boolean
+}

@@ -76,6 +76,7 @@ Create a `networks.yaml` file in your project root to define target networks:
   rpcUrl: "https://polygon-rpc.com"
   supports: ["etherscan_v2"]  # Optional: verification platforms supported
   gasLimit: 500000            # Optional: gas limit for all transactions on this network
+  testnet: true               # Optional: mark as test network
 ```
 
 The `supports` field is optional and specifies which verification platforms are available for the network. Currently supported platforms:
@@ -240,6 +241,18 @@ List configured networks:
 
 ```bash
 catapult list networks
+```
+
+List only test networks:
+
+```bash
+catapult list networks --only-testnets
+```
+
+List only non-test networks:
+
+```bash
+catapult list networks --only-non-testnets
 ```
 
 ## Built-in Actions

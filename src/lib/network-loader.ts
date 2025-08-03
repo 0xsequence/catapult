@@ -14,11 +14,13 @@ function isValidNetwork(obj: unknown): obj is Network {
     typeof (obj as Record<string, unknown>).chainId === 'number' &&
     typeof (obj as Record<string, unknown>).rpcUrl === 'string' &&
     // supports field is optional and should be an array of strings if present
-    (!('supports' in obj) || 
-     (Array.isArray((obj as Record<string, unknown>).supports) && 
+    (!('supports' in obj) ||
+     (Array.isArray((obj as Record<string, unknown>).supports) &&
       ((obj as Record<string, unknown>).supports as unknown[]).every((item: unknown) => typeof item === 'string'))) &&
     // gasLimit field is optional and should be a number if present
-    (!('gasLimit' in obj) || typeof (obj as Record<string, unknown>).gasLimit === 'number')
+    (!('gasLimit' in obj) || typeof (obj as Record<string, unknown>).gasLimit === 'number') &&
+    // testnet field is optional and should be a boolean if present
+    (!('testnet' in obj) || typeof (obj as Record<string, unknown>).testnet === 'boolean')
   )
 }
 

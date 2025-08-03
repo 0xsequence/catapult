@@ -14,6 +14,8 @@ interface ListOptions {
 interface NetworksListOptions {
   project: string
   verbose: number
+  onlyTestnets?: boolean
+  onlyNonTestnets?: boolean
 }
 
 export function makeListCommand(): Command {
@@ -133,18 +135,37 @@ export function makeListCommand(): Command {
     .description('List all configured networks')
   projectOption(listNetworks)
   verbosityOption(listNetworks)
+  listNetworks.option('--only-testnets', 'Show only test networks')
+  listNetworks.option('--only-non-testnets', 'Show only non-test networks')
   listNetworks.action(async (options: NetworksListOptions) => {
     try {
       // Set verbosity level for logging
       setVerbosity(options.verbose as 0 | 1 | 2 | 3)
       const networks = await loadNetworks(options.project)
+      
+      // Apply filtering if specified
+      let filteredNetworks = networks
+      if (options.onlyTestnets) {
+        filteredNetworks = networks.filter(network => network.testnet === true)
+      } else if (options.onlyNonTestnets) {
+        filteredNetworks = networks.filter(network => network.testnet !== true)
+      }
+      
       console.log(chalk.bold.underline('Available Networks:'))
-      if (networks.length === 0) {
-        console.log(chalk.yellow('No networks configured. Create a networks.yaml file in your project root.'))
+      if (filteredNetworks.length === 0) {
+        if (options.onlyTestnets) {
+          console.log(chalk.yellow('No test networks configured.'))
+        } else if (options.onlyNonTestnets) {
+          console.log(chalk.yellow('No non-test networks configured.'))
+        } else {
+          console.log(chalk.yellow('No networks configured. Create a networks.yaml file in your project root.'))
+        }
         return
       }
-      for (const network of networks) {
-        console.log(`- ${chalk.cyan(network.name)} (Chain ID: ${network.chainId})`)
+      
+      for (const network of filteredNetworks) {
+        const testnetIndicator = network.testnet ? chalk.green('(testnet)') : ''
+        console.log(`- ${chalk.cyan(network.name)} (Chain ID: ${network.chainId}) ${testnetIndicator}`)
         console.log(`  ${chalk.gray(`RPC: ${network.rpcUrl}`)}`)
       }
     } catch (error) {
