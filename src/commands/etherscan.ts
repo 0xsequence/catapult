@@ -39,7 +39,17 @@ async function fetchFromEtherscan(
   if (!resp.ok) {
     throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
   }
-  const data = await resp.json() as any
+  const data = await resp.json() as {
+    status: string
+    message?: string
+    result:
+      | string
+      | Array<{
+          SourceCode?: string
+          ABI?: string
+          [key: string]: unknown
+        }>
+  }
 
   if (data.status !== '1') {
     // Etherscan v2 returns status "0" with message in result
@@ -49,9 +59,12 @@ async function fetchFromEtherscan(
 
   if (action === 'getabi') {
     // data.result is a JSON-encoded string for ABI, parse and return as object
+    if (typeof data.result !== 'string') {
+      throw new Error('Unexpected ABI result format from Etherscan')
+    }
     try {
-      return JSON.parse(data.result)
-    } catch (e) {
+      return JSON.parse(data.result as string)
+    } catch (_e) {
       throw new Error('Failed to parse ABI JSON returned by Etherscan')
     }
   }
@@ -61,7 +74,7 @@ async function fetchFromEtherscan(
     if (!Array.isArray(data.result) || data.result.length === 0) {
       throw new Error('Empty result from Etherscan')
     }
-    const sourceCodeRaw = data.result[0]?.SourceCode as string
+    const sourceCodeRaw = (data.result as Array<{ SourceCode?: string }>)[0]?.SourceCode as string
     if (typeof sourceCodeRaw !== 'string' || sourceCodeRaw.length === 0) {
       throw new Error('No SourceCode found on Etherscan')
     }

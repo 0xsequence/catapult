@@ -377,7 +377,7 @@ describe('Multi-Platform Verification Integration', () => {
       }
 
       await expect(engine.executeJob(job, context)).rejects.toThrow(
-        'platform must be a string'
+        'platform must be a string, array of strings, or \'all\''
       )
     })
 
@@ -399,7 +399,7 @@ describe('Multi-Platform Verification Integration', () => {
       }
 
       await expect(engine.executeJob(job, context)).rejects.toThrow(
-        'platform must be a string'
+        'platform array must contain only strings'
       )
     })
   })

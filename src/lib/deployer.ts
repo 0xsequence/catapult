@@ -120,7 +120,10 @@ export class Deployer {
 
       // Inform about skipped deprecated jobs (when applicable)
       if (!this.options.runDeprecated) {
-        const skippedDeprecated = jobOrder.filter(name => !jobsToRun.includes(name) && (this.loader.jobs.get(name) as any)?.deprecated === true)
+        const skippedDeprecated = jobOrder.filter(name => {
+          const j = this.loader.jobs.get(name) as { deprecated?: boolean } | undefined
+          return !jobsToRun.includes(name) && j?.deprecated === true
+        })
         if (skippedDeprecated.length > 0) {
           this.events.emitEvent({
             type: 'deprecated_jobs_skipped',
@@ -298,7 +301,7 @@ export class Deployer {
     // Helper to decide if a job is deprecated
     const isDeprecated = (jobName: string): boolean => {
       const j = this.loader.jobs.get(jobName)
-      return !!(j && (j as any).deprecated === true)
+      return !!(j && (j as { deprecated?: boolean }).deprecated === true)
     }
 
     // If user didn't specify jobs explicitly, we may need to skip deprecated ones unless runDeprecated

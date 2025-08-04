@@ -69,7 +69,7 @@ export function makeRunCommand(): Command {
           loadStdTemplates: options.std !== false
         },
         flatOutput: options.flatOutput === true,
-        runDeprecated: (options as any).runDeprecated === true
+        runDeprecated: (options as { runDeprecated?: boolean }).runDeprecated === true
       } as DeployerOptions
 
       const deployer = new Deployer(deployerOptions)
