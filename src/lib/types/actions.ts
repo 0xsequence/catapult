@@ -28,7 +28,7 @@ export interface VerifyContractAction {
     address: AddressValue;
     contract: Value<Contract>; // The contract to verify
     constructorArguments?: BytesValue; // Optional constructor args as hex string
-    platform?: Value<string>; // Platform to verify on, defaults to "all" (tries all configured platforms)
+    platform?: Value<string | string[]>; // Platform(s) to verify on, defaults to "all" (tries all configured platforms)
   };
 }
 

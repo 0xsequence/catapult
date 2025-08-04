@@ -493,10 +493,10 @@ export class ExecutionEngine {
         // Resolve arguments
         const resolvedAddress = await this.resolver.resolve(action.arguments.address, context, scope)
         const resolvedContract = await this.resolver.resolve(action.arguments.contract, context, scope)
-        const resolvedConstructorArgs = action.arguments.constructorArguments 
+        const resolvedConstructorArgs = action.arguments.constructorArguments
           ? await this.resolver.resolve(action.arguments.constructorArguments, context, scope)
           : undefined
-        const resolvedPlatform = action.arguments.platform 
+        const resolvedPlatform = action.arguments.platform
           ? await this.resolver.resolve(action.arguments.platform, context, scope)
           : 'all'
 
@@ -509,8 +509,20 @@ export class ExecutionEngine {
 
         const contract = resolvedContract as Contract
 
-        if (typeof resolvedPlatform !== 'string') {
-          throw new Error(`Action "${actionName}": platform must be a string`)
+        // Handle platform validation - allow string, array of strings, or 'all'
+        let platformsToTry: string[]
+        if (resolvedPlatform === 'all') {
+          platformsToTry = ['all']
+        } else if (typeof resolvedPlatform === 'string') {
+          platformsToTry = [resolvedPlatform]
+        } else if (Array.isArray(resolvedPlatform)) {
+          // Validate that all array elements are strings
+          if (!resolvedPlatform.every(p => typeof p === 'string')) {
+            throw new Error(`Action "${actionName}": platform array must contain only strings`)
+          }
+          platformsToTry = resolvedPlatform
+        } else {
+          throw new Error(`Action "${actionName}": platform must be a string, array of strings, or 'all'`)
         }
 
         // Validate that the contract has the necessary information for verification
@@ -536,8 +548,9 @@ export class ExecutionEngine {
         const network = context.getNetwork()
         const contractName = `${contract.sourceName}:${contract.contractName}`
 
-        // Handle "all" platform - try all configured platforms for this network
-        if (resolvedPlatform === 'all') {
+        // Handle platform verification
+        if (platformsToTry.includes('all')) {
+          // Handle "all" platform - try all configured platforms for this network
           const configuredPlatforms = this.verificationRegistry.getConfiguredPlatforms(network)
           
           if (configuredPlatforms.length === 0) {
@@ -588,29 +601,54 @@ export class ExecutionEngine {
           if (!anySuccess) {
             throw new Error(`Verification failed on all configured platforms for network ${network.name}`)
           }
+        } else {
+          // Handle specific platform(s) verification
+          let anySuccess = false
+          for (const platformName of platformsToTry) {
+            const platform = this.verificationRegistry.get(platformName)
+            if (!platform) {
+              throw new Error(`Action "${actionName}": Unsupported verification platform "${platformName}"`)
+            }
 
-          return
+            try {
+              await this.verifyOnSinglePlatform(
+                platform,
+                contract,
+                address,
+                constructorArguments,
+                network,
+                actionName,
+                contractName,
+                action,
+                context,
+                hasCustomOutput
+              )
+              anySuccess = true
+            } catch (error) {
+              // Log the error but continue with other platforms if multiple specified
+              this.events.emitEvent({
+                type: 'verification_failed',
+                level: platformsToTry.length > 1 ? 'warn' : 'error',
+                data: {
+                  actionName: actionName,
+                  address,
+                  contractName,
+                  platform: platform.name,
+                  error: error instanceof Error ? error.message : String(error)
+                }
+              })
+              
+              // If only one platform specified, re-throw the error
+              if (platformsToTry.length === 1) {
+                throw error
+              }
+            }
+          }
+
+          if (!anySuccess && platformsToTry.length > 1) {
+            throw new Error(`Verification failed on all specified platforms: ${platformsToTry.join(', ')}`)
+          }
         }
-
-        // Handle single platform verification
-        const platform = this.verificationRegistry.get(resolvedPlatform)
-        if (!platform) {
-          throw new Error(`Action "${actionName}": Unsupported verification platform "${resolvedPlatform}"`)
-        }
-
-        // Use the helper method for single platform verification
-        await this.verifyOnSinglePlatform(
-          platform,
-          contract,
-          address,
-          constructorArguments,
-          network,
-          actionName,
-          contractName,
-          action,
-          context,
-          hasCustomOutput
-        )
 
         break
       }
