@@ -1,5 +1,6 @@
 import { Command } from 'commander'
 import { makeRunCommand, makeDryRunCommand, makeListCommand, makeUtilsCommand } from './commands'
+import { makeEtherscanCommand } from './commands/etherscan'
 
 export function setupCommands(program: Command): void {
   // Make run the default command when no subcommand is provided
@@ -12,4 +13,5 @@ export function setupCommands(program: Command): void {
   program.addCommand(makeDryRunCommand())
   program.addCommand(makeListCommand())
   program.addCommand(makeUtilsCommand())
+  program.addCommand(makeEtherscanCommand())
 }
