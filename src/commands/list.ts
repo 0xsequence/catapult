@@ -40,7 +40,8 @@ export function makeListCommand(): Command {
         return
       }
       for (const job of loader.jobs.values()) {
-        console.log(`- ${chalk.cyan(job.name)} (v${job.version})`)
+        const deprecatedMark = (job as any).deprecated ? ` ${chalk.yellow('(deprecated)')}` : ''
+        console.log(`- ${chalk.cyan(job.name)} (v${job.version})${deprecatedMark}`)
         if (job.description) {
           console.log(`  ${chalk.gray(job.description)}`)
         }

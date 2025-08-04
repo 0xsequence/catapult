@@ -45,6 +45,9 @@ export interface DeployerOptions {
 
   /** Optional: When true, write outputs in a flat directory instead of mirroring the jobs dir structure. */
   flatOutput?: boolean
+
+  /** Optional: Allow running jobs marked as deprecated when true. */
+  runDeprecated?: boolean
 }
 
 /**
@@ -114,6 +117,18 @@ export class Deployer {
 
       // 3. Filter jobs and networks based on user options.
       const jobsToRun = this.getJobExecutionPlan(jobOrder)
+
+      // Inform about skipped deprecated jobs (when applicable)
+      if (!this.options.runDeprecated) {
+        const skippedDeprecated = jobOrder.filter(name => !jobsToRun.includes(name) && (this.loader.jobs.get(name) as any)?.deprecated === true)
+        if (skippedDeprecated.length > 0) {
+          this.events.emitEvent({
+            type: 'deprecated_jobs_skipped',
+            level: 'warn',
+            data: { jobs: skippedDeprecated }
+          })
+        }
+      }
       const targetNetworks = this.getTargetNetworks()
       
       this.events.emitEvent({
@@ -280,10 +295,22 @@ export class Deployer {
    * If a user requests specific jobs, this ensures all their dependencies are also included.
    */
   private getJobExecutionPlan(fullOrder: string[]): string[] {
+    // Helper to decide if a job is deprecated
+    const isDeprecated = (jobName: string): boolean => {
+      const j = this.loader.jobs.get(jobName)
+      return !!(j && (j as any).deprecated === true)
+    }
+
+    // If user didn't specify jobs explicitly, we may need to skip deprecated ones unless runDeprecated
     if (!this.options.runJobs || this.options.runJobs.length === 0) {
-      return fullOrder // Run all jobs
+      const order = this.options.runDeprecated
+        ? fullOrder
+        : fullOrder.filter(name => !isDeprecated(name))
+      return order
     }
     
+    const explicitlyRequested = new Set<string>(this.options.runJobs)
+
     const jobsToRun = new Set<string>()
     for (const jobName of this.options.runJobs) {
       if (!this.loader.jobs.has(jobName)) {
@@ -293,9 +320,20 @@ export class Deployer {
       const dependencies = this.graph?.getDependencies(jobName) || new Set()
       dependencies.forEach((dep: string) => jobsToRun.add(dep))
     }
+
+    // If deprecated jobs are not allowed, filter out deprecated jobs that were not explicitly requested.
+    // Dependencies that are deprecated will be included only if they were explicitly requested by the user.
+    const filtered = Array.from(jobsToRun).filter(name => {
+      if (!isDeprecated(name)) return true
+      // Allow if user explicitly requested this deprecated job
+      if (explicitlyRequested.has(name)) return true
+      // Otherwise require --run-deprecated
+      return this.options.runDeprecated === true
+    })
+    const allowedSet = new Set(filtered)
     
     // Filter the original execution order to only include the required jobs, preserving the correct sequence.
-    return fullOrder.filter(jobName => jobsToRun.has(jobName))
+    return fullOrder.filter(jobName => allowedSet.has(jobName))
   }
 
   /**

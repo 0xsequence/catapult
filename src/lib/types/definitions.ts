@@ -52,6 +52,7 @@ export interface Job {
     skip_networks?: number[]
     skip_condition?: Condition[];
     constants?: Record<string, Value<any>>; // Optional job-level constants
+    deprecated?: boolean; // Optional flag to mark the job as deprecated
     _path?: string; // Path to the job file for relative artifact resolution
 }
 

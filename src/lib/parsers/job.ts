@@ -74,6 +74,11 @@ export function parseJob(yamlContent: string): Job {
     }
   }
 
+  // --- Optional: validate deprecated flag if present ---
+  if (rawObject.deprecated !== undefined && typeof rawObject.deprecated !== 'boolean') {
+    throw new Error(`Invalid job "${rawObject.name}": "deprecated" must be a boolean if provided.`)
+  }
+
   // --- Construct and return the strongly-typed Job object ---
   const job: Job = {
     name: rawObject.name,
@@ -84,6 +89,7 @@ export function parseJob(yamlContent: string): Job {
     actions: rawObject.actions as JobAction[],
     only_networks: rawObject.only_networks,
     skip_networks: rawObject.skip_networks,
+    deprecated: rawObject.deprecated === true
   }
 
   return job

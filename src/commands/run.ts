@@ -17,7 +17,7 @@ interface RunOptions {
   noPostCheckConditions: boolean
   flatOutput: boolean
 }
-
+ 
 export function makeRunCommand(): Command {
   const run = new Command('run')
     .description('Run deployment jobs on specified networks')
@@ -28,6 +28,7 @@ export function makeRunCommand(): Command {
     .option('--fail-early', 'Stop execution as soon as any job fails. Default: false', false)
     .option('--no-post-check-conditions', 'Skip post-execution check of skip conditions. Default: false (post-check enabled)', false)
     .option('--flat-output', 'Write output files in a single flat directory instead of mirroring the jobs directory structure. Default: false', false)
+    .option('--run-deprecated', 'Allow running jobs marked as deprecated. By default deprecated jobs are skipped unless explicitly targeted.', false)
 
   projectOption(run)
   dotenvOption(run)
@@ -67,7 +68,8 @@ export function makeRunCommand(): Command {
         loaderOptions: {
           loadStdTemplates: options.std !== false
         },
-        flatOutput: options.flatOutput === true
+        flatOutput: options.flatOutput === true,
+        runDeprecated: (options as any).runDeprecated === true
       } as DeployerOptions
 
       const deployer = new Deployer(deployerOptions)
