@@ -6,6 +6,7 @@ import { validateAddress, validateHexData, validateBigNumberish, validateRawTran
 import { DeploymentEventEmitter, deploymentEvents } from '../events'
 import { createDefaultVerificationRegistry, VerificationPlatformRegistry } from '../verification/etherscan'
 import { BuildInfo } from '../types/buildinfo'
+import { ethers } from 'ethers'
 
 /**
  * The ExecutionEngine is the core component that runs jobs and their actions.
@@ -660,6 +661,41 @@ export class ExecutionEngine {
         }
         break
       }
+      case 'test-nicks-method': {
+        // Default bytecode if none provided
+        const defaultBytecode = '0x608060405234801561001057600080fd5b5061013d806100206000396000f3fe60806040526004361061001e5760003560e01c80639c4ae2d014610023575b600080fd5b6100cb6004803603604081101561003957600080fd5b81019060208101813564010000000081111561005457600080fd5b82018360208201111561006657600080fd5b8035906020019184600183028401116401000000008311171561008857600080fd5b91908080601f01602080910402602001604051908101604052809392919081815260200183838082843760009201919091525092955050913592506100cd915050565b005b60008183516020850134f56040805173ffffffffffffffffffffffffffffffffffffffff83168152905191925081900360200190a050505056fea264697066735822122033609f614f03931b92d88c309d698449bb77efcd517328d341fa4f923c5d8c7964736f6c63430007060033'
+        
+        const resolvedBytecode = action.arguments.bytecode ? await this.resolver.resolve(action.arguments.bytecode, context, scope) : defaultBytecode
+        const resolvedGasPrice = action.arguments.gasPrice ? await this.resolver.resolve(action.arguments.gasPrice, context, scope) : undefined
+        const resolvedGasLimit = action.arguments.gasLimit ? await this.resolver.resolve(action.arguments.gasLimit, context, scope) : undefined
+        const resolvedFundingAmount = action.arguments.fundingAmount ? await this.resolver.resolve(action.arguments.fundingAmount, context, scope) : undefined
+        
+        // Validate inputs
+        const bytecode = validateHexData(resolvedBytecode, actionName, 'bytecode')
+        const gasPrice = resolvedGasPrice ? validateBigNumberish(resolvedGasPrice, actionName, 'gasPrice') : undefined
+        const gasLimit = resolvedGasLimit ? validateBigNumberish(resolvedGasLimit, actionName, 'gasLimit') : undefined
+        const fundingAmount = resolvedFundingAmount ? validateBigNumberish(resolvedFundingAmount, actionName, 'fundingAmount') : undefined
+        
+        const success = await this.testNicksMethod(bytecode, context, gasPrice, gasLimit, fundingAmount)
+        
+        if (!success) {
+          throw new Error(`Nick's method test failed for action "${actionName}"`)
+        }
+        
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: {
+            actionName: actionName,
+            result: 'Nick\'s method test passed'
+          }
+        })
+        
+        if (action.name && !hasCustomOutput) {
+          context.setOutput(`${action.name}.success`, true)
+        }
+        break
+      }
       default:
         throw new Error(`Unknown or unimplemented primitive action type: ${(action as any).type}`)
     }
@@ -823,6 +859,238 @@ export class ExecutionEngine {
       })
       throw error
     }
+  }
+
+  /**
+   * Tests Nick's method for EOA deployment
+   * Generates a valid ECDSA signature and tests if it can deploy the given bytecode
+   * Returns any remaining funds to the original wallet after testing
+   */
+  private async testNicksMethod(
+    bytecode: string,
+    context: ExecutionContext,
+    gasPrice?: ethers.BigNumberish,
+    gasLimit?: ethers.BigNumberish,
+    fundingAmount?: ethers.BigNumberish
+  ): Promise<boolean> {
+    let testResult = false
+    let eoaAddress: string | undefined
+    let wallet: ethers.HDNodeWallet | ethers.Wallet | undefined
+    
+    try {
+      // Default values
+      const defaultGasPrice = gasPrice || ethers.parseUnits('100', 'gwei') // 100 gwei
+      const defaultGasLimit = gasLimit || 250000n // Reasonable gas limit for deployment
+      const calculatedCost = BigInt(defaultGasPrice.toString()) * BigInt(defaultGasLimit.toString())
+      const defaultFundingAmount = fundingAmount || calculatedCost
+      
+      // Generate a valid ECDSA signature using Nick's method approach
+      const result = await this.generateNicksMethodTransaction(bytecode, defaultGasPrice, defaultGasLimit)
+      const rawTx = result.rawTx
+      eoaAddress = result.eoaAddress
+      wallet = result.wallet
+      
+      this.events.emitEvent({
+        type: 'action_started',
+        level: 'debug',
+        data: {
+          message: `Testing Nick's method with EOA: ${eoaAddress}`
+        }
+      })
+      
+      // Check if EOA already has sufficient balance
+      const currentBalance = await context.provider.getBalance(eoaAddress)
+      const neededFunding = BigInt(defaultFundingAmount.toString()) - currentBalance
+      
+      if (neededFunding > 0) {
+        // Fund the EOA
+        this.events.emitEvent({
+          type: 'transaction_sent',
+          level: 'debug',
+          data: {
+            to: eoaAddress,
+            value: neededFunding.toString(),
+            dataPreview: 'funding EOA for Nick\'s method test',
+            txHash: 'pending'
+          }
+        })
+        
+        const fundingTx = await context.signer.sendTransaction({
+          to: eoaAddress,
+          value: neededFunding
+        })
+        
+        await fundingTx.wait()
+        
+        this.events.emitEvent({
+          type: 'transaction_confirmed',
+          level: 'debug',
+          data: {
+            txHash: fundingTx.hash,
+            message: `Funded EOA ${eoaAddress} with ${ethers.formatEther(neededFunding)} ETH`
+          }
+        })
+      }
+      
+      // Try to broadcast the raw transaction
+      const deployTx = await context.provider.broadcastTransaction(rawTx)
+      const receipt = await deployTx.wait()
+      
+      if (receipt && receipt.status === 1) {
+        this.events.emitEvent({
+          type: 'transaction_confirmed',
+          level: 'info',
+          data: {
+            txHash: deployTx.hash,
+            message: `Nick's method test successful - contract deployed at ${receipt.contractAddress}`
+          }
+        })
+        testResult = true
+      } else {
+        this.events.emitEvent({
+          type: 'action_failed',
+          level: 'warn',
+          data: {
+            message: `Nick's method test failed - transaction reverted: ${deployTx.hash}`
+          }
+        })
+        testResult = false
+      }
+    } catch (error) {
+      this.events.emitEvent({
+        type: 'action_failed',
+        level: 'warn',
+        data: {
+          message: `Nick's method test failed with error: ${error instanceof Error ? error.message : String(error)}`
+        }
+      })
+      testResult = false
+    } finally {
+      // Always try to return remaining funds to the original wallet
+      if (eoaAddress && wallet) {
+        try {
+          await this.returnRemainingFunds(eoaAddress, wallet, context)
+        } catch (error) {
+          // Log the error but don't fail the main test
+          this.events.emitEvent({
+            type: 'action_failed',
+            level: 'warn',
+            data: {
+              message: `Failed to return remaining funds from EOA ${eoaAddress}: ${error instanceof Error ? error.message : String(error)}`
+            }
+          })
+        }
+      }
+    }
+    
+    return testResult
+  }
+
+  /**
+   * Generates a raw transaction and EOA address using Nick's method approach
+   */
+  private async generateNicksMethodTransaction(
+    bytecode: string,
+    gasPrice: ethers.BigNumberish,
+    gasLimit: ethers.BigNumberish
+  ): Promise<{ rawTx: string; eoaAddress: string; wallet: ethers.HDNodeWallet }> {
+    // Generate a random private key for the test
+    const wallet = ethers.Wallet.createRandom()
+    
+    // Create unsigned transaction
+    const unsignedTx: ethers.TransactionRequest = {
+      type: 0, // Legacy transaction
+      chainId: 0, // Nick's method uses chainId 0
+      nonce: 0,
+      gasPrice: gasPrice,
+      gasLimit: gasLimit,
+      to: null, // Contract creation
+      value: 0,
+      data: bytecode
+    }
+    
+    // Sign the transaction
+    const signedTx = await wallet.signTransaction(unsignedTx)
+    
+    // Parse the signed transaction to get the EOA address
+    const parsedTx = ethers.Transaction.from(signedTx)
+    const eoaAddress = parsedTx.from!
+    
+    return {
+      rawTx: signedTx,
+      eoaAddress: eoaAddress,
+      wallet: wallet
+    }
+  }
+
+  /**
+   * Returns any remaining funds from the test EOA back to the original wallet
+   */
+  private async returnRemainingFunds(
+    eoaAddress: string,
+    wallet: ethers.HDNodeWallet | ethers.Wallet,
+    context: ExecutionContext
+  ): Promise<void> {
+    // Check remaining balance in the test EOA
+    const remainingBalance = await context.provider.getBalance(eoaAddress)
+    
+    if (remainingBalance <= 0n) {
+      // No funds to return
+      return
+    }
+    
+    // Connect the wallet to the provider to send transactions
+    const connectedWallet = wallet.connect(context.provider)
+    
+    // Estimate gas for a simple transfer
+    const gasPrice = await context.provider.getFeeData().then(data => data.gasPrice || ethers.parseUnits('20', 'gwei'))
+    const gasLimit = 21000n // Standard gas limit for ETH transfer
+    const gasCost = BigInt(gasPrice.toString()) * gasLimit
+    
+    // Check if we have enough balance to cover gas costs
+    if (remainingBalance <= gasCost) {
+      this.events.emitEvent({
+        type: 'action_info',
+        level: 'debug',
+        data: {
+          message: `Remaining balance ${ethers.formatEther(remainingBalance)} ETH is insufficient to cover gas costs for fund return`
+        }
+      })
+      return
+    }
+    
+    // Calculate amount to send (balance minus gas costs)
+    const amountToSend = remainingBalance - gasCost
+    
+    this.events.emitEvent({
+      type: 'transaction_sent',
+      level: 'debug',
+      data: {
+        to: await context.signer.getAddress(),
+        value: amountToSend.toString(),
+        dataPreview: 'returning remaining funds from Nick\'s method test',
+        txHash: 'pending'
+      }
+    })
+    
+    // Send the remaining funds back to the original signer
+    const returnTx = await connectedWallet.sendTransaction({
+      to: await context.signer.getAddress(),
+      value: amountToSend,
+      gasPrice: gasPrice,
+      gasLimit: gasLimit
+    })
+    
+    await returnTx.wait()
+    
+    this.events.emitEvent({
+      type: 'transaction_confirmed',
+      level: 'debug',
+      data: {
+        txHash: returnTx.hash,
+        message: `Returned ${ethers.formatEther(amountToSend)} ETH from test EOA ${eoaAddress} to original wallet`
+      }
+    })
   }
 
   /**

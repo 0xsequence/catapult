@@ -1210,4 +1210,61 @@ describe('ExecutionEngine', () => {
       expect(context.getOutput('main-action.hash')).toBeDefined()
     })
   })
+
+  describe('test-nicks-method action', () => {
+    it('should successfully test Nick\'s method with a simple contract', async () => {
+      // Simple contract bytecode (just returns 42)
+      const simpleBytecode = '0x6080604052348015600f57600080fd5b5060b68061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063a87d942c14602d575b600080fd5b60336035565b005b6000602a9050909156fea2646970667358221220d1b0e2d6c9f3e8a6f5b8d2e3a4c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c556'
+
+      const action: Action = {
+        type: 'test-nicks-method',
+        name: 'nick-test',
+        arguments: {
+          bytecode: simpleBytecode,
+          gasPrice: ethers.parseUnits('10', 'gwei'),
+          gasLimit: 100000n,
+          fundingAmount: ethers.parseEther('0.001')
+        }
+      }
+
+      await (engine as any).executeAction(action, context, new Map())
+
+      // Should have success output
+      expect(context.getOutput('nick-test.success')).toBe(true)
+    })
+
+    it('should handle missing optional parameters', async () => {
+      // Simple contract bytecode
+      const simpleBytecode = '0x6080604052348015600f57600080fd5b5060b68061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063a87d942c14602d575b600080fd5b60336035565b005b6000602a9050909156fea2646970667358221220d1b0e2d6c9f3e8a6f5b8d2e3a4c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c556'
+
+      const action: Action = {
+        type: 'test-nicks-method',
+        name: 'nick-test-defaults',
+        arguments: {
+          bytecode: simpleBytecode
+          // All other parameters should use defaults
+        }
+      }
+
+      await (engine as any).executeAction(action, context, new Map())
+
+      // Should have success output
+      expect(context.getOutput('nick-test-defaults.success')).toBe(true)
+    })
+
+    it('should use default bytecode when none provided', async () => {
+      const action: Action = {
+        type: 'test-nicks-method',
+        name: 'nick-test-default-bytecode',
+        arguments: {
+          // No bytecode provided - should use default
+        }
+      }
+
+      await (engine as any).executeAction(action, context, new Map())
+
+      // Should have success output
+      expect(context.getOutput('nick-test-default-bytecode.success')).toBe(true)
+    })
+  })
 }) 

@@ -14,6 +14,7 @@ setup:
       arguments:
         address: "0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0"
   actions:
+    - type: "test-nicks-method"
     - type: "min-balance"
       arguments:
         address: "0x9c5a87452d4FAC0cbd53BDCA580b20A45526B3AB"

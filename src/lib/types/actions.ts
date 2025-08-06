@@ -39,14 +39,25 @@ export interface StaticAction {
   };
 }
 
+export interface TestNicksMethodAction {
+  type: 'test-nicks-method';
+  arguments: {
+    bytecode?: BytesValue;
+    gasPrice?: Uint256Value;
+    gasLimit?: Uint256Value;
+    fundingAmount?: Uint256Value;
+  };
+}
+
 // A union of all primitive action types.
-export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction;
+export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | TestNicksMethodAction;
 
 const primitiveActionTypes = [
   'send-transaction',
   'send-signed-transaction',
   'verify-contract',
   'static',
+  'test-nicks-method',
 ] as const;
 
 /**
