@@ -37,7 +37,7 @@ actions:
           values:
             - "{{creationCode}}"
             - "{{salt}}"
-      gasMultiplier: 1.5
+      gasMultiplier: 1.6
 
 skip_condition:
   - type: "contract-exists"

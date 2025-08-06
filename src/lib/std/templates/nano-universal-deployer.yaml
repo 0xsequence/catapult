@@ -29,7 +29,7 @@ actions:
     arguments:
       to: "0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0"
       data: "{{creationCode}}"
-      gasMultiplier: 1.5
+      gasMultiplier: 1.6
 
 skip_condition:
   - type: "contract-exists"
