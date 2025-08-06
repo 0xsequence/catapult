@@ -60,7 +60,7 @@ export function makeRunCommand(): Command {
       
       // Handle custom RPC URL if provided
       if (options.rpcUrl) {
-        console.log(`[DEBUG] Custom RPC URL provided: ${options.rpcUrl}`)
+        // Custom RPC URL provided
         
         // Validate RPC URL format
         if (!isValidRpcUrl(options.rpcUrl)) {
@@ -82,7 +82,7 @@ export function makeRunCommand(): Command {
             testnet: detectedNetwork.testnet
           }
           
-          console.log(`[DEBUG] Created custom network:`, customNetwork)
+          // Custom network created from RPC detection
           
           // Replace networks array with just the custom network
           networks = [customNetwork]

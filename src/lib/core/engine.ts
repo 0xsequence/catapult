@@ -412,11 +412,13 @@ export class ExecutionEngine {
           txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
         } else if (gasMultiplier) {
           // If gasMultiplier is specified but no network gasLimit, estimate gas first
-          const estimatedGas = await context.signer.estimateGas({ to, data, value })
+          const signer = await context.getResolvedSigner()
+          const estimatedGas = await signer.estimateGas({ to, data, value })
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
         
-        const tx = await context.signer.sendTransaction(txParams)
+        const signer = await context.getResolvedSigner()
+        const tx = await signer.sendTransaction(txParams)
         
         this.events.emitEvent({
           type: 'transaction_sent',
@@ -886,6 +888,22 @@ export class ExecutionEngine {
       const calculatedCost = BigInt(defaultGasPrice.toString()) * BigInt(defaultGasLimit.toString())
       const defaultFundingAmount = fundingAmount || calculatedCost
       
+      // Check main signer balance first
+      const signer = await context.getResolvedSigner()
+      const signerAddress = await signer.getAddress()
+      const signerBalance = await context.provider.getBalance(signerAddress)
+      
+      if (signerBalance < BigInt(defaultFundingAmount.toString())) {
+        this.events.emitEvent({
+          type: 'action_failed',
+          level: 'error',
+          data: {
+            message: `Insufficient funds: signer has ${ethers.formatEther(signerBalance)} ETH but needs ${ethers.formatEther(defaultFundingAmount)} ETH`
+          }
+        })
+        return false
+      }
+      
       // Generate a valid ECDSA signature using Nick's method approach
       const result = await this.generateNicksMethodTransaction(bytecode, defaultGasPrice, defaultGasLimit)
       const rawTx = result.rawTx
@@ -917,26 +935,87 @@ export class ExecutionEngine {
           }
         })
         
-        const fundingTx = await context.signer.sendTransaction({
+        this.events.emitEvent({
+          type: 'action_started',
+          level: 'debug',
+          data: {
+            message: `[NICK'S METHOD DEBUG] Sending funding transaction: ${ethers.formatEther(neededFunding)} ETH to ${eoaAddress}`
+          }
+        })
+        
+        const signer = await context.getResolvedSigner()
+        const fundingTx = await signer.sendTransaction({
           to: eoaAddress,
           value: neededFunding
         })
         
-        await fundingTx.wait()
+        this.events.emitEvent({
+          type: 'action_started',
+          level: 'debug',
+          data: {
+            message: `[NICK'S METHOD DEBUG] Funding transaction sent: ${fundingTx.hash}, waiting for confirmation...`
+          }
+        })
+        
+        const fundingReceipt = await fundingTx.wait()
         
         this.events.emitEvent({
           type: 'transaction_confirmed',
           level: 'debug',
           data: {
             txHash: fundingTx.hash,
-            message: `Funded EOA ${eoaAddress} with ${ethers.formatEther(neededFunding)} ETH`
+            message: `[NICK'S METHOD DEBUG] Funded EOA ${eoaAddress} with ${ethers.formatEther(neededFunding)} ETH, receipt status: ${fundingReceipt?.status}`
+          }
+        })
+        
+        if (!fundingReceipt || fundingReceipt.status !== 1) {
+          this.events.emitEvent({
+            type: 'action_failed',
+            level: 'error',
+            data: {
+              message: `[NICK'S METHOD DEBUG] Funding transaction failed! Hash: ${fundingTx.hash}, Status: ${fundingReceipt?.status}`
+            }
+          })
+          return false
+        }
+      } else {
+        this.events.emitEvent({
+          type: 'action_started',
+          level: 'debug',
+          data: {
+            message: `[NICK'S METHOD DEBUG] EOA already has sufficient balance, skipping funding`
           }
         })
       }
       
       // Try to broadcast the raw transaction
+      this.events.emitEvent({
+        type: 'action_started',
+        level: 'debug',
+        data: {
+          message: `[NICK'S METHOD DEBUG] Broadcasting Nick's method transaction. RawTx: ${rawTx.substring(0, 100)}...`
+        }
+      })
+      
       const deployTx = await context.provider.broadcastTransaction(rawTx)
+      
+      this.events.emitEvent({
+        type: 'action_started',
+        level: 'debug',
+        data: {
+          message: `[NICK'S METHOD DEBUG] Transaction broadcasted successfully. Hash: ${deployTx.hash}, waiting for confirmation...`
+        }
+      })
+      
       const receipt = await deployTx.wait()
+      
+      this.events.emitEvent({
+        type: 'action_started',
+        level: 'debug',
+        data: {
+          message: `[NICK'S METHOD DEBUG] Transaction receipt received. Status: ${receipt?.status}, ContractAddress: ${receipt?.contractAddress}, BlockNumber: ${receipt?.blockNumber}`
+        }
+      })
       
       if (receipt && receipt.status === 1) {
         this.events.emitEvent({
@@ -944,16 +1023,16 @@ export class ExecutionEngine {
           level: 'info',
           data: {
             txHash: deployTx.hash,
-            message: `Nick's method test successful - contract deployed at ${receipt.contractAddress}`
+            message: `[NICK'S METHOD DEBUG] Nick's method test successful - contract deployed at ${receipt.contractAddress}`
           }
         })
         testResult = true
       } else {
         this.events.emitEvent({
           type: 'action_failed',
-          level: 'warn',
+          level: 'error',
           data: {
-            message: `Nick's method test failed - transaction reverted: ${deployTx.hash}`
+            message: `[NICK'S METHOD DEBUG] Nick's method test failed - transaction reverted or failed. Hash: ${deployTx.hash}, Status: ${receipt?.status}`
           }
         })
         testResult = false
@@ -961,11 +1040,23 @@ export class ExecutionEngine {
     } catch (error) {
       this.events.emitEvent({
         type: 'action_failed',
-        level: 'warn',
+        level: 'error',
         data: {
-          message: `Nick's method test failed with error: ${error instanceof Error ? error.message : String(error)}`
+          message: `[NICK'S METHOD DEBUG] Nick's method test failed with error: ${error instanceof Error ? error.message : String(error)}`
         }
       })
+      
+      // Log additional error details for debugging
+      if (error instanceof Error && error.stack) {
+        this.events.emitEvent({
+          type: 'action_failed',
+          level: 'debug',
+          data: {
+            message: `[NICK'S METHOD DEBUG] Error stack trace: ${error.stack}`
+          }
+        })
+      }
+      
       testResult = false
     } finally {
       // Always try to return remaining funds to the original wallet
@@ -1068,7 +1159,7 @@ export class ExecutionEngine {
       type: 'transaction_sent',
       level: 'debug',
       data: {
-        to: await context.signer.getAddress(),
+        to: await (await context.getResolvedSigner()).getAddress(),
         value: amountToSend.toString(),
         dataPreview: 'returning remaining funds from Nick\'s method test',
         txHash: 'pending'
@@ -1077,7 +1168,7 @@ export class ExecutionEngine {
     
     // Send the remaining funds back to the original signer
     const returnTx = await connectedWallet.sendTransaction({
-      to: await context.signer.getAddress(),
+      to: await (await context.getResolvedSigner()).getAddress(),
       value: amountToSend,
       gasPrice: gasPrice,
       gasLimit: gasLimit

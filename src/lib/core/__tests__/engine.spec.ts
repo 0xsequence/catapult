@@ -612,7 +612,8 @@ describe('ExecutionEngine', () => {
           hash: '0x123',
           wait: jest.fn().mockResolvedValue({ status: 1, blockNumber: 123 })
         })
-        jest.spyOn(context.signer, 'sendTransaction').mockImplementation(mockSendTransaction)
+        const resolvedSigner = await context.getResolvedSigner()
+        jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction)
 
         await (engine as any).executePrimitive(action, context, new Map())
 
@@ -628,14 +629,15 @@ describe('ExecutionEngine', () => {
         const mockNetwork = {}
         jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork as any)
 
+        const resolvedSigner = await context.getResolvedSigner()
         const mockEstimateGas = jest.fn().mockResolvedValue(BigInt(80000))
-        jest.spyOn(context.signer, 'estimateGas').mockImplementation(mockEstimateGas)
+        jest.spyOn(resolvedSigner, 'estimateGas').mockImplementation(mockEstimateGas)
 
         const mockSendTransaction = jest.fn().mockResolvedValue({
           hash: '0x123',
           wait: jest.fn().mockResolvedValue({ status: 1, blockNumber: 123 })
         })
-        jest.spyOn(context.signer, 'sendTransaction').mockImplementation(mockSendTransaction)
+        jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction)
 
         const action: Action = {
           type: 'send-transaction',
@@ -669,7 +671,8 @@ describe('ExecutionEngine', () => {
           hash: '0x123',
           wait: jest.fn().mockResolvedValue({ status: 1, blockNumber: 123 })
         })
-        jest.spyOn(context.signer, 'sendTransaction').mockImplementation(mockSendTransaction)
+        const resolvedSigner = await context.getResolvedSigner()
+        jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction)
 
         const action: Action = {
           type: 'send-transaction',

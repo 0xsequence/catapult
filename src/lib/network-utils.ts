@@ -7,19 +7,15 @@ import { Network } from './types'
  * @returns Promise that resolves with detected network information
  */
 export async function detectNetworkFromRpc(rpcUrl: string): Promise<Partial<Network>> {
-  console.log(`[DEBUG] Attempting to detect network from RPC URL: ${rpcUrl}`)
+  // Detect network information from RPC URL
   
   try {
     const provider = new ethers.JsonRpcProvider(rpcUrl)
     
-    console.log(`[DEBUG] Created provider, attempting to get network...`)
+    // Create provider and get network information
     const network = await provider.getNetwork()
     
-    console.log(`[DEBUG] Detected network:`, {
-      name: network.name,
-      chainId: Number(network.chainId),
-      rpcUrl: rpcUrl
-    })
+    // Network detected successfully
     
     return {
       name: network.name,
@@ -27,7 +23,7 @@ export async function detectNetworkFromRpc(rpcUrl: string): Promise<Partial<Netw
       rpcUrl: rpcUrl
     }
   } catch (error) {
-    console.log(`[DEBUG] Failed to detect network from RPC URL:`, error)
+    // Failed to detect network
     throw new Error(`Failed to detect network from RPC URL "${rpcUrl}": ${error instanceof Error ? error.message : String(error)}`)
   }
 }
@@ -49,20 +45,20 @@ export function isValidRpcUrl(url: string): boolean {
                            url.startsWith('wss://')
     
     if (!isValidProtocol) {
-      console.log(`[DEBUG] Invalid RPC URL protocol: ${urlObj.protocol}`)
+      // Invalid protocol
       return false
     }
     
     // Check if it has a hostname
     if (!urlObj.hostname) {
-      console.log(`[DEBUG] RPC URL missing hostname`)
+      // Missing hostname
       return false
     }
     
-    console.log(`[DEBUG] Valid RPC URL format: ${url}`)
+    // Valid RPC URL format
     return true
   } catch (error) {
-    console.log(`[DEBUG] Invalid RPC URL format: ${url}`, error)
+    // Invalid RPC URL format
     return false
   }
 }

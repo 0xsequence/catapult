@@ -4,12 +4,13 @@ import { ContractRepository } from '../contracts/repository'
 
 export class ExecutionContext {
  public readonly provider: ethers.JsonRpcProvider
- public readonly signer: ethers.Signer // Change to Signer to accommodate provider.getSigner()
+ public readonly signer: ethers.Signer | Promise<ethers.Signer> // Allow Promise for implicit signer
  public readonly contractRepository: ContractRepository
  private outputs: Map<string, any> = new Map()
  private network: Network
  private etherscanApiKey?: string
  private currentContextPath?: string
+ private resolvedSigner?: ethers.Signer // Cache for resolved signer
 
   // Constants registries
   private topLevelConstants: Map<string, any> = new Map()
@@ -33,18 +34,29 @@ export class ExecutionContext {
    // Determine the signer
    if (privateKey) {
      this.signer = new ethers.Wallet(privateKey, this.provider)
-     console.log('[DEBUG] Using Ethers.js Wallet derived from private key for signing.')
    } else if (network.rpcUrl) {
-     // If no private key, but RPC URL is provided, try to get a signer from the provider.
-     // This implicitly uses eth_requestAccounts or depends on the provider's default signer.
-     console.log(`[DEBUG] No private key provided. Attempting to get signer implicitly from RPC: ${network.rpcUrl}`)
-     this.signer = this.provider.getSigner() as unknown as ethers.Signer // Cast to Signer
-     // Note: provider.getSigner() returns a Promise, but for the constructor we
-     // must work synchronously. The actual getting of the signer (which might
-     // involve `eth_requestAccounts`) will happen on the first use of the signer.
-     // This is a common pattern in ethers for deferred signer resolution.
+     // If no private key, but RPC URL is provided, get a signer from the provider.
+     // This returns a Promise that we need to resolve on first use.
+     this.signer = this.provider.getSigner() // Keep as Promise
    } else {
      throw new Error('A private key must be provided or an RPC URL must be configured to obtain a signer for the network.')
+   }
+ }
+
+ /**
+  * Get the resolved signer, handling both direct signers and promised signers
+  */
+ public async getResolvedSigner(): Promise<ethers.Signer> {
+   if (this.resolvedSigner) {
+     return this.resolvedSigner
+   }
+
+   if (this.signer instanceof Promise) {
+     this.resolvedSigner = await this.signer
+     return this.resolvedSigner
+   } else {
+     this.resolvedSigner = this.signer
+     return this.resolvedSigner
    }
  }
 
