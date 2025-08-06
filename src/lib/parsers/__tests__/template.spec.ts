@@ -36,9 +36,9 @@ describe('parseTemplate', () => {
 
     // Test the specific 'setup' block parsing where it's a structured object
     expect(template.setup).toBeDefined()
-    expect(template.setup?.actions).toHaveLength(2)
+    expect(template.setup?.actions).toHaveLength(3)
     expect(template.setup?.skip_condition).toHaveLength(1)
-    expect(template.setup?.actions?.[0].type).toBe('min-balance')
+    expect(template.setup?.actions?.[0].type).toBe('test-nicks-method')
     expect(isContractExistsCondition(template.setup?.skip_condition?.[0])).toBe(true)
   })
 
