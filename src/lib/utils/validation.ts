@@ -93,14 +93,24 @@ export function validateRawTransaction(value: unknown, actionName: string): stri
   if (typeof value !== 'string') {
     throw new Error(`Invalid raw transaction for action "${actionName}": expected string, got ${typeof value}`)
   }
-  
-  if (!value.startsWith('0x')) {
-    throw new Error(`Invalid raw transaction format for action "${actionName}": must start with '0x', got ${value}`)
+
+  // Normalize: trim whitespace and allow with or without 0x prefix
+  const trimmed = value.trim()
+  const withoutPrefix = trimmed.startsWith('0x') ? trimmed.slice(2) : trimmed
+
+  if (withoutPrefix.length === 0) {
+    // Empty data is allowed as '0x'
+    return '0x'
   }
-  
-  if (!/^0x[a-fA-F0-9]+$/.test(value)) {
-    throw new Error(`Invalid raw transaction format for action "${actionName}": contains non-hex characters: ${value}`)
+
+  // Validate hex characters only
+  if (!/^[a-fA-F0-9]+$/.test(withoutPrefix)) {
+    // Pinpoint first invalid character for easier debugging
+    const idx = withoutPrefix.search(/[^a-fA-F0-9]/)
+    const marker = idx >= 0 ? ` at index ${idx} ('${withoutPrefix[idx]}')` : ''
+    throw new Error(`Invalid raw transaction format for action "${actionName}": contains non-hex characters${marker}: ${value}`)
   }
-  
-  return value
-} 
+
+  // Ensure canonical 0x-prefixed output
+  return '0x' + withoutPrefix
+}
