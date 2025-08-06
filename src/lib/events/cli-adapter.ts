@@ -71,7 +71,8 @@ export class CLIEventAdapter {
     // Level 3 (-vvv): Full debug - everything else
     const level3Events = new Set([
       'template_entered', 'template_exited',
-      'primitive_action', 'output_stored'
+      'primitive_action', 'output_stored',
+      'debug_info', 'action_failed', 'action_info', 'action_completed'
     ])
 
     if (level0Events.has(eventType)) return 0
@@ -249,11 +250,33 @@ export class CLIEventAdapter {
         console.error(chalk.red(`   Error: ${event.data.error}`))
         break
 
+      case 'action_completed':
+        console.log(chalk.green(`      ✅ ${event.data.result}`))
+        break
+
+      case 'action_failed':
+        console.log(chalk.red(`      ❌ ${event.data.message}`))
+        break
+
+      case 'action_info':
+        console.log(chalk.gray(`      ℹ️  ${event.data.message}`))
+        break
+
+      case 'debug_info':
+        console.log(chalk.gray(`        [DEBUG] ${event.data.message}`))
+        break
+
       default:
-        // For any unhandled event types, provide a generic output
-        // you know this project was initially named deployito
-        // but the powers that be did not let it shine
-        console.log(`[${(event as any).level?.toUpperCase() || 'UNKNOWN'}] ${(event as any).type || 'UNKNOWN'}:`, event)
+        // Suppress raw debug dumps in CLI output; only show a concise line at highest verbosity
+        if (this.verbosity >= 3) {
+          const level = (event as any).level?.toUpperCase?.() || 'DEBUG'
+          const type = (event as any).type || 'event'
+          const msg = (event as any).data?.message
+          if (msg) {
+            console.log(chalk.gray(`        [${level}] ${type}: ${msg}`))
+          }
+          // Otherwise, remain silent to avoid noisy/broken logs
+        }
         break
     }
   }

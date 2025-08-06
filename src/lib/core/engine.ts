@@ -61,9 +61,13 @@ export class ExecutionEngine {
         await this.executeAction(action, context, new Map())
       }
 
-      // If post-check conditions are enabled, re-evaluate job-level skip conditions
+      // If post-check conditions are enabled, re-evaluate job-level skip conditions with retry to handle RPC propagation lag
       if (!this.noPostCheckConditions && job.skip_condition) {
-        const shouldSkip = await this.evaluateSkipConditions(job.skip_condition, context, new Map())
+        const shouldSkip = await this.retryBooleanCheck(
+          async () => this.evaluateSkipConditions(job.skip_condition!, context, new Map()),
+          10,
+          500
+        )
         if (!shouldSkip) {
           // If skip conditions don't evaluate to true after execution, the job failed
           throw new Error(`Job "${job.name}" failed post-execution check: skip conditions did not evaluate to true`)
@@ -107,11 +111,16 @@ export class ExecutionEngine {
       throw new Error(`Action "${actionName}": missing both template and type fields`)
     }
     
+    // Emit action start with a guaranteed, meaningful name
+    const printableName =
+      (typeof actionName === 'string' && actionName.trim().length > 0)
+        ? actionName
+        : (isPrimitiveActionType(templateName) ? templateName : `template:${templateName}`)
     this.events.emitEvent({
       type: 'action_started',
       level: 'info',
       data: {
-        actionName: actionName,
+        actionName: printableName,
         jobName: 'unknown' // We'll need to pass job context later
       }
     })
@@ -217,13 +226,13 @@ export class ExecutionEngine {
       const actionName = 'name' in callingAction ? callingAction.name : callingAction.type
       throw new Error(`Template "${templateName}" not found for action "${actionName}".`)
     }
-            this.events.emitEvent({
-          type: 'template_entered',
-          level: 'debug',
-          data: {
-            templateName: template.name
-          }
-        })
+    this.events.emitEvent({
+      type: 'template_entered',
+      level: 'debug',
+      data: {
+        templateName: template.name
+      }
+    })
 
     // 1. Create and populate a new resolution scope for this template call.
     // NOTE: We resolve arguments in the CURRENT context (which should be the job's context)
@@ -299,9 +308,13 @@ export class ExecutionEngine {
       }
     }
 
-    // If post-check conditions are enabled, re-evaluate template-level skip conditions
+    // If post-check conditions are enabled, re-evaluate template-level skip conditions with retry to handle RPC propagation lag
     if (!this.noPostCheckConditions && template.skip_condition) {
-      const shouldSkip = await this.evaluateSkipConditions(template.skip_condition, context, templateScope)
+      const shouldSkip = await this.retryBooleanCheck(
+        async () => this.evaluateSkipConditions(template.skip_condition!, context, templateScope),
+        3,
+        2000
+      )
       if (!shouldSkip) {
         // If skip conditions don't evaluate to true after execution, the template failed
         throw new Error(`Template "${template.name}" failed post-execution check: skip conditions did not evaluate to true`)
@@ -911,7 +924,7 @@ export class ExecutionEngine {
       wallet = result.wallet
       
       this.events.emitEvent({
-        type: 'action_started',
+        type: 'debug_info',
         level: 'debug',
         data: {
           message: `Testing Nick's method with EOA: ${eoaAddress}`
@@ -936,7 +949,7 @@ export class ExecutionEngine {
         })
         
         this.events.emitEvent({
-          type: 'action_started',
+          type: 'debug_info',
           level: 'debug',
           data: {
             message: `[NICK'S METHOD DEBUG] Sending funding transaction: ${ethers.formatEther(neededFunding)} ETH to ${eoaAddress}`
@@ -950,7 +963,7 @@ export class ExecutionEngine {
         })
         
         this.events.emitEvent({
-          type: 'action_started',
+          type: 'debug_info',
           level: 'debug',
           data: {
             message: `[NICK'S METHOD DEBUG] Funding transaction sent: ${fundingTx.hash}, waiting for confirmation...`
@@ -964,6 +977,14 @@ export class ExecutionEngine {
           level: 'debug',
           data: {
             txHash: fundingTx.hash,
+            blockNumber: fundingReceipt?.blockNumber || 0
+          }
+        })
+        
+        this.events.emitEvent({
+          type: 'debug_info',
+          level: 'debug',
+          data: {
             message: `[NICK'S METHOD DEBUG] Funded EOA ${eoaAddress} with ${ethers.formatEther(neededFunding)} ETH, receipt status: ${fundingReceipt?.status}`
           }
         })
@@ -980,7 +1001,7 @@ export class ExecutionEngine {
         }
       } else {
         this.events.emitEvent({
-          type: 'action_started',
+          type: 'debug_info',
           level: 'debug',
           data: {
             message: `[NICK'S METHOD DEBUG] EOA already has sufficient balance, skipping funding`
@@ -990,7 +1011,7 @@ export class ExecutionEngine {
       
       // Try to broadcast the raw transaction
       this.events.emitEvent({
-        type: 'action_started',
+        type: 'debug_info',
         level: 'debug',
         data: {
           message: `[NICK'S METHOD DEBUG] Broadcasting Nick's method transaction. RawTx: ${rawTx.substring(0, 100)}...`
@@ -1000,7 +1021,7 @@ export class ExecutionEngine {
       const deployTx = await context.provider.broadcastTransaction(rawTx)
       
       this.events.emitEvent({
-        type: 'action_started',
+        type: 'debug_info',
         level: 'debug',
         data: {
           message: `[NICK'S METHOD DEBUG] Transaction broadcasted successfully. Hash: ${deployTx.hash}, waiting for confirmation...`
@@ -1010,7 +1031,7 @@ export class ExecutionEngine {
       const receipt = await deployTx.wait()
       
       this.events.emitEvent({
-        type: 'action_started',
+        type: 'debug_info',
         level: 'debug',
         data: {
           message: `[NICK'S METHOD DEBUG] Transaction receipt received. Status: ${receipt?.status}, ContractAddress: ${receipt?.contractAddress}, BlockNumber: ${receipt?.blockNumber}`
@@ -1023,6 +1044,14 @@ export class ExecutionEngine {
           level: 'info',
           data: {
             txHash: deployTx.hash,
+            blockNumber: receipt.blockNumber || 0
+          }
+        })
+        
+        this.events.emitEvent({
+          type: 'debug_info',
+          level: 'debug',
+          data: {
             message: `[NICK'S METHOD DEBUG] Nick's method test successful - contract deployed at ${receipt.contractAddress}`
           }
         })
@@ -1181,9 +1210,53 @@ export class ExecutionEngine {
       level: 'debug',
       data: {
         txHash: returnTx.hash,
+        blockNumber: (await returnTx.wait())?.blockNumber || 0
+      }
+    })
+    
+    this.events.emitEvent({
+      type: 'debug_info',
+      level: 'debug',
+      data: {
         message: `Returned ${ethers.formatEther(amountToSend)} ETH from test EOA ${eoaAddress} to original wallet`
       }
     })
+  }
+
+  /**
+   * Retries a boolean-producing async check to mitigate transient RPC state lag after transactions.
+   * Returns true on first successful check; otherwise waits delayMs and retries up to retries times.
+   */
+  private async retryBooleanCheck(checkFn: () => Promise<boolean>, retries: number = 3, delayMs: number = 2000): Promise<boolean> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const result = await checkFn()
+        if (result) {
+          return true
+        }
+        // Log attempt failure at debug level
+        this.events.emitEvent({
+          type: 'debug_info',
+          level: 'debug',
+          data: {
+            message: `Post-execution check returned false (attempt ${attempt + 1}/${retries + 1}).`
+          }
+        })
+      } catch (err) {
+        // Log unexpected errors but continue retrying
+        this.events.emitEvent({
+          type: 'debug_info',
+          level: 'debug',
+          data: {
+            message: `Post-execution check threw error (attempt ${attempt + 1}/${retries + 1}): ${err instanceof Error ? err.message : String(err)}`
+          }
+        })
+      }
+      if (attempt < retries) {
+        await new Promise(res => setTimeout(res, delayMs))
+      }
+    }
+    return false
   }
 
   /**

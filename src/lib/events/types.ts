@@ -114,6 +114,39 @@ export interface ActionSkippedEvent extends BaseEvent {
   }
 }
 
+export interface ActionCompletedEvent extends BaseEvent {
+  type: 'action_completed'
+  level: 'info'
+  data: {
+    actionName: string
+    result: string
+  }
+}
+
+export interface ActionFailedEvent extends BaseEvent {
+  type: 'action_failed'
+  level: 'error'
+  data: {
+    message: string
+  }
+}
+
+export interface ActionInfoEvent extends BaseEvent {
+  type: 'action_info'
+  level: 'debug'
+  data: {
+    message: string
+  }
+}
+
+export interface DebugInfoEvent extends BaseEvent {
+  type: 'debug_info'
+  level: 'debug'
+  data: {
+    message: string
+  }
+}
+
 // Template execution events
 export interface TemplateEnteredEvent extends BaseEvent {
   type: 'template_entered'
@@ -358,6 +391,10 @@ export type DeploymentEvent =
   | JobSkippedEvent
   | ActionStartedEvent
   | ActionSkippedEvent
+  | ActionCompletedEvent
+  | ActionFailedEvent
+  | ActionInfoEvent
+  | DebugInfoEvent
   | TemplateEnteredEvent
   | TemplateExitedEvent
   | TemplateSetupStartedEvent
