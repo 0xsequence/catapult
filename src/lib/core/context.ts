@@ -3,34 +3,50 @@ import { Network } from '../types'
 import { ContractRepository } from '../contracts/repository'
 
 export class ExecutionContext {
-  public readonly provider: ethers.JsonRpcProvider
-  public readonly signer: ethers.Wallet
-  public readonly contractRepository: ContractRepository
-  private outputs: Map<string, any> = new Map()
-  private network: Network
-  private etherscanApiKey?: string
-  private currentContextPath?: string
+ public readonly provider: ethers.JsonRpcProvider
+ public readonly signer: ethers.Signer // Change to Signer to accommodate provider.getSigner()
+ public readonly contractRepository: ContractRepository
+ private outputs: Map<string, any> = new Map()
+ private network: Network
+ private etherscanApiKey?: string
+ private currentContextPath?: string
 
   // Constants registries
   private topLevelConstants: Map<string, any> = new Map()
   private jobConstants: Map<string, any> = new Map()
 
-  constructor(
-    network: Network,
-    privateKey: string,
-    contractRepository: ContractRepository,
-    etherscanApiKey?: string,
-    topLevelConstants?: Map<string, any>
-  ) {
-    this.network = network
-    this.provider = new ethers.JsonRpcProvider(network.rpcUrl)
-    this.signer = new ethers.Wallet(privateKey, this.provider)
-    this.contractRepository = contractRepository
-    this.etherscanApiKey = etherscanApiKey
-    if (topLevelConstants) {
-      this.topLevelConstants = new Map(topLevelConstants)
-    }
-  }
+ constructor(
+   network: Network,
+   privateKey: string | undefined, // Make privateKey optional
+   contractRepository: ContractRepository,
+   etherscanApiKey?: string,
+   topLevelConstants?: Map<string, any>
+ ) {
+   this.network = network
+   this.provider = new ethers.JsonRpcProvider(network.rpcUrl)
+   this.contractRepository = contractRepository
+   this.etherscanApiKey = etherscanApiKey
+   if (topLevelConstants) {
+     this.topLevelConstants = new Map(topLevelConstants)
+   }
+
+   // Determine the signer
+   if (privateKey) {
+     this.signer = new ethers.Wallet(privateKey, this.provider)
+     console.log('[DEBUG] Using Ethers.js Wallet derived from private key for signing.')
+   } else if (network.rpcUrl) {
+     // If no private key, but RPC URL is provided, try to get a signer from the provider.
+     // This implicitly uses eth_requestAccounts or depends on the provider's default signer.
+     console.log(`[DEBUG] No private key provided. Attempting to get signer implicitly from RPC: ${network.rpcUrl}`)
+     this.signer = this.provider.getSigner() as unknown as ethers.Signer // Cast to Signer
+     // Note: provider.getSigner() returns a Promise, but for the constructor we
+     // must work synchronously. The actual getting of the signer (which might
+     // involve `eth_requestAccounts`) will happen on the first use of the signer.
+     // This is a common pattern in ethers for deferred signer resolution.
+   } else {
+     throw new Error('A private key must be provided or an RPC URL must be configured to obtain a signer for the network.')
+   }
+ }
 
   public getNetwork(): Network {
     return this.network

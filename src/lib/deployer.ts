@@ -16,8 +16,8 @@ export interface DeployerOptions {
   /** The root directory of the deployment project. */
   projectRoot: string
   
-  /** The private key of the EOA to be used as the signer/relayer. */
-  privateKey: string
+  /** The private key of the EOA to be used as the signer/relayer. Optional if an implicit sender from RPC is desired. */
+  privateKey?: string
   
   /** An array of network configurations to use for deployment. */
   networks: Network[]
