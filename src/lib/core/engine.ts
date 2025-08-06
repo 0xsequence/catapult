@@ -665,10 +665,12 @@ export class ExecutionEngine {
         // Default bytecode if none provided
         const defaultBytecode = '0x608060405234801561001057600080fd5b5061013d806100206000396000f3fe60806040526004361061001e5760003560e01c80639c4ae2d014610023575b600080fd5b6100cb6004803603604081101561003957600080fd5b81019060208101813564010000000081111561005457600080fd5b82018360208201111561006657600080fd5b8035906020019184600183028401116401000000008311171561008857600080fd5b91908080601f01602080910402602001604051908101604052809392919081815260200183838082843760009201919091525092955050913592506100cd915050565b005b60008183516020850134f56040805173ffffffffffffffffffffffffffffffffffffffff83168152905191925081900360200190a050505056fea264697066735822122033609f614f03931b92d88c309d698449bb77efcd517328d341fa4f923c5d8c7964736f6c63430007060033'
         
-        const resolvedBytecode = action.arguments.bytecode ? await this.resolver.resolve(action.arguments.bytecode, context, scope) : defaultBytecode
-        const resolvedGasPrice = action.arguments.gasPrice ? await this.resolver.resolve(action.arguments.gasPrice, context, scope) : undefined
-        const resolvedGasLimit = action.arguments.gasLimit ? await this.resolver.resolve(action.arguments.gasLimit, context, scope) : undefined
-        const resolvedFundingAmount = action.arguments.fundingAmount ? await this.resolver.resolve(action.arguments.fundingAmount, context, scope) : undefined
+        // Handle case where arguments is undefined (action takes no arguments)
+        const args = action.arguments || {}
+        const resolvedBytecode = args.bytecode ? await this.resolver.resolve(args.bytecode, context, scope) : defaultBytecode
+        const resolvedGasPrice = args.gasPrice ? await this.resolver.resolve(args.gasPrice, context, scope) : undefined
+        const resolvedGasLimit = args.gasLimit ? await this.resolver.resolve(args.gasLimit, context, scope) : undefined
+        const resolvedFundingAmount = args.fundingAmount ? await this.resolver.resolve(args.fundingAmount, context, scope) : undefined
         
         // Validate inputs
         const bytecode = validateHexData(resolvedBytecode, actionName, 'bytecode')

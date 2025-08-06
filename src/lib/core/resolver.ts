@@ -85,7 +85,12 @@ export class ValueResolver {
       // Look up the contract with context path for relative artifact resolution
       const contract = context.contractRepository.lookup(contractRef, context.getContextPath())
       if (!contract) {
-        throw new Error(`Artifact not found for reference: "${contractRef}"`)
+        // Provide extra diagnostics to help users understand where lookup occurred
+        const ctx = context.getContextPath()
+        throw new Error(
+          `Artifact not found for reference: "${contractRef}" (resolved relative to: ${ctx ?? 'N/A'}). ` +
+          `Ensure the path and contract name are correct and that the build-info/artifact is discoverable.`
+        )
       }
 
       // If no property requested, return the entire Contract object
