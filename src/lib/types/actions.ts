@@ -58,8 +58,18 @@ export interface TestNicksMethodAction {
   };
 }
 
+export interface JsonRequestAction {
+  type: 'json-request';
+  arguments: {
+    url: Value<string>;
+    method?: Value<string>; // GET, POST, PUT, DELETE, etc. Defaults to GET
+    headers?: Value<Record<string, string>>; // Optional headers
+    body?: Value<any>; // JSON body for POST/PUT requests
+  };
+}
+
 // A union of all primitive action types.
-export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | CreateContractAction | TestNicksMethodAction;
+export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | CreateContractAction | TestNicksMethodAction | JsonRequestAction;
 
 const primitiveActionTypes = [
   'send-transaction',
@@ -68,6 +78,7 @@ const primitiveActionTypes = [
   'static',
   'create-contract',
   'test-nicks-method',
+  'json-request',
 ] as const;
 
 /**

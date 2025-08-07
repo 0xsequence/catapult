@@ -795,6 +795,87 @@ export class ExecutionEngine {
         }
         break
       }
+      case 'json-request': {
+        const resolvedUrl = await this.resolver.resolve(action.arguments.url, context, scope)
+        const resolvedMethod = action.arguments.method ? await this.resolver.resolve(action.arguments.method, context, scope) : 'GET'
+        const resolvedHeaders = action.arguments.headers ? await this.resolver.resolve(action.arguments.headers, context, scope) : {}
+        const resolvedBody = action.arguments.body ? await this.resolver.resolve(action.arguments.body, context, scope) : undefined
+        
+        // Validate inputs
+        if (typeof resolvedUrl !== 'string') {
+          throw new Error(`Action "${actionName}": url must be a string, got: ${typeof resolvedUrl}`)
+        }
+        
+        if (typeof resolvedMethod !== 'string') {
+          throw new Error(`Action "${actionName}": method must be a string, got: ${typeof resolvedMethod}`)
+        }
+        
+        if (resolvedHeaders && typeof resolvedHeaders !== 'object') {
+          throw new Error(`Action "${actionName}": headers must be an object, got: ${typeof resolvedHeaders}`)
+        }
+        
+        try {
+          // Prepare fetch options
+          const fetchOptions: RequestInit = {
+            method: resolvedMethod.toUpperCase(),
+            headers: {
+              'Content-Type': 'application/json',
+              ...(resolvedHeaders as Record<string, string>)
+            }
+          }
+          
+          // Add body for non-GET requests
+          if (resolvedBody !== undefined && resolvedMethod.toUpperCase() !== 'GET') {
+            fetchOptions.body = JSON.stringify(resolvedBody)
+          }
+          
+          this.events.emitEvent({
+            type: 'action_started',
+            level: 'info',
+            data: {
+              actionName: actionName,
+              message: `Making ${resolvedMethod.toUpperCase()} request to ${resolvedUrl}`
+            }
+          })
+          
+          // Make the HTTP request
+          const response = await fetch(resolvedUrl, fetchOptions)
+          
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+          
+          // Parse JSON response
+          const responseData = await response.json()
+          
+          this.events.emitEvent({
+            type: 'action_completed',
+            level: 'info',
+            data: {
+              actionName: actionName,
+              message: `Request completed successfully (${response.status})`
+            }
+          })
+          
+          // Store outputs
+          if (action.name && !hasCustomOutput) {
+            context.setOutput(`${action.name}.response`, responseData)
+            context.setOutput(`${action.name}.status`, response.status)
+            context.setOutput(`${action.name}.statusText`, response.statusText)
+          }
+        } catch (error) {
+          this.events.emitEvent({
+            type: 'action_failed',
+            level: 'error',
+            data: {
+              actionName: actionName,
+              error: error instanceof Error ? error.message : String(error)
+            }
+          })
+          throw new Error(`Action "${actionName}" failed: ${error instanceof Error ? error.message : String(error)}`)
+        }
+        break
+      }
       default:
         throw new Error(`Unknown or unimplemented primitive action type: ${(action as any).type}`)
     }

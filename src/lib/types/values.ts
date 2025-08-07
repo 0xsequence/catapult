@@ -79,6 +79,14 @@ export interface JobCompletedValue {
     };
 }
 
+export interface ReadJsonValue {
+    type: 'read-json';
+    arguments: {
+        json: Value<any>; // The JSON object to read from
+        path: Value<string>; // The path to the value (e.g., "txs.data" or "user.profile.name")
+    };
+}
+
 /**
  * A union of all possible value-resolver objects.
  */
@@ -91,7 +99,8 @@ export type ValueResolver =
   | BasicArithmeticValue
   | CallValue
   | ContractExistsValue
-  | JobCompletedValue;
+  | JobCompletedValue
+  | ReadJsonValue;
 
 /**
  * A generic value type that can be a primitive literal (string, number, boolean),

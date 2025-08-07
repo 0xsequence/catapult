@@ -12,6 +12,7 @@ import {
   ContractExistsCondition,
   ContractExistsValue,
   JobCompletedValue,
+  ReadJsonValue,
 } from '../types'
 import { ExecutionContext } from './context'
 
@@ -66,10 +67,13 @@ export class ValueResolver {
       return this.resolveValueResolverObject(value as ValueResolverObject, context, scope)
     }
 
-    // 5. If we get here, it's an object that is not a ValueResolver (e.g., from an `arguments` block)
-    // The calling code should iterate through the object's keys and resolve each value individually.
-    // Throw an error to prevent unexpected behavior.
-    throw new Error(`Cannot resolve value: not a literal, reference, or known ValueResolver object: ${JSON.stringify(value)}`)
+    // 5. Handle plain objects as literals (for JSON data)
+    if (typeof value === 'object') {
+      return value as T
+    }
+
+    // 6. If we get here, something unexpected happened
+    throw new Error(`Cannot resolve value: unexpected value type: ${typeof value}`)
   }
 
   /**
@@ -162,6 +166,8 @@ export class ValueResolver {
         return this.resolveContractExists(resolvedArgs as ContractExistsValue['arguments'], context)
       case 'job-completed':
         return this.resolveJobCompleted(resolvedArgs as JobCompletedValue['arguments'], context)
+      case 'read-json':
+        return this.resolveReadJson(resolvedArgs as ReadJsonValue['arguments'])
       default:
         throw new Error(`Unknown value resolver type: ${(obj as any).type}`)
     }
@@ -425,6 +431,49 @@ export class ValueResolver {
     // and this condition is used in setup blocks to wait for dependencies,
     // we can simply return true here.
     return true
+  }
+
+  private resolveReadJson(args: ReadJsonValue['arguments']): any {
+    const { json, path } = args
+    
+    if (json === undefined || json === null) {
+      throw new Error('read-json: json argument is required')
+    }
+    
+    if (typeof path !== 'string') {
+      throw new Error('read-json: path must be a string')
+    }
+    
+    // If path is empty, return the entire JSON object
+    if (path === '') {
+      return json
+    }
+    
+    try {
+      // Split the path by dots to handle nested access
+      const pathParts = path.split('.')
+      let current = json
+      
+      for (const part of pathParts) {
+        if (current === null || current === undefined) {
+          throw new Error(`Cannot access property "${part}" of ${current}`)
+        }
+        
+        // Check if the part is a number (array index)
+        const index = parseInt(part, 10)
+        if (!isNaN(index) && Array.isArray(current)) {
+          current = current[index]
+        } else if (typeof current === 'object') {
+          current = current[part]
+        } else {
+          throw new Error(`Cannot access property "${part}" of non-object value`)
+        }
+      }
+      
+      return current
+    } catch (error) {
+      throw new Error(`read-json: Failed to access path "${path}": ${error instanceof Error ? error.message : String(error)}`)
+    }
   }
 
   /**
