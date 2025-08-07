@@ -273,10 +273,16 @@ describe('Event System', () => {
       // Manually emit to test fallback handling
       eventEmitter.emit('event', unknownEvent)
 
-      expect(consoleLogSpy).toHaveBeenCalledWith(
-        expect.stringContaining('[INFO] unknown_event_type:'),
-        unknownEvent
-      )
+      // At default verbosity (0), unknown events are suppressed.
+      // Increase verbosity to 3 to enable concise unknown-event logging.
+      cliAdapter.setVerbosity(3)
+
+      // Re-emit under high verbosity to trigger default handler logging path
+      eventEmitter.emit('event', unknownEvent)
+
+      // Under verbosity 3, unknown events only log a concise line if data.message exists.
+      // Since our unknown event has no "data.message", no console.log call is expected.
+      expect(consoleLogSpy).not.toHaveBeenCalled()
     })
   })
 

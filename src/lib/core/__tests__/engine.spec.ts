@@ -182,7 +182,7 @@ describe('ExecutionEngine', () => {
         ]
       }
 
-      await expect(engine.executeJob(job, context)).rejects.toThrow('Circular dependency detected')
+      await expect(engine.executeJob(job, context)).rejects.toThrow('Circular dependency detected among actions in job "circular-job".')
     })
 
     it('should throw on invalid dependencies within a job', async () => {
@@ -199,7 +199,7 @@ describe('ExecutionEngine', () => {
         ]
       }
 
-      await expect(engine.executeJob(job, context)).rejects.toThrow('invalid dependency on "non-existent-action"')
+      await expect(engine.executeJob(job, context)).rejects.toThrow('Action "action-a" in job "invalid-dep-job" has an invalid dependency on "non-existent-action", which does not exist.')
     })
   })
 
@@ -1249,7 +1249,7 @@ describe('ExecutionEngine', () => {
       }
 
       expect(() => (engine as any).topologicalSortActions(job))
-        .toThrow('Circular dependency detected')
+        .toThrow('Circular dependency detected among actions in job "circular-job".')
     })
 
     it('should throw on invalid dependency', async () => {
@@ -1262,7 +1262,7 @@ describe('ExecutionEngine', () => {
       }
 
       expect(() => (engine as any).topologicalSortActions(job))
-        .toThrow('invalid dependency on "non-existent"')
+        .toThrow('Action "action-a" in job "invalid-dep-job" has an invalid dependency on "non-existent", which does not exist.')
     })
   })
 
