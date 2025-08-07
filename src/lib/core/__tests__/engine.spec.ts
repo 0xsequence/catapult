@@ -5,6 +5,39 @@ import { ContractRepository } from '../../contracts/repository'
 import { Job, Template, JobAction, Action, Network } from '../../types'
 import { VerificationPlatformRegistry } from '../../verification/etherscan'
 
+// Test constants
+const TEST_ADDRESSES = {
+  // Standard anvil addresses for testing
+  DEPLOYER: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266', // First anvil account
+  RECIPIENT_1: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', // Second anvil account
+  RECIPIENT_2: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC', // Third anvil account
+  RECIPIENT_3: '0x90F79bf6EB2c4f870365E785982E1f101E93b906', // Fourth anvil account
+  RECIPIENT_4: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65', // Fifth anvil account
+  RECIPIENT_5: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc', // Sixth anvil account
+  CONTRACT_ADDRESS: '0x5FbDB2315678afecb367f032d93F642f64180aa3', // Standard contract address
+  DUMMY_ADDRESS: '0x1234567890123456789012345678901234567890' // For mock tests
+} as const
+
+const TEST_BYTECODES = {
+  // Valid contract bytecode that works for all tests
+  SIMPLE_CONTRACT: '0x6080604052348015600e575f5ffd5b5060c180601a5f395ff3fe6080604052348015600e575f5ffd5b50600436106030575f3560e01c806390c52443146034578063d09de08a14604d575b5f5ffd5b603b5f5481565b60405190815260200160405180910390f35b60536055565b005b5f805490806061836068565b9190505550565b5f60018201608457634e487b7160e01b5f52601160045260245ffd5b506001019056fea264697066735822122061c8cc43c72d6b23b16f7a7337dd15b93d71eb94a9d5247911e39f486e1f94f964736f6c634300081e0033',
+  // Simple contract that returns 42
+  SIMPLE_RETURN_42: '0x6080604052348015600f57600080fd5b5060b68061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063a87d942c14602d575b600080fd5b60336035565b005b6000602a9050909156fea2646970667358221220d1b0e2d6c9f3e8a6f5b8d2e3a4c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c556',
+  // Mini contract with multiplication function
+  MINI_CONTRACT: '0x608060405234801561000f575f5ffd5b5060043610610034575f3560e01c80636df5b97a14610038578063f8a8fd6d14610068575b5f5ffd5b610052600480360381019061004d91906100da565b610086565b60405161005f9190610127565b60405180910390f35b61007061009b565b60405161007d9190610127565b60405180910390f35b5f8183610093919061016d565b905092915050565b5f602a905090565b5f5ffd5b5f819050919050565b6100b9816100a7565b81146100c3575f5ffd5b50565b5f813590506100d4816100b0565b92915050565b5f5f604083850312156100f0576100ef6100a3565b5b5f6100fd858286016100c6565b925050602061010e858286016100c6565b9150509250929050565b610121816100a7565b82525050565b5f60208201905061013a5f830184610118565b92915050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5f610177826100a7565b9150610182836100a7565b9250828202610190816100a7565b915082820484148315176101a7576101a6610140565b5b509291505056fea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033',
+  // Minimal deployment bytecode
+  MINIMAL_DEPLOY: '0x608060405234801561000f575f5ffd5b50603e80601c5f395ff3fe60806040525f80fdfea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033'
+} as const
+
+const TEST_VALUES = {
+  ONE_ETH: '1000000000000000000',
+  HALF_ETH: '500000000000000000',
+  TWO_ETH: '2000000000000000000',
+  SMALL_AMOUNT: '1000000000000000000' // 1 ETH for testing
+} as const
+
+const TEST_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' // First anvil account
+
 describe('ExecutionEngine', () => {
   let engine: ExecutionEngine
   let context: ExecutionContext
@@ -28,9 +61,7 @@ describe('ExecutionEngine', () => {
     anvilProvider = new ethers.JsonRpcProvider(rpcUrl)
     
     mockRegistry = new ContractRepository()
-    const mockPrivateKey = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' // First anvil account
-    
-    context = new ExecutionContext(mockNetwork, mockPrivateKey, mockRegistry)
+    context = new ExecutionContext(mockNetwork, TEST_PRIVATE_KEY, mockRegistry)
 
     // Initialize templates map
     templates = new Map()
@@ -71,8 +102,8 @@ describe('ExecutionEngine', () => {
             name: 'send-eth',
             template: 'send-transaction',
             arguments: {
-              to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8', // Second anvil account
-              value: '1000000000000000000', // 1 ETH
+              to: TEST_ADDRESSES.RECIPIENT_1,
+              value: TEST_VALUES.ONE_ETH,
               data: '0x'
             }
           }
@@ -106,18 +137,18 @@ describe('ExecutionEngine', () => {
           {
             name: 'action-c',
             template: 'send-transaction',
-            arguments: { to: '0x1234567890123456789012345678901234567890', data: '0x' },
+            arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
             depends_on: ['action-a', 'action-b']
           },
           {
             name: 'action-a',
             template: 'send-transaction',
-            arguments: { to: '0x1234567890123456789012345678901234567890', data: '0x' }
+            arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' }
           },
           {
             name: 'action-b',
             template: 'send-transaction',
-            arguments: { to: '0x1234567890123456789012345678901234567890', data: '0x' },
+            arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
             depends_on: ['action-a']
           }
         ]
@@ -139,13 +170,13 @@ describe('ExecutionEngine', () => {
           {
             name: 'action-a',
             template: 'send-transaction',
-            arguments: { to: '0x1234567890123456789012345678901234567890', data: '0x' },
+            arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
             depends_on: ['action-b']
           },
           {
             name: 'action-b',
             template: 'send-transaction',
-            arguments: { to: '0x1234567890123456789012345678901234567890', data: '0x' },
+            arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
             depends_on: ['action-a']
           }
         ]
@@ -162,7 +193,7 @@ describe('ExecutionEngine', () => {
           {
             name: 'action-a',
             template: 'send-transaction',
-            arguments: { to: '0x1234567890123456789012345678901234567890', data: '0x' },
+            arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
             depends_on: ['non-existent-action']
           }
         ]
@@ -180,7 +211,7 @@ describe('ExecutionEngine', () => {
       const action: JobAction = {
         name: 'skipped-action',
         template: 'send-transaction',
-        arguments: { to: '0x1234567890123456789012345678901234567890', data: '0x' },
+        arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
         skip_condition: [{ type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }]
       }
 
@@ -197,8 +228,8 @@ describe('ExecutionEngine', () => {
         name: 'executed-action',
         template: 'send-transaction',
         arguments: {
-          to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-          value: '1000000000000000000',
+          to: TEST_ADDRESSES.RECIPIENT_1,
+          value: TEST_VALUES.ONE_ETH,
           data: '0x'
         },
         skip_condition: [{ type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }]
@@ -218,8 +249,8 @@ describe('ExecutionEngine', () => {
             type: 'send-transaction',
             name: 'param-action',
             arguments: {
-              to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-              value: '1000000000000000000',
+              to: TEST_ADDRESSES.RECIPIENT_1,
+              value: TEST_VALUES.ONE_ETH,
               data: '0x'
             }
           }
@@ -242,8 +273,8 @@ describe('ExecutionEngine', () => {
         type: 'send-transaction',
         name: 'primitive-action',
         arguments: {
-          to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-          value: '1000000000000000000',
+          to: TEST_ADDRESSES.RECIPIENT_1,
+          value: TEST_VALUES.ONE_ETH,
           data: '0x'
         }
       }
@@ -282,8 +313,8 @@ describe('ExecutionEngine', () => {
               type: 'send-transaction',
               name: 'setup-action',
               arguments: {
-                to: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
-                value: '500000000000000000',
+                to: TEST_ADDRESSES.RECIPIENT_2,
+                value: TEST_VALUES.HALF_ETH,
                 data: '0x'
               }
             }
@@ -294,8 +325,8 @@ describe('ExecutionEngine', () => {
             type: 'send-transaction',
             name: 'main-action',
             arguments: {
-              to: '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
-              value: '1000000000000000000',
+              to: TEST_ADDRESSES.RECIPIENT_3,
+              value: TEST_VALUES.ONE_ETH,
               data: '0x'
             }
           }
@@ -333,8 +364,8 @@ describe('ExecutionEngine', () => {
             type: 'send-transaction',
             name: 'skipped-main-action',
             arguments: {
-              to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-              value: '1000000000000000000',
+              to: TEST_ADDRESSES.RECIPIENT_1,
+              value: TEST_VALUES.ONE_ETH,
               data: '0x'
             }
           }
@@ -366,8 +397,8 @@ describe('ExecutionEngine', () => {
               type: 'send-transaction',
               name: 'setup-action',
               arguments: {
-                to: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
-                value: '1000000000000000000',
+                to: TEST_ADDRESSES.RECIPIENT_4,
+                value: TEST_VALUES.ONE_ETH,
                 data: '0x'
               }
             }
@@ -378,8 +409,8 @@ describe('ExecutionEngine', () => {
             type: 'send-transaction',
             name: 'main-action-after-skipped-setup',
             arguments: {
-              to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-              value: '1000000000000000000',
+              to: TEST_ADDRESSES.RECIPIENT_1,
+              value: TEST_VALUES.ONE_ETH,
               data: '0x'
             }
           }
@@ -426,8 +457,8 @@ describe('ExecutionEngine', () => {
         name: 'test-param-call',
         template: 'parameterized-template',
         arguments: {
-          target_address: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-          amount: '1000000000000000000'
+          target_address: TEST_ADDRESSES.RECIPIENT_1,
+          amount: TEST_VALUES.ONE_ETH
         }
       }
 
@@ -456,8 +487,8 @@ describe('ExecutionEngine', () => {
             type: 'send-transaction',
             name: 'param-action',
             arguments: {
-              to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-              value: '1000000000000000000',
+              to: TEST_ADDRESSES.RECIPIENT_1,
+              value: TEST_VALUES.ONE_ETH,
               data: '0x'
             }
           }
@@ -513,8 +544,8 @@ describe('ExecutionEngine', () => {
           type: 'send-transaction',
           name: 'test-tx',
           arguments: {
-            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-            value: '1000000000000000000',
+            to: TEST_ADDRESSES.RECIPIENT_1,
+            value: TEST_VALUES.ONE_ETH,
             data: '0x'
           }
         }
@@ -530,8 +561,8 @@ describe('ExecutionEngine', () => {
       })
 
       it('should send transaction with resolved arguments', async () => {
-        context.setOutput('recipient', '0x70997970C51812dc3A010C7d01b50e0d17dc79C8')
-        context.setOutput('amount', '1000000000000000000')
+        context.setOutput('recipient', TEST_ADDRESSES.RECIPIENT_1)
+        context.setOutput('amount', TEST_VALUES.ONE_ETH)
 
         const action: Action = {
           type: 'send-transaction',
@@ -553,7 +584,7 @@ describe('ExecutionEngine', () => {
           type: 'send-transaction',
           name: 'minimal-tx',
           arguments: {
-            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+            to: TEST_ADDRESSES.RECIPIENT_1
           }
         }
 
@@ -566,8 +597,8 @@ describe('ExecutionEngine', () => {
         const action: Action = {
           type: 'send-transaction',
           arguments: {
-            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-            value: '1000000000000000000',
+            to: TEST_ADDRESSES.RECIPIENT_1,
+            value: TEST_VALUES.ONE_ETH,
             data: '0x'
           }
         }
@@ -602,8 +633,8 @@ describe('ExecutionEngine', () => {
           type: 'send-transaction',
           name: 'gas-multiplier-tx',
           arguments: {
-            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-            value: '1000000000000000000',
+            to: TEST_ADDRESSES.RECIPIENT_1,
+            value: TEST_VALUES.ONE_ETH,
             gasMultiplier: 1.5
           }
         }
@@ -643,7 +674,7 @@ describe('ExecutionEngine', () => {
           type: 'send-transaction',
           name: 'gas-estimate-tx',
           arguments: {
-            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+            to: TEST_ADDRESSES.RECIPIENT_1,
             gasMultiplier: 2.0
           }
         }
@@ -678,7 +709,7 @@ describe('ExecutionEngine', () => {
           type: 'send-transaction',
           name: 'resolved-multiplier-tx',
           arguments: {
-            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+            to: TEST_ADDRESSES.RECIPIENT_1,
             gasMultiplier: '{{multiplier}}'
           }
         }
@@ -696,7 +727,7 @@ describe('ExecutionEngine', () => {
         const action: Action = {
           type: 'send-transaction',
           arguments: {
-            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+            to: TEST_ADDRESSES.RECIPIENT_1,
             gasMultiplier: -1.0
           }
         }
@@ -709,7 +740,7 @@ describe('ExecutionEngine', () => {
         const action: Action = {
           type: 'send-transaction',
           arguments: {
-            to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+            to: TEST_ADDRESSES.RECIPIENT_1,
             gasMultiplier: 0
           }
         }
@@ -719,16 +750,235 @@ describe('ExecutionEngine', () => {
       })
     })
 
+    describe('create-contract', () => {
+      it('should create a contract successfully', async () => {
+        const action: Action = {
+          type: 'create-contract',
+          name: 'test-contract',
+          arguments: {
+            data: TEST_BYTECODES.SIMPLE_CONTRACT
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        const hash = context.getOutput('test-contract.hash')
+        const receipt = context.getOutput('test-contract.receipt')
+        const address = context.getOutput('test-contract.address')
+        
+        expect(hash).toBeDefined()
+        expect(receipt).toBeDefined()
+        expect(address).toBeDefined()
+        expect(receipt.status).toBe(1)
+        expect(receipt.contractAddress).toBe(address)
+      })
+
+      it('should create contract with resolved arguments', async () => {
+        context.setOutput('contract_bytecode', TEST_BYTECODES.SIMPLE_CONTRACT)
+
+        const action: Action = {
+          type: 'create-contract',
+          name: 'resolved-contract',
+          arguments: {
+            data: '{{contract_bytecode}}'
+            // Removed value parameter to avoid payable constructor issues
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(context.getOutput('resolved-contract.address')).toBeDefined()
+      })
+
+      it('should apply gas multiplier when network gasLimit is set', async () => {
+        // Mock the network to have a gasLimit
+        const mockNetwork = { gasLimit: 200000 }
+        jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork as any)
+
+        const action: Action = {
+          type: 'create-contract',
+          name: 'gas-multiplier-contract',
+          arguments: {
+            data: TEST_BYTECODES.SIMPLE_CONTRACT,
+            gasMultiplier: 1.5
+          }
+        }
+
+        const mockSendTransaction = jest.fn().mockResolvedValue({
+          hash: '0x123',
+          wait: jest.fn().mockResolvedValue({
+            status: 1,
+            blockNumber: 123,
+            contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+          })
+        })
+        const resolvedSigner = await context.getResolvedSigner()
+        jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction)
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(mockSendTransaction).toHaveBeenCalledWith(
+          expect.objectContaining({
+            to: null, // Contract creation
+            gasLimit: 300000 // 200000 * 1.5
+          })
+        )
+      })
+
+      it('should estimate gas and apply multiplier when no network gasLimit is set', async () => {
+        // Mock the network to have no gasLimit
+        const mockNetwork = {}
+        jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork as any)
+
+        const resolvedSigner = await context.getResolvedSigner()
+        const mockEstimateGas = jest.fn().mockResolvedValue(BigInt(150000))
+        jest.spyOn(resolvedSigner, 'estimateGas').mockImplementation(mockEstimateGas)
+
+        const mockSendTransaction = jest.fn().mockResolvedValue({
+          hash: '0x123',
+          wait: jest.fn().mockResolvedValue({
+            status: 1,
+            blockNumber: 123,
+            contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+          })
+        })
+        jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction)
+
+        const action: Action = {
+          type: 'create-contract',
+          name: 'gas-estimate-contract',
+          arguments: {
+            data: TEST_BYTECODES.SIMPLE_CONTRACT,
+            gasMultiplier: 2.0
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(mockEstimateGas).toHaveBeenCalledWith(
+          expect.objectContaining({
+            to: null,
+            data: TEST_BYTECODES.SIMPLE_CONTRACT
+          })
+        )
+        expect(mockSendTransaction).toHaveBeenCalledWith(
+          expect.objectContaining({
+            gasLimit: 300000 // 150000 * 2.0
+          })
+        )
+      })
+
+      it('should work with resolved gasMultiplier value', async () => {
+        context.setOutput('multiplier', 1.25)
+        const mockNetwork = { gasLimit: 200000 }
+        jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork as any)
+
+        const mockSendTransaction = jest.fn().mockResolvedValue({
+          hash: '0x123',
+          wait: jest.fn().mockResolvedValue({
+            status: 1,
+            blockNumber: 123,
+            contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+          })
+        })
+        const resolvedSigner = await context.getResolvedSigner()
+        jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction)
+
+        const action: Action = {
+          type: 'create-contract',
+          name: 'resolved-multiplier-contract',
+          arguments: {
+            data: TEST_BYTECODES.SIMPLE_CONTRACT,
+            gasMultiplier: '{{multiplier}}'
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(mockSendTransaction).toHaveBeenCalledWith(
+          expect.objectContaining({
+            gasLimit: 250000 // 200000 * 1.25
+          })
+        )
+      })
+
+      it('should throw error for invalid gasMultiplier', async () => {
+        const action: Action = {
+          type: 'create-contract',
+          arguments: {
+            data: TEST_BYTECODES.SIMPLE_CONTRACT,
+            gasMultiplier: -1.0
+          }
+        }
+
+        await expect((engine as any).executePrimitive(action, context, new Map()))
+          .rejects.toThrow('gasMultiplier must be a positive number')
+      })
+
+      it('should throw error for zero gasMultiplier', async () => {
+        const action: Action = {
+          type: 'create-contract',
+          arguments: {
+            data: TEST_BYTECODES.SIMPLE_CONTRACT,
+            gasMultiplier: 0
+          }
+        }
+
+        await expect((engine as any).executePrimitive(action, context, new Map()))
+          .rejects.toThrow('gasMultiplier must be a positive number')
+      })
+
+      it('should handle contract creation without value and gasMultiplier', async () => {
+        const action: Action = {
+          type: 'create-contract',
+          name: 'minimal-contract',
+          arguments: {
+            data: TEST_BYTECODES.SIMPLE_CONTRACT
+          }
+        }
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        expect(context.getOutput('minimal-contract.address')).toBeDefined()
+      })
+
+      it('should not store outputs when action has no name', async () => {
+        const action: Action = {
+          type: 'create-contract',
+          arguments: {
+            data: TEST_BYTECODES.SIMPLE_CONTRACT
+          }
+        }
+
+        const outputsBefore = (context as any).outputs.size
+
+        await (engine as any).executePrimitive(action, context, new Map())
+
+        // Since no name, no outputs should be stored
+        const outputsAfter = (context as any).outputs.size
+        expect(outputsAfter).toBe(outputsBefore)
+      })
+
+      it('should throw on invalid bytecode', async () => {
+        const action: Action = {
+          type: 'create-contract',
+          arguments: {
+            data: 'invalid-bytecode'
+          }
+        }
+
+        await expect((engine as any).executePrimitive(action, context, new Map()))
+          .rejects.toThrow()
+      })
+    })
+
     describe('send-signed-transaction', () => {
       it('should broadcast a signed transaction', async () => {
         // Create a signed transaction using the same private key
-        const wallet = new ethers.Wallet(
-          '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
-          anvilProvider
-        )
+        const wallet = new ethers.Wallet(TEST_PRIVATE_KEY, anvilProvider)
         
         const tx = await wallet.populateTransaction({
-          to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+          to: TEST_ADDRESSES.RECIPIENT_1,
           value: ethers.parseEther('1'),
           gasLimit: 21000
         })
@@ -750,13 +1000,10 @@ describe('ExecutionEngine', () => {
       })
 
       it('should resolve transaction from context', async () => {
-        const wallet = new ethers.Wallet(
-          '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80',
-          anvilProvider
-        )
+        const wallet = new ethers.Wallet(TEST_PRIVATE_KEY, anvilProvider)
         
         const tx = await wallet.populateTransaction({
-          to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+          to: TEST_ADDRESSES.RECIPIENT_1,
           value: ethers.parseEther('1'),
           gasLimit: 21000
         })
@@ -902,8 +1149,8 @@ describe('ExecutionEngine', () => {
         name: 'custom-primitive',
         type: 'send-transaction',
         arguments: {
-          to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
-          value: '1000000000000000000',
+          to: TEST_ADDRESSES.RECIPIENT_1,
+          value: TEST_VALUES.ONE_ETH,
           data: '0x'
         },
         output: {
@@ -1216,14 +1463,11 @@ describe('ExecutionEngine', () => {
 
   describe('test-nicks-method action', () => {
     it('should successfully test Nick\'s method with a simple contract', async () => {
-      // Simple contract bytecode (just returns 42)
-      const simpleBytecode = '0x6080604052348015600f57600080fd5b5060b68061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063a87d942c14602d575b600080fd5b60336035565b005b6000602a9050909156fea2646970667358221220d1b0e2d6c9f3e8a6f5b8d2e3a4c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c556'
-
       const action: Action = {
         type: 'test-nicks-method',
         name: 'nick-test',
         arguments: {
-          bytecode: simpleBytecode,
+          bytecode: TEST_BYTECODES.SIMPLE_RETURN_42,
           gasPrice: ethers.parseUnits('10', 'gwei'),
           gasLimit: 100000n,
           fundingAmount: ethers.parseEther('0.001')
@@ -1237,14 +1481,11 @@ describe('ExecutionEngine', () => {
     })
 
     it('should handle missing optional parameters', async () => {
-      // Simple contract bytecode
-      const simpleBytecode = '0x6080604052348015600f57600080fd5b5060b68061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063a87d942c14602d575b600080fd5b60336035565b005b6000602a9050909156fea2646970667358221220d1b0e2d6c9f3e8a6f5b8d2e3a4c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c556'
-
       const action: Action = {
         type: 'test-nicks-method',
         name: 'nick-test-defaults',
         arguments: {
-          bytecode: simpleBytecode
+          bytecode: TEST_BYTECODES.SIMPLE_RETURN_42
           // All other parameters should use defaults
         }
       }

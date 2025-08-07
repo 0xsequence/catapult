@@ -39,6 +39,15 @@ export interface StaticAction {
   };
 }
 
+export interface CreateContractAction {
+  type: 'create-contract';
+  arguments: {
+    data: BytesValue; // The contract bytecode (creation code)
+    value?: Uint256Value; // ETH to send with the contract creation
+    gasMultiplier?: number; // Optional gas multiplier
+  };
+}
+
 export interface TestNicksMethodAction {
   type: 'test-nicks-method';
   arguments: {
@@ -50,13 +59,14 @@ export interface TestNicksMethodAction {
 }
 
 // A union of all primitive action types.
-export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | TestNicksMethodAction;
+export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | CreateContractAction | TestNicksMethodAction;
 
 const primitiveActionTypes = [
   'send-transaction',
   'send-signed-transaction',
   'verify-contract',
   'static',
+  'create-contract',
   'test-nicks-method',
 ] as const;
 

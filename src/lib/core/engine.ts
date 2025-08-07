@@ -676,6 +676,88 @@ export class ExecutionEngine {
         }
         break
       }
+      case 'create-contract': {
+        const resolvedData = await this.resolver.resolve(action.arguments.data, context, scope)
+        const resolvedValue = action.arguments.value ? await this.resolver.resolve(action.arguments.value, context, scope) : 0
+        const resolvedGasMultiplier = action.arguments.gasMultiplier !== undefined ? await this.resolver.resolve(action.arguments.gasMultiplier, context, scope) : undefined
+        
+        // Validate and convert types
+        const data = validateHexData(resolvedData, actionName, 'data')
+        const value = validateBigNumberish(resolvedValue, actionName, 'value')
+        
+        // Validate gas multiplier if provided
+        let gasMultiplier: number | undefined
+        if (resolvedGasMultiplier !== undefined) {
+          if (typeof resolvedGasMultiplier !== 'number' || resolvedGasMultiplier <= 0) {
+            throw new Error(`Action "${actionName}": gasMultiplier must be a positive number, got: ${resolvedGasMultiplier}`)
+          }
+          gasMultiplier = resolvedGasMultiplier
+        }
+        
+        // Prepare transaction parameters for contract creation (to: null)
+        const txParams: any = { to: null, data, value }
+        
+        // Handle gas limit with optional multiplier
+        const network = context.getNetwork()
+        if (network.gasLimit) {
+          const baseGasLimit = network.gasLimit
+          txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
+        } else if (gasMultiplier) {
+          // If gasMultiplier is specified but no network gasLimit, estimate gas first
+          const signer = await context.getResolvedSigner()
+          const estimatedGas = await signer.estimateGas({ to: null, data, value })
+          txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
+        }
+        
+        const signer = await context.getResolvedSigner()
+        const tx = await signer.sendTransaction(txParams)
+        
+        this.events.emitEvent({
+          type: 'transaction_sent',
+          level: 'info',
+          data: {
+            to: 'contract creation',
+            value: value.toString(),
+            dataPreview: String(data).substring(0, 42),
+            txHash: tx.hash
+          }
+        })
+        
+        const receipt = await tx.wait()
+        if (!receipt || receipt.status !== 1) {
+            throw new Error(`Contract creation for action "${actionName}" failed (reverted). Hash: ${tx.hash}`)
+        }
+        
+        if (!receipt.contractAddress) {
+            throw new Error(`Contract creation for action "${actionName}" did not return a contract address. Hash: ${tx.hash}`)
+        }
+        
+        this.events.emitEvent({
+          type: 'transaction_confirmed',
+          level: 'info',
+          data: {
+            txHash: tx.hash,
+            blockNumber: receipt.blockNumber
+          }
+        })
+        
+        this.events.emitEvent({
+          type: 'contract_created',
+          level: 'info',
+          data: {
+            contractAddress: receipt.contractAddress,
+            txHash: tx.hash,
+            blockNumber: receipt.blockNumber
+          }
+        })
+        
+        if (action.name && !hasCustomOutput) {
+            context.setOutput(`${action.name}.hash`, tx.hash)
+            context.setOutput(`${action.name}.receipt`, receipt)
+            context.setOutput(`${action.name}.address`, receipt.contractAddress)
+        }
+        break
+      }
       case 'test-nicks-method': {
         // Default bytecode if none provided
         const defaultBytecode = '0x608060405234801561001057600080fd5b5061013d806100206000396000f3fe60806040526004361061001e5760003560e01c80639c4ae2d014610023575b600080fd5b6100cb6004803603604081101561003957600080fd5b81019060208101813564010000000081111561005457600080fd5b82018360208201111561006657600080fd5b8035906020019184600183028401116401000000008311171561008857600080fd5b91908080601f01602080910402602001604051908101604052809392919081815260200183838082843760009201919091525092955050913592506100cd915050565b005b60008183516020850134f56040805173ffffffffffffffffffffffffffffffffffffffff83168152905191925081900360200190a050505056fea264697066735822122033609f614f03931b92d88c309d698449bb77efcd517328d341fa4f923c5d8c7964736f6c63430007060033'
