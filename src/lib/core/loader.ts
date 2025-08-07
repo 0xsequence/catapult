@@ -111,6 +111,15 @@ export class ProjectLoader {
     for (const filePath of jobFiles) {
       try {
         const content = await fs.readFile(filePath, 'utf-8')
+        const raw: any = (() => { try { return require('yaml').parse(content) } catch { return {} } })()
+        if (raw && typeof raw === 'object' && raw.type === 'template') {
+          // This is actually a template file; load through the template path to avoid misclassification
+          const template = parseTemplate(content)
+          template._path = filePath
+          this.templates.set(template.name, template)
+          continue
+        }
+
         const job = parseJob(content)
         // Capture optional job-level constants by peeking the raw YAML for "constants"
         try {

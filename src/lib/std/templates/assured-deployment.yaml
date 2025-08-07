@@ -12,6 +12,7 @@
 # embedded below as bytecode. Using CREATE is the only way to execute arbitrary
 # code before the call data, hence the wrapping pattern.
 name: "assured-deployment"
+type: "template"
 
 arguments:
   # The address that is expected to exist after the factory call (e.g., CREATE2 result)

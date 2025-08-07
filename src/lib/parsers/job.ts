@@ -26,6 +26,11 @@ export function parseJob(yamlContent: string): Job {
     throw new Error('Invalid job: YAML content must resolve to an object.')
   }
 
+  // If a top-level discriminator exists and is not a job, bail out early with a helpful error
+  if (rawObject.type && rawObject.type !== 'job') {
+    throw new Error('Invalid job: unexpected type discriminator. Did you mean a template file with type: "template"?')
+  }
+
   // --- Validate required top-level fields ---
   if (!rawObject.name || typeof rawObject.name !== 'string') {
     throw new Error('Invalid job: "name" field is required and must be a string.')

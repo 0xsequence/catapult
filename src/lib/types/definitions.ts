@@ -10,6 +10,8 @@ export interface TemplateArgument {
 }
 
 export interface Template {
+    /** Optional discriminator to explicitly mark this document as a template */
+    type?: 'template';
     name: string;
     description?: string;
     arguments?: Record<string, TemplateArgument>;

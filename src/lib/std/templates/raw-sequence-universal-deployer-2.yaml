@@ -1,4 +1,5 @@
 name: "raw-sequence-universal-deployer-2"
+type: "template"
 
 arguments:
   creationCode:

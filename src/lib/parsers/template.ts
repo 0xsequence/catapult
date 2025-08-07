@@ -58,6 +58,11 @@ export function parseTemplate(yamlContent: string): Template {
     throw new Error('Invalid template: YAML content must resolve to an object.')
   }
 
+  // If a discriminator is provided, ensure it matches
+  if (rawObject.type !== undefined && rawObject.type !== 'template') {
+    throw new Error('Invalid template: expected type to be "template" if provided.')
+  }
+
   // --- Validate required fields ---
   if (!rawObject.name || typeof rawObject.name !== 'string') {
     throw new Error('Invalid template: "name" field is required and must be a string.')
@@ -73,6 +78,7 @@ export function parseTemplate(yamlContent: string): Template {
 
   // --- Construct the base template object ---
   const template: Template = {
+    type: 'template',
     name: rawObject.name,
     description: rawObject.description,
     arguments: rawObject.arguments,

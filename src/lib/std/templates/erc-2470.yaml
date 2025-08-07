@@ -2,6 +2,7 @@
 # uses some extra logic, delivered as a create-contract action, that ensures that the top level call fails if the contract
 # fails to deploy. This ensures that the gas estimation is accurate and the transaction won't silently fail with out of gas.
 name: "erc-2470"
+type: "template"
 
 arguments:
   creationCode:

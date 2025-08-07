@@ -1,4 +1,5 @@
 name: "raw-nano-universal-deployer"
+type: "template"
 
 arguments:
   creationCode:
