@@ -15,6 +15,14 @@ export interface AbiEncodeValue {
   };
 }
 
+export interface AbiPackValue {
+  type: 'abi-pack';
+  arguments: {
+    types: Value<string>[];
+    values: Value<any>[];
+  };
+}
+
 export interface ConstructorEncodeValue {
   type: 'constructor-encode';
   arguments: {
@@ -76,6 +84,7 @@ export interface JobCompletedValue {
  */
 export type ValueResolver =
   | AbiEncodeValue
+  | AbiPackValue
   | ConstructorEncodeValue
   | ComputeCreate2Value
   | ReadBalanceValue

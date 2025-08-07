@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { ValueResolver } from '../resolver'
 import { ExecutionContext } from '../context'
-import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, CallValue, ContractExistsValue } from '../../types'
+import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, AbiPackValue, CallValue, ContractExistsValue } from '../../types'
 import { ContractRepository } from '../../contracts/repository'
 
 describe('ValueResolver', () => {
@@ -794,6 +794,266 @@ describe('ValueResolver', () => {
       await expect(resolver.resolve(value, context)).rejects.toThrow(
         /abi-encode: Failed to encode function data:/
       )
+    })
+  })
+
+  describe('abi-pack', () => {
+    it('should pack a single uint256 value', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['uint256'],
+          values: ['42']
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      // Packed uint256 should be 32 bytes without padding
+      expect(result).toBe('0x000000000000000000000000000000000000000000000000000000000000002a')
+    })
+
+    it('should pack multiple values with different types', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['uint256', 'uint8', 'address'],
+          values: ['42', '255', '0x1234567890123456789012345678901234567890']
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      // Should be packed without padding between values
+      expect(result.startsWith('0x')).toBe(true)
+      expect(result.length).toBeGreaterThan(2) // More than just '0x'
+    })
+
+    it('should pack string values correctly', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['string'],
+          values: ['hello']
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      expect(result.startsWith('0x')).toBe(true)
+      // String should be packed without length prefix (unlike ABI encoding)
+      expect(result).toBe('0x68656c6c6f') // 'hello' in hex
+    })
+
+    it('should pack bytes values correctly', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['bytes'],
+          values: ['0xdeadbeef']
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      expect(result).toBe('0xdeadbeef')
+    })
+
+    it('should pack uint8 values without padding', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['uint8', 'uint8'],
+          values: ['255', '128']
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      // Two uint8 values should be packed as 2 bytes total
+      expect(result).toBe('0xff80')
+    })
+
+    it('should pack address values correctly', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['address'],
+          values: ['0x1234567890123456789012345678901234567890']
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      // Address should be packed as 20 bytes
+      expect(result).toBe('0x1234567890123456789012345678901234567890')
+    })
+
+    it('should pack boolean values correctly', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['bool', 'bool'],
+          values: [true, false]
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      // Booleans should be packed as single bytes
+      expect(result).toBe('0x0100')
+    })
+
+    it('should pack mixed types in correct order', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['uint8', 'address', 'uint8'],
+          values: ['42', '0x1234567890123456789012345678901234567890', '255']
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      // Should be: 1 byte (uint8) + 20 bytes (address) + 1 byte (uint8) = 22 bytes = 44 hex chars + 2 for '0x'
+      expect(result.length).toBe(46)
+      expect(result.startsWith('0x2a')).toBe(true) // First byte should be 42 (0x2a)
+      expect(result.endsWith('ff')).toBe(true) // Last byte should be 255 (0xff)
+    })
+
+    it('should resolve values from context before packing', async () => {
+      context.setOutput('myValue', '100')
+      context.setOutput('myAddress', '0x1234567890123456789012345678901234567890')
+      
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['uint256', 'address'],
+          values: ['{{myValue}}', '{{myAddress}}']
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      expect(result.startsWith('0x')).toBe(true)
+      // Should contain the resolved values
+      expect(result.length).toBeGreaterThan(2)
+    })
+
+    it('should validate that types array is provided', async () => {
+      const value = {
+        type: 'abi-pack' as const,
+        arguments: {
+          types: null as any,
+          values: ['42']
+        }
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow(
+        'abi-pack: types array is required'
+      )
+    })
+
+    it('should validate that values array is provided', async () => {
+      const value = {
+        type: 'abi-pack' as const,
+        arguments: {
+          types: ['uint256'],
+          values: null as any
+        }
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow(
+        'abi-pack: values array is required'
+      )
+    })
+
+    it('should validate that types and values arrays have same length', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['uint256', 'uint8'],
+          values: ['42'] // Missing second value
+        }
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow(
+        'abi-pack: types array length (2) must match values array length (1)'
+      )
+    })
+
+    it('should validate that all types are strings', async () => {
+      const value = {
+        type: 'abi-pack' as const,
+        arguments: {
+          types: ['uint256', 123 as any], // Invalid type
+          values: ['42', '255']
+        }
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow(
+        'abi-pack: all types must be strings'
+      )
+    })
+
+    it('should handle invalid type gracefully', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['invalidType'],
+          values: ['42']
+        }
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow(
+        /abi-pack: Failed to pack values:/
+      )
+    })
+
+    it('should handle type mismatches gracefully', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['uint256'],
+          values: ['not-a-number']
+        }
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow(
+        /abi-pack: Failed to pack values:/
+      )
+    })
+
+    it('should handle empty arrays', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: [],
+          values: []
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      expect(result).toBe('0x')
+    })
+
+    it('should pack large numbers correctly', async () => {
+      const value: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['uint256'],
+          values: ['115792089237316195423570985008687907853269984665640564039457584007913129639935'] // max uint256
+        }
+      }
+      const result = await resolver.resolve(value, context) as string
+      expect(result).toBe('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff')
+    })
+
+    it('should demonstrate difference from abi-encode', async () => {
+      // Compare abi-pack vs abi-encode for the same data
+      const packValue: AbiPackValue = {
+        type: 'abi-pack',
+        arguments: {
+          types: ['uint8', 'uint8'],
+          values: ['42', '255']
+        }
+      }
+      
+      const encodeValue: AbiEncodeValue = {
+        type: 'abi-encode',
+        arguments: {
+          signature: 'test(uint8,uint8)',
+          values: ['42', '255']
+        }
+      }
+      
+      const packResult = await resolver.resolve(packValue, context) as string
+      const encodeResult = await resolver.resolve(encodeValue, context) as string
+      
+      // Packed should be much shorter (no padding, no function selector)
+      expect(packResult).toBe('0x2aff') // Just 2 bytes
+      expect(encodeResult.length).toBeGreaterThan(packResult.length) // ABI encode includes function selector and padding
     })
   })
 

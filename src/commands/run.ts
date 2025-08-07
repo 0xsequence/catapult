@@ -46,7 +46,7 @@ export function makeRunCommand(): Command {
       // Set verbosity level for logging
       setVerbosity(options.verbose as 0 | 1 | 2 | 3)
       
-      let privateKey: string | undefined = options.privateKey || process.env.PRIVATE_KEY
+      const privateKey: string | undefined = options.privateKey || process.env.PRIVATE_KEY
       if (!privateKey && !options.rpcUrl) {
         throw new Error('A private key must be provided via the --private-key option or the PRIVATE_KEY environment variable, or an --rpc-url must be specified to attempt an implicit sender.')
       }

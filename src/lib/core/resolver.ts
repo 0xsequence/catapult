@@ -3,6 +3,7 @@ import {
   Value,
   ValueResolver as ValueResolverObject,
   AbiEncodeValue,
+  AbiPackValue,
   ConstructorEncodeValue,
   ComputeCreate2Value,
   ReadBalanceValue,
@@ -145,6 +146,8 @@ export class ValueResolver {
     switch (obj.type) {
       case 'abi-encode':
         return this.resolveAbiEncode(resolvedArgs as AbiEncodeValue['arguments'])
+      case 'abi-pack':
+        return this.resolveAbiPack(resolvedArgs as AbiPackValue['arguments'])
       case 'constructor-encode':
         return this.resolveConstructorEncode(resolvedArgs as ConstructorEncodeValue['arguments'])
       case 'compute-create2':
@@ -196,6 +199,38 @@ export class ValueResolver {
       return iface.encodeFunctionData(functionName, values)
     } catch (error) {
       throw new Error(`abi-encode: Failed to encode function data: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  private resolveAbiPack(args: AbiPackValue['arguments']): string {
+    const { types, values } = args
+
+    // Validate that types array is provided
+    if (!types) {
+      throw new Error('abi-pack: types array is required')
+    }
+
+    // Validate that values array is provided
+    if (!values) {
+      throw new Error('abi-pack: values array is required')
+    }
+
+    // Validate that types and values arrays have the same length
+    if (types.length !== values.length) {
+      throw new Error(`abi-pack: types array length (${types.length}) must match values array length (${values.length})`)
+    }
+
+    // At this point, types should be resolved to strings
+    const typesArray = types as string[]
+    if (!typesArray.every(type => typeof type === 'string')) {
+      throw new Error('abi-pack: all types must be strings')
+    }
+
+    try {
+      // Use ethers.js solidityPacked for packed encoding (no padding)
+      return ethers.solidityPacked(typesArray, values)
+    } catch (error) {
+      throw new Error(`abi-pack: Failed to pack values: ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

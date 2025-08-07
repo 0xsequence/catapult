@@ -57,7 +57,7 @@ export function isValidRpcUrl(url: string): boolean {
     
     // Valid RPC URL format
     return true
-  } catch (error) {
+  } catch {
     // Invalid RPC URL format
     return false
   }
