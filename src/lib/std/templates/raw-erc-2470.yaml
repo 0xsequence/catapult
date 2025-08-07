@@ -1,7 +1,4 @@
-# Similar to "raw-erc-2470" but it
-# uses some extra logic, delivered as a create-contract action, that ensures that the top level call fails if the contract
-# fails to deploy. This ensures that the gas estimation is accurate and the transaction won't silently fail with out of gas.
-name: "erc-2470"
+name: "raw-erc-2470"
 
 arguments:
   creationCode:
@@ -30,30 +27,17 @@ setup:
           0xf9016c8085174876e8008303c4d88080b90154608060405234801561001057600080fd5b50610134806100206000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c80634af63f0214602d575b600080fd5b60cf60048036036040811015604157600080fd5b810190602081018135640100000000811115605b57600080fd5b820183602082011115606c57600080fd5b80359060200191846001830284011164010000000083111715608d57600080fd5b91908080601f016020809104026020016040519081016040528093929190818152602001838380828437600092019190915250929550509135925060eb915050565b604080516001600160a01b039092168252519081900360200190f35b6000818351602085016000f5939250505056fea26469706673582212206b44f8a82cb6b156bfcc3dc6aadd6df4eefd204bc928a4397fd15dacf6d5320564736f6c634300060200331b83247000822470
 
 actions:
-  - type: "create-contract"
+  - type: "send-transaction"
     arguments:
+      to: "0xce0042B868300000d44A59004Da54A005ffdcf9f"
       data:
-        type: "abi-pack"
+        type: "abi-encode"
         arguments:
-          types:
-            - "bytes"
-            - "address"
-            - "address"
-            - "bytes"
+          signature: "deploy(bytes,bytes32)"
           values:
-            - "0x383d8039602c5160601c3d813b60295780806054380360548260405160601c5af150903b60295780fd5b80f3" # checked-call.huff
-            - type: "compute-create2"
-              arguments:
-                deployerAddress: "0xce0042B868300000d44A59004Da54A005ffdcf9f"
-                salt: "{{salt}}"
-                initCode: "{{creationCode}}"
-            - "0xce0042B868300000d44A59004Da54A005ffdcf9f"
-            - type: "abi-encode"
-              arguments:
-                signature: "deploy(bytes,bytes32)"
-                values:
-                  - "{{creationCode}}"
-                  - "{{salt}}"
+            - "{{creationCode}}"
+            - "{{salt}}"
+      gasMultiplier: 1.6
 
 skip_condition:
   - type: "contract-exists"

@@ -1,7 +1,4 @@
-# Similar to "raw-nano-universal-deployer" but it
-# uses some extra logic, delivered as a create-contract action, that ensures that the top level call fails if the contract
-# fails to deploy. This ensures that the gas estimation is accurate and the transaction won't silently fail with out of gas.
-name: "nano-universal-deployer"
+name: "raw-nano-universal-deployer"
 
 arguments:
   creationCode:
@@ -28,25 +25,11 @@ setup:
           0xf9010880852416b84e01830222e08080b8b66080604052348015600f57600080fd5b50609980601d6000396000f3fe60a06020601f369081018290049091028201604052608081815260009260609284918190838280828437600092018290525084519495509392505060208401905034f5604080516001600160a01b0383168152905191935081900360200190a0505000fea26469706673582212205a310755225e3c740b2f013fb6343f4c205e7141fcdf15947f5f0e0e818727fb64736f6c634300060a00331ca01820182018201820182018201820182018201820182018201820182018201820a01820182018201820182018201820182018201820182018201820182018201820
 
 actions:
-  - type: "create-contract"
+  - type: "send-transaction"
     arguments:
-      data:
-        type: "abi-pack"
-        arguments:
-          types:
-            - "bytes"
-            - "address"
-            - "address"
-            - "bytes"
-          values:
-            - "0x383d8039602c5160601c3d813b60295780806054380360548260405160601c5af150903b60295780fd5b80f3" # checked-call.huff
-            - type: "compute-create2"
-              arguments:
-                deployerAddress: "0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0"
-                salt: "0x0000000000000000000000000000000000000000000000000000000000000000"
-                initCode: "{{creationCode}}"
-            - "0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0"
-            - "{{creationCode}}"
+      to: "0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0"
+      data: "{{creationCode}}"
+      gasMultiplier: 1.6
 
 skip_condition:
   - type: "contract-exists"
