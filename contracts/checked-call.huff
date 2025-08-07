@@ -1,10 +1,16 @@
 #define macro MAIN() = takes(0) returns(0) {
     // Check if a contract is already deployed at the target address.
-    // The target address is derived from arguments in calldata.
+    // The target address is derived from arguments in bytecode (this is a constructor).
 
     // Initial Stack: []
+    // copy all code to memory
+    codesize       // [<codesize>]
+    returndatasize // [0x00, <codesize>]
+    dup1           // [0x00, 0x00, <codesize>]
+    codecopy       // [<codesize>]
+
     contract_start  // [<contract_start>]
-    calldataload    // [<contract_start_word>]
+    mload           // [<contract_start_word>]
     0x60            // [0x60, <contract_start_word>]
     shr             // [<contract>] (Extracts the 160-bit address)
     returndatasize  // [0x00, <contract>]
@@ -19,16 +25,12 @@
     dup1            // [0x00, 0x00, <contract>]
     dup1            // [0x00, 0x00, 0x00, <contract>]
     data_start      // [<data_start>, 0x00, 0x00, 0x00, <contract>]
-    calldatasize    // [<calldata_size>, <data_start>, 0x00, 0x00, 0x00, <contract>]
+    codesize        // [<codesize>, <data_start>, 0x00, 0x00, 0x00, <contract>]
     sub             // [<creation_code_size>, 0x00, 0x00, 0x00, <contract>]
-    dup1            // [<creation_code_size>, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
-    data_start      // [<data_start>, <creation_code_size>, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
-    dup4            // [0x00, <data_start>, <creation_code_size>, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
-    calldatacopy    // Copies creation code into memory. Stack: [<creation_code_size>, 0x00, 0x00, 0x00, <contract>]
-    dup2            // [0x00, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
-    dup1            // [0x00, 0x00, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
+    data_start      // [<data_start>, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
+    dup3            // [0x00, <data_start>, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
     factory_start   // [<factory_start>, 0x00, 0x00, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
-    calldataload    // [<factory_word>, 0x00, 0x00, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
+    mload           // [<factory_word>, 0x00, 0x00, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
     0x60            // [0x60, <salt_word>, 0x00, 0x00, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
     shr             // [<factory>, 0x00, 0x00, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
     gas             // [gas, <factory>, 0x00, 0x00, <creation_code_size>, 0x00, 0x00, 0x00, <contract>]
