@@ -29,6 +29,24 @@ export class ExecutionEngine {
   }
 
   /**
+   * Computes retry configuration for post-execution checks, tuned for local vs public networks.
+   * Local (anvil/hardhat): 50ms delay for ~5s total (100 retries => 101 attempts)
+   * Public: 2000ms delay for ~30s total (15 retries => 16 attempts)
+   */
+  private getPostCheckRetryConfig(context: ExecutionContext): { retries: number; delayMs: number } {
+    const network = context.getNetwork()
+    const isLocal =
+      network.chainId === 31337 ||
+      network.chainId === 1337 ||
+      /localhost|127\.0\.0\.1/i.test(network.rpcUrl)
+
+    if (isLocal) {
+      return { retries: 100, delayMs: 50 }
+    }
+    return { retries: 15, delayMs: 2000 }
+  }
+
+  /**
    * Executes a single job against a given network context.
    * @param job The Job object to execute.
    * @param context The ExecutionContext for the target network.
@@ -63,10 +81,11 @@ export class ExecutionEngine {
 
       // If post-check conditions are enabled, re-evaluate job-level skip conditions with retry to handle RPC propagation lag
       if (!this.noPostCheckConditions && job.skip_condition) {
+        const { retries, delayMs } = this.getPostCheckRetryConfig(context)
         const shouldSkip = await this.retryBooleanCheck(
           async () => this.evaluateSkipConditions(job.skip_condition!, context, new Map()),
-          10,
-          500
+          retries,
+          delayMs
         )
         if (!shouldSkip) {
           // If skip conditions don't evaluate to true after execution, the job failed
@@ -310,10 +329,11 @@ export class ExecutionEngine {
 
     // If post-check conditions are enabled, re-evaluate template-level skip conditions with retry to handle RPC propagation lag
     if (!this.noPostCheckConditions && template.skip_condition) {
+      const { retries, delayMs } = this.getPostCheckRetryConfig(context)
       const shouldSkip = await this.retryBooleanCheck(
         async () => this.evaluateSkipConditions(template.skip_condition!, context, templateScope),
-        3,
-        2000
+        retries,
+        delayMs
       )
       if (!shouldSkip) {
         // If skip conditions don't evaluate to true after execution, the template failed
