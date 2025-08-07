@@ -1,0 +1,44 @@
+# Wraps a factory call with a CREATE that runs a minimal assurance program.
+# Why: Some universal deployers/factories do not revert on low gas; gas estimation
+# can therefore succeed even when the inner deployment fails. This wrapper forces
+# the top-level transaction to revert if the target was not actually created,
+# making gas estimation accurate and avoiding silent failures.
+#
+# How: We use a contract creation (CREATE) to prepend arbitrary bytecode that:
+#  - Receives (targetAddress, factoryAddress, callData)
+#  - Performs the factory call
+#  - Checks that code exists at targetAddress, reverting if not
+# This is implemented by the small Huff program `contracts/checked-call.huff`,
+# embedded below as bytecode. Using CREATE is the only way to execute arbitrary
+# code before the call data, hence the wrapping pattern.
+name: "assured-deployment"
+
+arguments:
+  # The address that is expected to exist after the factory call (e.g., CREATE2 result)
+  targetAddress:
+    type: "address"
+  # The factory that will perform the deployment
+  factoryAddress:
+    type: "address"
+  # Encoded call to the factory (e.g., abi-encoded deploy(...))
+  callData:
+    type: "bytes"
+
+actions:
+  - type: "create-contract"
+    arguments:
+      data:
+        type: "abi-pack"
+        arguments:
+          types:
+            - "bytes"
+            - "address"
+            - "address"
+            - "bytes"
+          values:
+            - "0x383d8039602c5160601c3d813b60295780806054380360548260405160601c5af150903b60295780fd5b80f3" # checked-call.huff
+            - "{{targetAddress}}"
+            - "{{factoryAddress}}"
+            - "{{callData}}"
+
+

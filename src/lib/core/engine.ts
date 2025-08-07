@@ -225,7 +225,7 @@ export class ExecutionEngine {
         }
       }
     } else {
-      await this.executeTemplate(action, templateName, context)
+      await this.executeTemplate(action, templateName, context, scope)
     }
   }
 
@@ -239,6 +239,7 @@ export class ExecutionEngine {
     callingAction: JobAction | Action,
     templateName: string,
     context: ExecutionContext,
+    parentScope: ResolutionScope = new Map(),
   ): Promise<void> {
     const template = this.templates.get(templateName)
     if (!template) {
@@ -260,8 +261,9 @@ export class ExecutionEngine {
     const templateScope: ResolutionScope = new Map()
     if ('arguments' in callingAction) {
       for (const [key, value] of Object.entries(callingAction.arguments)) {
-        // Resolve the argument value in the parent's context before passing it down.
-        const resolvedValue = await this.resolver.resolve(value, context, new Map())
+        // Resolve the argument value in the parent's context, preserving the caller's local scope
+        // so that template arguments from the caller are available when invoking nested templates.
+        const resolvedValue = await this.resolver.resolve(value, context, parentScope)
         templateScope.set(key, resolvedValue)
       }
     }
