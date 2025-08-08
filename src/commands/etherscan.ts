@@ -3,6 +3,8 @@ import chalk from 'chalk'
 import { loadNetworks } from '../lib/network-loader'
 import { projectOption, verbosityOption } from './common'
 import { setVerbosity } from '../index'
+import * as solc from 'solc'
+import { createHash } from 'crypto'
 
 type ApiAction = 'getsourcecode' | 'getabi'
 
@@ -19,12 +21,17 @@ function getEtherscanApiUrl(chainId: number): string {
   return `https://api.etherscan.io/v2/api?chainid=${chainId}`
 }
 
+type EtherscanSourceEnvelope = {
+  rawResult: Record<string, any>
+  parsedSource: unknown // standard-json object or flattened string
+}
+
 async function fetchFromEtherscan(
   chainId: number,
   apiKey: string,
   address: string,
   action: ApiAction
-): Promise<unknown> {
+): Promise<unknown | EtherscanSourceEnvelope> {
   const apiUrl = getEtherscanApiUrl(chainId)
   const params = new URLSearchParams({
     module: 'contract',
@@ -74,7 +81,8 @@ async function fetchFromEtherscan(
     if (!Array.isArray(data.result) || data.result.length === 0) {
       throw new Error('Empty result from Etherscan')
     }
-    const sourceCodeRaw = (data.result as Array<{ SourceCode?: string }>)[0]?.SourceCode as string
+    const first = (data.result as Array<{ SourceCode?: string }>)[0] as Record<string, any>
+    const sourceCodeRaw = first?.SourceCode as string
     if (typeof sourceCodeRaw !== 'string' || sourceCodeRaw.length === 0) {
       throw new Error('No SourceCode found on Etherscan')
     }
@@ -91,10 +99,11 @@ async function fetchFromEtherscan(
 
     // Try to parse JSON; if it fails, return string
     try {
-      return JSON.parse(cleaned)
+      const parsed = JSON.parse(cleaned)
+      return { rawResult: first, parsedSource: parsed }
     } catch {
       // Not JSON, return as-is string
-      return sourceCodeRaw
+      return { rawResult: first, parsedSource: sourceCodeRaw }
     }
   }
 
@@ -173,7 +182,7 @@ export function makeEtherscanCommand(): Command {
 
   // etherscan source
   const source = new Command('source')
-    .description('Fetch contract source (standard-json or flattened) from Etherscan and print to stdout')
+    .description('Fetch contract source and emit a self-contained build-info JSON suitable for verification')
   withCommon(source)
   source.action(async (options: EtherscanCmdBase) => {
     try {
@@ -209,19 +218,136 @@ export function makeEtherscanCommand(): Command {
         }
       }
 
-      const result = await fetchFromEtherscan(chainId!, apiKey, options.address, 'getsourcecode')
+      const result = await fetchFromEtherscan(chainId!, apiKey, options.address, 'getsourcecode') as EtherscanSourceEnvelope
 
-      if (typeof result === 'string') {
-        // flattened source string
-        process.stdout.write(options.raw ? result : `${result}\n`)
+      const raw = result.rawResult
+      const parsed = result.parsedSource
+
+      // Extract compiler version with commit from metadata when available
+      const compilerVersion = (raw?.CompilerVersion as string | undefined) || ''
+      const optimizationUsed = (raw?.OptimizationUsed as string | undefined) || ''
+      const runsStr = (raw?.Runs as string | undefined) || ''
+      const evmVersionRaw = (raw?.EVMVersion as string | undefined) || ''
+      const isStandardJson = parsed && typeof parsed === 'object' && (parsed as any).language && (parsed as any).sources
+
+      // If we have a standard JSON input, use it; otherwise build one from flattened source
+      let input: any
+      if (isStandardJson) {
+        input = { ...(parsed as any) }
+        // Ensure outputSelection includes required entries to get creation bytecode and metadata
+        const currentSel = input.settings?.outputSelection || {}
+        const mergedSel = {
+          '*': {
+            '*': Array.from(new Set([
+              ...(currentSel?.['*']?.['*'] || []),
+              'abi',
+              'evm.bytecode',
+              'evm.deployedBytecode',
+              'metadata',
+              'userdoc',
+              'devdoc',
+              'evm.methodIdentifiers'
+            ]))
+          }
+        }
+        input.settings = {
+          ...(input.settings || {}),
+          outputSelection: mergedSel
+        }
       } else {
-        // JSON object (standard-json-input)
-        if (options.raw) {
-          process.stdout.write(JSON.stringify(result))
-        } else {
-          console.log(JSON.stringify(result, null, 2))
+        // Build a minimal standard JSON input from flattened source
+        const flattened = String(parsed || '')
+        input = {
+          language: 'Solidity',
+          sources: {
+            'Flattened.sol': { content: flattened }
+          },
+          settings: {
+            optimizer: {
+              enabled: optimizationUsed === '1',
+              runs: Number.isFinite(Number(runsStr)) ? Number(runsStr) : 200
+            },
+            evmVersion: evmVersionRaw && evmVersionRaw !== 'default' ? evmVersionRaw : undefined,
+            outputSelection: {
+              '*': {
+                '*': [
+                  'abi',
+                  'evm.bytecode.object',
+                  'evm.bytecode.sourceMap',
+                  'evm.bytecode.linkReferences',
+                  'evm.deployedBytecode.object',
+                  'evm.deployedBytecode.sourceMap',
+                  'evm.deployedBytecode.linkReferences',
+                  'evm.deployedBytecode.immutableReferences',
+                  'evm.methodIdentifiers',
+                  'metadata'
+                ]
+              }
+            }
+          }
         }
       }
+
+      // Compile with exact solc version when possible
+      const solcInput = JSON.stringify(input)
+      const versionTag = compilerVersion && compilerVersion.startsWith('v') ? compilerVersion : (compilerVersion ? `v${compilerVersion}` : '')
+      let outputRaw: string
+      if (versionTag) {
+        outputRaw = await new Promise<string>((resolve, reject) => {
+          // @ts-ignore - loadRemoteVersion exists in solc js
+          solc.loadRemoteVersion(versionTag, (err: any, specificSolc: any) => {
+            if (err || !specificSolc) return reject(err || new Error('Failed to load solc version'))
+            try {
+              resolve(specificSolc.compile(solcInput))
+            } catch (e) {
+              reject(e)
+            }
+          })
+        })
+      } else {
+        outputRaw = solc.compile(solcInput)
+      }
+      const output = JSON.parse(outputRaw)
+
+      // Build build-info id as hex of sha1 of input
+      const id = createHash('sha1').update(solcInput).digest('hex')
+
+      // Determine solc versions
+      const solcLongVersion = (output?.compiler?.version as string | undefined) || (compilerVersion ? compilerVersion.replace(/^v/, '') : undefined)
+      const solcVersion = (solcLongVersion || '').split('+')[0] || (typeof (solc as any).version === 'function' ? (solc as any).version() : 'unknown')
+
+      // Augment settings with defaults similar to reference format
+      const basePath = process.cwd()
+      const includePaths = [basePath]
+      const allowPaths = includePaths
+
+      const buildInfo = {
+        id,
+        source_id_to_path: Object.fromEntries(Object.keys(input.sources).map((p, i) => [String(i), p])),
+        language: input.language,
+        _format: 'ethers-rs-sol-build-info-1',
+        input: {
+          version: solcVersion,
+          language: input.language,
+          sources: input.sources,
+          settings: input.settings,
+          evmVersion: input.settings?.evmVersion || 'cancun',
+          viaIR: input.settings?.viaIR || false,
+          libraries: input.settings?.libraries || {}
+        },
+        allowPaths,
+        basePath,
+        includePaths,
+        output: {
+          contracts: output.contracts || {},
+          sources: output.sources || {}
+        },
+        solcLongVersion: solcLongVersion || solcVersion,
+        solcVersion: solcVersion
+      }
+
+      // Print build-info JSON
+      console.log(options.raw ? JSON.stringify(buildInfo) : JSON.stringify(buildInfo, null, 2))
     } catch (error) {
       console.error(chalk.red('Error fetching source from Etherscan:'), error instanceof Error ? error.message : String(error))
       process.exit(1)
