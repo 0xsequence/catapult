@@ -52,6 +52,8 @@ export interface Job {
     actions: JobAction[];
     only_networks?: number[]
     skip_networks?: number[]
+    /** Minimum EVM hardfork required to run this job (e.g. "london", "paris", "shanghai", "cancun") */
+    min_evm_version?: string
     skip_condition?: Condition[];
     constants?: Record<string, Value<any>>; // Optional job-level constants
     deprecated?: boolean; // Optional flag to mark the job as deprecated

@@ -20,7 +20,9 @@ function isValidNetwork(obj: unknown): obj is Network {
     // gasLimit field is optional and should be a number if present
     (!('gasLimit' in obj) || typeof (obj as Record<string, unknown>).gasLimit === 'number') &&
     // testnet field is optional and should be a boolean if present
-    (!('testnet' in obj) || typeof (obj as Record<string, unknown>).testnet === 'boolean')
+    (!('testnet' in obj) || typeof (obj as Record<string, unknown>).testnet === 'boolean') &&
+    // evmVersion field is optional and should be a string if present
+    (!('evmVersion' in obj) || typeof (obj as Record<string, unknown>).evmVersion === 'string')
   )
 }
 

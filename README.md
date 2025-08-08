@@ -78,6 +78,7 @@ Create a `networks.yaml` file in your project root to define target networks:
   supports: ["etherscan_v2"]  # Optional: verification platforms supported
   gasLimit: 500000            # Optional: gas limit for all transactions on this network
   testnet: true               # Optional: mark as test network
+  evmVersion: "cancun"        # Optional: network EVM hardfork (e.g., london, paris, shanghai, cancun)
 ```
 
 The `supports` field is optional and specifies which verification platforms are available for the network. Currently supported platforms:
@@ -180,6 +181,23 @@ Rules:
 - If `only_networks` is set and non-empty, the job runs only on those chain IDs.
 - Else, if `skip_networks` is set and non-empty, the job is skipped on those chain IDs.
 - Otherwise, the job runs on all networks selected for the run (via `networks.yaml` or `--network`).
+
+#### Minimum EVM version per job
+
+Jobs can declare a minimum EVM hardfork they require. When a network’s `evmVersion` is older than the job’s `min_evm_version`, the job is skipped on that network.
+
+```yaml
+name: "post-shanghai-feature"
+version: "1.0.0"
+min_evm_version: "shanghai"
+
+actions:
+  - name: "deploy"
+    template: "erc-2470"
+    arguments: { /* ... */ }
+```
+
+Supported identifiers include: `frontier`, `homestead`, `tangerine`, `spuriousdragon`, `byzantium`, `constantinople`, `petersburg`, `istanbul`, `berlin`, `london`, `paris` (The Merge), `shanghai`, `cancun`, `prague`.
 
 #### Deprecating jobs
 

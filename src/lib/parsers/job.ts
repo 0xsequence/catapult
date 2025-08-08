@@ -83,6 +83,10 @@ export function parseJob(yamlContent: string): Job {
   if (rawObject.deprecated !== undefined && typeof rawObject.deprecated !== 'boolean') {
     throw new Error(`Invalid job "${rawObject.name}": "deprecated" must be a boolean if provided.`)
   }
+  // --- Optional: validate min_evm_version if present ---
+  if (rawObject.min_evm_version !== undefined && typeof rawObject.min_evm_version !== 'string') {
+    throw new Error(`Invalid job "${rawObject.name}": "min_evm_version" must be a string if provided.`)
+  }
 
   // --- Construct and return the strongly-typed Job object ---
   const job: Job = {
@@ -94,6 +98,7 @@ export function parseJob(yamlContent: string): Job {
     actions: rawObject.actions as JobAction[],
     only_networks: rawObject.only_networks,
     skip_networks: rawObject.skip_networks,
+    min_evm_version: rawObject.min_evm_version,
     deprecated: rawObject.deprecated === true
   }
 

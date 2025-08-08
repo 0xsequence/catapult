@@ -501,7 +501,7 @@ export class Deployer {
    */
   private shouldSkipJobOnNetwork(job: Job, network: Network): boolean {
     // Note: This relies on `only_networks` and `skip_networks` being present on the Job type.
-    const jobWithNetworkFilters = job as Job & { only_networks?: number[]; skip_networks?: number[] }
+    const jobWithNetworkFilters = job as Job & { only_networks?: number[]; skip_networks?: number[]; min_evm_version?: string }
 
     // Check only_networks: if present, the job only runs on these networks.
     if (jobWithNetworkFilters.only_networks && jobWithNetworkFilters.only_networks.length > 0) {
@@ -513,7 +513,78 @@ export class Deployer {
       return jobWithNetworkFilters.skip_networks.includes(network.chainId)
     }
     
+    // Check minimal EVM hardfork requirement if present on job and network declares an EVM version
+    if (jobWithNetworkFilters.min_evm_version) {
+      const jobMin = this.normalizeEvmVersion(jobWithNetworkFilters.min_evm_version)
+      const chainEvm = network.evmVersion ? this.normalizeEvmVersion(network.evmVersion) : undefined
+      if (jobMin && chainEvm) {
+        // Skip when chain's EVM is older than job's minimal requirement
+        return this.compareEvmVersions(chainEvm, jobMin) < 0
+      }
+      // If network has no evmVersion declared, do not skip (assume compatible)
+    }
+    
     return false // Run by default
+  }
+
+  /**
+   * Normalizes common EVM hardfork identifiers to a canonical lowercase token.
+   */
+  private normalizeEvmVersion(identifier: string | undefined): string | undefined {
+    if (!identifier) return undefined
+    const id = String(identifier).trim().toLowerCase()
+    const aliasMap: Record<string, string> = {
+      frontier: 'frontier',
+      homestead: 'homestead',
+      'tangerine whistle': 'tangerine',
+      tangerine: 'tangerine',
+      'spurious dragon': 'spuriousdragon',
+      spuriousdragon: 'spuriousdragon',
+      byzantium: 'byzantium',
+      constantinople: 'constantinople',
+      petersburg: 'petersburg',
+      istanbul: 'istanbul',
+      berlin: 'berlin',
+      london: 'london',
+      // The Merge hardfork is referred to as Paris in solidity's evmVersion naming
+      merge: 'paris',
+      paris: 'paris',
+      shanghai: 'shanghai',
+      // a.k.a. Cancun + Deneb (Dencun)
+      cancun: 'cancun',
+      dencun: 'cancun',
+      prague: 'prague',
+    }
+    return aliasMap[id] || undefined
+  }
+
+  /**
+   * Compares canonical EVM hardfork tokens. Returns -1 if a < b, 0 if equal, 1 if a > b.
+   * Unknown tokens are treated as incomparable; caller should guard for undefined.
+   */
+  private compareEvmVersions(a: string, b: string): number {
+    const order = [
+      'frontier',
+      'homestead',
+      'tangerine',
+      'spuriousdragon',
+      'byzantium',
+      'constantinople',
+      'petersburg',
+      'istanbul',
+      'berlin',
+      'london',
+      'paris',
+      'shanghai',
+      'cancun',
+      'prague'
+    ]
+    const ia = order.indexOf(a)
+    const ib = order.indexOf(b)
+    if (ia === -1 || ib === -1) return 0
+    if (ia < ib) return -1
+    if (ia > ib) return 1
+    return 0
   }
 
   /**

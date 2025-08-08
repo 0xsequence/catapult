@@ -19,4 +19,10 @@ export interface Network {
   
   /** Whether this is a test network */
   testnet?: boolean
+
+  /**
+   * The EVM hardfork version supported by this network, e.g. "istanbul", "berlin", "london",
+   * "paris", "shanghai", "cancun". Used to filter jobs that require a minimum EVM version.
+   */
+  evmVersion?: string
 }
