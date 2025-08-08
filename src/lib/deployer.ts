@@ -8,6 +8,7 @@ import { createDefaultVerificationRegistry } from './verification/etherscan'
 import { ExecutionContext } from './core/context'
 import { Network, Job } from './types'
 import { DeploymentEventEmitter, deploymentEvents } from './events'
+import type { RunSummaryEvent } from './events'
 
 /**
  * Options for configuring a Deployer instance.
@@ -308,10 +309,10 @@ export class Deployer {
    */
   private emitRunSummary(hasFailures: boolean): void {
     // Compute counts
-    let jobCount = this.results.size
+    const jobCount = this.results.size
     let successCount = 0
     let failedCount = 0
-    let skippedCount = 0
+    const skippedCount = 0
 
     // Detect skipped by comparing planned jobs across networks vs executed entries
     // Here we approximate: an entry exists per job and per network outcome. We count
@@ -341,18 +342,20 @@ export class Deployer {
       }
     }
 
-    this.events.emitEvent({
+    const summaryEvent = {
       type: 'run_summary',
-      level: hasFailures ? 'warn' : 'info',
+      level: (hasFailures ? 'warn' : 'info') as 'info' | 'warn',
       data: {
         networkCount: this.options.networks.length,
         jobCount,
         successCount,
         failedCount,
         skippedCount,
-        keyContracts: keyContracts.slice(0, 10) // cap to avoid spam
+        keyContracts: keyContracts.slice(0, 10)
       }
-    } as any)
+    } satisfies Omit<RunSummaryEvent, 'timestamp'>
+
+    this.events.emitEvent(summaryEvent)
   }
 
   /**
