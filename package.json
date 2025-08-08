@@ -26,8 +26,11 @@
     "blockchain",
     "typescript"
   ],
-  "author": "",
+  "author": "Sequence (Agusx1211)",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "devDependencies": {
     "@types/chai": "^5.2.2",
     "@types/jest": "^29.5.14",
