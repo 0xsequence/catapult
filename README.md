@@ -87,6 +87,45 @@ The `supports` field is optional and specifies which verification platforms are 
 
 If `supports` is omitted, all built-in platforms are allowed for that network. Etherscan requires an API key to be considered “configured”; Sourcify requires no configuration. The `gasLimit` field is optional and specifies a fixed gas limit to use for all transactions on this network. If not specified, the system will use ethers.js default gas estimation.
 
+### Constants
+
+You can define reusable values in constants files or directly within a job.
+
+- Top-level constants are discovered anywhere under your project root by adding YAML files with `type: "constants"`.
+- Keys must be unique across all constants files; duplicates will fail the load.
+- Within jobs/templates, reference constants using bare placeholders like `{{MY_CONSTANT}}`.
+- Job-level constants override top-level constants when names collide.
+
+Example top-level constants file (can be placed anywhere, e.g., `constants.yaml`):
+
+```yaml
+type: "constants"
+
+constants:
+  address-zero: "0x0000000000000000000000000000000000000000"
+  salt-zero: "0x0000000000000000000000000000000000000000000000000000000000000000"
+  developer-multisig-01: "0x007a47e6BF40C1e0ed5c01aE42fDC75879140bc4"
+  entrypoint-4337-07: "0x0000000071727de22e5e9d8baf0edac6f37da032"
+```
+
+Job-level constants example (defined at the top of a job):
+
+```yaml
+name: "job-with-constants"
+version: "1"
+constants:
+  FEE: "1000"
+  ADMIN: "0x0000000000000000000000000000000000000001"
+actions:
+  - name: "example"
+    template: "some-template"
+    arguments:
+      admin: "{{ADMIN}}"      # resolves to job-level constant
+      defaultSalt: "{{salt-zero}}"  # resolves to top-level constant
+```
+
+Tip: Use `catapult list constants` to see discovered top-level constants and any job-level constants.
+
 ### Job Definitions
 
 Jobs are the core deployment units. Create YAML files in the `jobs/` directory:
@@ -117,6 +156,51 @@ actions:
       salt: "0"
 ```
 
+#### Per-job network filters
+
+Jobs run on all selected networks by default. You can restrict or exclude networks for a specific job by chain ID:
+
+```yaml
+name: "token-deployment"
+version: "1.0.0"
+
+# Run only on these networks (takes precedence if present)
+only_networks: [1, 42161]
+
+# Or, skip these networks (used only if only_networks is not set)
+# skip_networks: [137]
+
+actions:
+  - name: "deploy"
+    template: "erc-2470"
+    arguments: { /* ... */ }
+```
+
+Rules:
+- If `only_networks` is set and non-empty, the job runs only on those chain IDs.
+- Else, if `skip_networks` is set and non-empty, the job is skipped on those chain IDs.
+- Otherwise, the job runs on all networks selected for the run (via `networks.yaml` or `--network`).
+
+#### Deprecating jobs
+
+Mark a job as deprecated to opt it out of normal runs without deleting it:
+
+```yaml
+name: "legacy-seed"
+version: "1.2.3"
+deprecated: true
+actions:
+  - name: "noop"
+    type: "static"
+    arguments: { value: null }
+```
+
+Behavior:
+- Deprecated jobs are skipped by default when running without specifying job names.
+- Explicitly targeting a deprecated job on the CLI will run it even without extra flags: `catapult run legacy-seed -k $PRIVATE_KEY`.
+- To include all deprecated jobs in a normal run, pass `--run-deprecated`: `catapult run --run-deprecated -k $PRIVATE_KEY`.
+- If a non-deprecated job depends on a deprecated job, that deprecated dependency is ALWAYS included automatically to satisfy dependencies (even without `--run-deprecated`).
+
 ### Template Definitions
 
 Templates are reusable deployment patterns. Create them in the `templates/` directory:
@@ -124,6 +208,7 @@ Templates are reusable deployment patterns. Create them in the `templates/` dire
 ```yaml
 # templates/proxy-factory.yaml
 name: "proxy-factory"
+type: "template"
 
 arguments:
   implementation:
@@ -181,6 +266,10 @@ outputs:
           values: ["{{implementation}}"]
 ```
 
+Notes about template files:
+- The `type: "template"` discriminator is optional but recommended for clarity. If provided, it must be exactly `template`.
+- Templates are auto-discovered from your project `templates/` folder and any `templates/` subfolders under `jobs/`.
+
 ## Usage
 
 ### Running Deployments
@@ -234,10 +323,14 @@ catapult run --flat-output -k $PRIVATE_KEY
 ```
 
 - Run a deprecated job explicitly:
-
-```bash
-catapult run legacy-job --run-deprecated -k $PRIVATE_KEY
-```
+  - Without flag (explicit targeting runs it):
+    ```bash
+    catapult run legacy-job -k $PRIVATE_KEY
+    ```
+  - Or include all deprecated jobs in the plan:
+    ```bash
+    catapult run --run-deprecated -k $PRIVATE_KEY
+    ```
 
 ### Validation and Dry Run
 
