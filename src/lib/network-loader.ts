@@ -26,6 +26,23 @@ function isValidNetwork(obj: unknown): obj is Network {
   )
 }
 
+function resolveRpcUrlTokens(rpcUrl: string): string {
+  // Replace placeholders like {{RPC_SOMETHING}} with process.env.RPC_SOMETHING
+  // Only tokens starting with "RPC" are considered. Others are left as-is.
+  const TOKEN_REGEX = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g
+  return rpcUrl.replace(TOKEN_REGEX, (match: string, varName: string) => {
+    if (!varName.startsWith('RPC')) {
+      // Leave non-RPC tokens intact
+      return match
+    }
+    const value = process.env[varName]
+    if (typeof value === 'undefined') {
+      throw new Error(`Environment variable ${varName} is not set but is required for rpcUrl token replacement`)
+    }
+    return value
+  })
+}
+
 /**
  * Loads and validates network configurations from a `networks.yaml` file in the project root.
  * @param projectRoot The root directory of the project.
@@ -47,13 +64,18 @@ export async function loadNetworks(projectRoot: string): Promise<Network[]> {
       if (!isValidNetwork(item)) {
         throw new Error(`Invalid network configuration found in networks.yaml: ${JSON.stringify(item)}`)
       }
-      networks.push(item)
+      // Resolve RPC URL tokens using environment variables
+      const resolvedRpcUrl = resolveRpcUrlTokens(item.rpcUrl)
+      networks.push({ ...item, rpcUrl: resolvedRpcUrl })
     }
     return networks
   } catch (error: unknown) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      // It's okay if the file doesn't exist, just return an empty array.
-      return []
+    if (error && typeof error === 'object' && 'code' in error) {
+      const errWithCode = error as { code?: unknown }
+      if (errWithCode.code === 'ENOENT') {
+        // It's okay if the file doesn't exist, just return an empty array.
+        return []
+      }
     }
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Failed to load or parse networks.yaml: ${message}`)

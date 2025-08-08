@@ -127,6 +127,34 @@ actions:
 
 Tip: Use `catapult list constants` to see discovered top-level constants and any job-level constants.
 
+#### RPC URL tokens via environment variables
+
+You can inject secrets (like access tokens) into `rpcUrl` using placeholders of the form `{{RPC_...}}`. At load time, any placeholder whose name starts with `RPC` will be replaced with the value of the corresponding environment variable. Placeholders not starting with `RPC` are left as-is.
+
+Example `networks.yaml`:
+
+```yaml
+- name: "MyNet"
+  chainId: 999
+  rpcUrl: "https://node.url/something/{{RPC_URL_TOKEN}}"
+```
+
+With an environment variable:
+
+```bash
+export RPC_URL_TOKEN="my-secret-token"
+```
+
+Resulting `rpcUrl` at runtime:
+
+```
+https://node.url/something/my-secret-token
+```
+
+Notes:
+- If an `{{RPC_*}}` placeholder is present and the corresponding environment variable is not set, loading will fail with a clear error.
+- Multiple RPC tokens in one URL are supported, and whitespace inside the token delimiters is ignored (e.g., `{{  RPC_TOKEN  }}`).
+
 ### Job Definitions
 
 Jobs are the core deployment units. Create YAML files in the `jobs/` directory:
@@ -781,6 +809,7 @@ npm run watch
 ```
 
 ### Scripts
+<<<<<<< Current (Your changes)
 - `npm run build` - Compile TypeScript to JavaScript
 - `npm run dev` - Run the CLI in development mode with ts-node
 - `npm run watch`
@@ -788,3 +817,6 @@ npm run watch
 ---
 
 _Co-authored with Sonet-4, GLM-4.5-Air, and GPT-5. This project was vibe-coded._
+=======
+- `npm run build`
+>>>>>>> Incoming (Background Agent changes)
