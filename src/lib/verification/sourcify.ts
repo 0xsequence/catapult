@@ -89,14 +89,32 @@ export class SourcifyVerificationPlatform implements VerificationPlatform {
       })
 
       if (!response.ok) {
-        let errorDetails = `HTTP ${response.status}: ${response.statusText}`
+        let responseText = ''
         try {
-          const responseText = await response.text()
-          if (responseText) {
-            errorDetails += ` - ${responseText}`
+          responseText = await response.text()
+        } catch {
+          // ignore
+        }
+
+        // Treat partial verification conflicts as a non-error notice
+        if (response.status === 409) {
+          const lower = `${response.statusText} ${responseText}`.toLowerCase()
+          if (
+            lower.includes('already partially verified') ||
+            lower.includes('partial match') ||
+            lower.includes('partial')
+          ) {
+            return {
+              success: true,
+              message: 'Contract already partially verified on Sourcify (no further action needed)',
+              isAlreadyVerified: true
+            }
           }
-        } catch (err) {
-          // Ignore error reading response body
+        }
+
+        let errorDetails = `HTTP ${response.status}: ${response.statusText}`
+        if (responseText) {
+          errorDetails += ` - ${responseText}`
         }
         return {
           success: false,

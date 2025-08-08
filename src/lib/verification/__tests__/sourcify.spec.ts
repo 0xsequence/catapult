@@ -240,6 +240,35 @@ describe('Sourcify Verification Platform', () => {
       expect(result.message).toContain('API request failed')
     })
 
+    it('should treat 409 partial already verified as success (notice)', async () => {
+      // Mock not verified check
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue([])
+      })
+
+      // Mock 409 Conflict with partial match message
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        statusText: 'Conflict',
+        text: jest.fn().mockResolvedValue(
+          JSON.stringify({
+            error:
+              'The contract 0x... on chainId 1 is already partially verified. The provided new source code also yielded a partial match and will not be stored unless it\'s a full match',
+            message:
+              'The contract 0x... on chainId 1 is already partially verified. The provided new source code also yielded a partial match and will not be stored unless it\'s a full match'
+          })
+        )
+      })
+
+      const result = await platform.verifyContract(mockRequest)
+
+      expect(result.success).toBe(true)
+      expect(result.isAlreadyVerified).toBe(true)
+      expect(result.message.toLowerCase()).toContain('partially verified')
+    })
+
     it('should handle network errors during verification', async () => {
       // Mock not verified check
       mockFetch.mockResolvedValueOnce({
