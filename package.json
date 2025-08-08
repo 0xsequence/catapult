@@ -27,6 +27,14 @@
     "typescript"
   ],
   "author": "Sequence (Agusx1211)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0xsequence/catapult.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0xsequence/catapult/issues"
+  },
+  "homepage": "https://github.com/0xsequence/catapult#readme",
   "license": "MIT",
   "publishConfig": {
     "access": "public"
