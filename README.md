@@ -286,6 +286,19 @@ Deploy specific jobs:
 catapult run core-contracts token-setup --private-key YOUR_PRIVATE_KEY
 ```
 
+Deploy multiple jobs using wildcards (matches job names, including nested names like `sequence_v3/beta_4`):
+
+```bash
+# Run all jobs whose name starts with "sequence_"
+catapult run sequence_* -k $PRIVATE_KEY
+
+# Run all jobs under a namespace/folder-like prefix
+catapult run "sequence_v3/*" -k $PRIVATE_KEY
+
+# Combine patterns and exact names; duplicates are de-duplicated
+catapult run job1 job? -k $PRIVATE_KEY
+```
+
 Deploy to specific networks:
 
 ```bash

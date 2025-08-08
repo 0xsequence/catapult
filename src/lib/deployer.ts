@@ -363,6 +363,52 @@ export class Deployer {
    * If a user requests specific jobs, this ensures all their dependencies are also included.
    */
   private getJobExecutionPlan(fullOrder: string[]): string[] {
+    // Expand provided runJobs to concrete job names by supporting simple glob patterns
+    const expandRunJobs = (patterns: string[]): string[] => {
+      const allJobNames = Array.from(this.loader.jobs.keys())
+
+      const isPattern = (s: string): boolean => /[*?]/.test(s)
+      const escapeRegex = (s: string): string => s.replace(/[-\\^$+?.()|[\]{}*?]/g, '\\$&')
+      const patternToRegex = (pattern: string): RegExp => {
+        // Escape regex metacharacters, then translate wildcard tokens
+        const escaped = escapeRegex(pattern)
+          .replace(/\\\*/g, '.*')  // escaped '*' -> '.*'
+          .replace(/\\\?/g, '.')   // escaped '?' -> '.'
+        return new RegExp(`^${escaped}$`)
+      }
+
+      const expanded: string[] = []
+      const seen = new Set<string>()
+
+      for (const p of patterns) {
+        if (!isPattern(p)) {
+          // Exact name; validate exists
+          if (!this.loader.jobs.has(p)) {
+            throw new Error(`Specified job "${p}" not found in project.`)
+          }
+          if (!seen.has(p)) {
+            seen.add(p)
+            expanded.push(p)
+          }
+          continue
+        }
+
+        const re = patternToRegex(p)
+        const matches = allJobNames.filter(name => re.test(name))
+        if (matches.length === 0) {
+          throw new Error(`Job pattern "${p}" did not match any jobs in project.`)
+        }
+        for (const m of matches) {
+          if (!seen.has(m)) {
+            seen.add(m)
+            expanded.push(m)
+          }
+        }
+      }
+
+      return expanded
+    }
+
     // Helper to decide if a job is deprecated
     const isDeprecated = (jobName: string): boolean => {
       const j = this.loader.jobs.get(jobName)
@@ -393,13 +439,12 @@ export class Deployer {
       return fullOrder.filter(name => allowed.has(name))
     }
     
-    const explicitlyRequested = new Set<string>(this.options.runJobs)
+    // Expand patterns to concrete names
+    const expandedRunJobs = expandRunJobs(this.options.runJobs)
+    const explicitlyRequested = new Set<string>(expandedRunJobs)
 
     const jobsToRun = new Set<string>()
-    for (const jobName of this.options.runJobs) {
-      if (!this.loader.jobs.has(jobName)) {
-        throw new Error(`Specified job "${jobName}" not found in project.`)
-      }
+    for (const jobName of expandedRunJobs) {
       jobsToRun.add(jobName)
       const dependencies = this.graph?.getDependencies(jobName) || new Set()
       dependencies.forEach((dep: string) => jobsToRun.add(dep))
@@ -408,7 +453,7 @@ export class Deployer {
     // Deprecated dependencies must be kept even when --run-deprecated is not set.
     // Only drop deprecated jobs that are neither explicitly requested nor required as a dependency.
     const depsOfRequested = new Set<string>()
-    for (const jobName of this.options.runJobs) {
+    for (const jobName of expandedRunJobs) {
       const deps = this.graph?.getDependencies(jobName) || new Set<string>()
       deps.forEach(d => depsOfRequested.add(d))
     }

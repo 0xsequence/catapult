@@ -807,6 +807,79 @@ describe('Deployer', () => {
           const plan = (depDeployer as any).getJobExecutionPlan(fullOrder)
           expect(plan).toEqual(['legacy-job', 'job1', 'job2'])
         })
+
+        it('should expand wildcard patterns in runJobs and preserve execution order', async () => {
+          ;(mockLoader.jobs as Map<string, Job>).set('job10', { ...mockJob1, name: 'job10' })
+          ;(mockLoader.jobs as Map<string, Job>).set('another', { ...mockJob1, name: 'another' })
+
+          const fullOrder = ['another', 'job1', 'job2', 'job3', 'job10']
+          mockGraph.getExecutionOrder.mockReturnValue(fullOrder)
+
+          const options: DeployerOptions = {
+            ...deployerOptions,
+            runJobs: ['job*']
+          }
+          const dep = new Deployer(options)
+          ;(dep as any).loader = mockLoader
+          ;(dep as any).graph = mockGraph
+
+          const plan = (dep as any).getJobExecutionPlan(fullOrder)
+          expect(plan).toEqual(['job1', 'job2', 'job3', 'job10'])
+        })
+
+        it('should support mixed exact names and patterns', async () => {
+          const fullOrder = ['job1', 'job2', 'job3']
+          mockGraph.getExecutionOrder.mockReturnValue(fullOrder)
+
+          const options: DeployerOptions = {
+            ...deployerOptions,
+            runJobs: ['job1', 'job?']
+          }
+          const dep = new Deployer(options)
+          ;(dep as any).loader = mockLoader
+          ;(dep as any).graph = mockGraph
+
+          const plan = (dep as any).getJobExecutionPlan(fullOrder)
+          expect(plan).toEqual(['job1', 'job2', 'job3'])
+        })
+
+        it('should throw when a pattern matches no jobs', async () => {
+          const fullOrder = ['job1', 'job2', 'job3']
+          mockGraph.getExecutionOrder.mockReturnValue(fullOrder)
+
+          const options: DeployerOptions = {
+            ...deployerOptions,
+            runJobs: ['does-not-exist*']
+          }
+          const dep = new Deployer(options)
+          ;(dep as any).loader = mockLoader
+          ;(dep as any).graph = mockGraph
+
+          expect(() => (dep as any).getJobExecutionPlan(fullOrder)).toThrow(
+            'Job pattern "does-not-exist*" did not match any jobs in project.'
+          )
+        })
+
+        it('should match names containing slashes with patterns', async () => {
+          const jA: Job = { ...mockJob1, name: 'sequence_v3/beta_4' }
+          const jB: Job = { ...mockJob1, name: 'sequence_v3/rc_1' }
+          ;(mockLoader.jobs as Map<string, Job>).set(jA.name, jA)
+          ;(mockLoader.jobs as Map<string, Job>).set(jB.name, jB)
+
+          const fullOrder = ['job1', jA.name, jB.name, 'job2']
+          mockGraph.getExecutionOrder.mockReturnValue(fullOrder)
+
+          const options: DeployerOptions = {
+            ...deployerOptions,
+            runJobs: ['sequence_v3/*']
+          }
+          const dep = new Deployer(options)
+          ;(dep as any).loader = mockLoader
+          ;(dep as any).graph = mockGraph
+
+          const plan = (dep as any).getJobExecutionPlan(fullOrder)
+          expect(plan).toEqual(['sequence_v3/beta_4', 'sequence_v3/rc_1'])
+        })
       })
 
       describe('getTargetNetworks', () => {

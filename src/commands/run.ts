@@ -25,7 +25,7 @@ interface RunOptions {
 export function makeRunCommand(): Command {
   const run = new Command('run')
     .description('Run deployment jobs on specified networks')
-    .argument('[jobs...]', 'Specific job names to run (and their dependencies). If not provided, all jobs are run.')
+    .argument('[jobs...]', 'Specific job names or patterns to run (and their dependencies). Supports wildcards like "sequence/*" or "job?". If not provided, all jobs are run.')
     .option('-k, --private-key <key>', 'Signer private key. Can also be set via PRIVATE_KEY env var.')
     .option('-n, --network <chainIds...>', 'One or more network chain IDs to run on. If not provided, runs on all configured networks.')
     .option('--rpc-url <url>', 'Custom RPC URL to run on. The system will automatically detect chainId and network information. This overrides networks.yaml configuration.')
