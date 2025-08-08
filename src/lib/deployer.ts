@@ -369,12 +369,28 @@ export class Deployer {
       return !!(j && (j as { deprecated?: boolean }).deprecated === true)
     }
 
-    // If user didn't specify jobs explicitly, we may need to skip deprecated ones unless runDeprecated
+    // If user didn't specify jobs explicitly, include all non-deprecated jobs.
+    // Additionally, ALWAYS include deprecated jobs when they are dependencies of any non-deprecated job.
     if (!this.options.runJobs || this.options.runJobs.length === 0) {
-      const order = this.options.runDeprecated
-        ? fullOrder
-        : fullOrder.filter(name => !isDeprecated(name))
-      return order
+      if (this.options.runDeprecated) {
+        return fullOrder
+      }
+
+      const nonDeprecatedJobs = new Set(fullOrder.filter(name => !isDeprecated(name)))
+
+      // Collect deprecated jobs that are required by any non-deprecated job
+      const requiredDeprecated = new Set<string>()
+      for (const jobName of nonDeprecatedJobs) {
+        const deps = this.graph?.getDependencies(jobName) || new Set<string>()
+        for (const dep of deps) {
+          if (isDeprecated(dep)) {
+            requiredDeprecated.add(dep)
+          }
+        }
+      }
+
+      const allowed = new Set<string>([...nonDeprecatedJobs, ...requiredDeprecated])
+      return fullOrder.filter(name => allowed.has(name))
     }
     
     const explicitlyRequested = new Set<string>(this.options.runJobs)
@@ -389,13 +405,18 @@ export class Deployer {
       dependencies.forEach((dep: string) => jobsToRun.add(dep))
     }
 
-    // If deprecated jobs are not allowed, filter out deprecated jobs that were not explicitly requested.
-    // Dependencies that are deprecated will be included only if they were explicitly requested by the user.
+    // Deprecated dependencies must be kept even when --run-deprecated is not set.
+    // Only drop deprecated jobs that are neither explicitly requested nor required as a dependency.
+    const depsOfRequested = new Set<string>()
+    for (const jobName of this.options.runJobs) {
+      const deps = this.graph?.getDependencies(jobName) || new Set<string>()
+      deps.forEach(d => depsOfRequested.add(d))
+    }
+
     const filtered = Array.from(jobsToRun).filter(name => {
       if (!isDeprecated(name)) return true
-      // Allow if user explicitly requested this deprecated job
       if (explicitlyRequested.has(name)) return true
-      // Otherwise require --run-deprecated
+      if (depsOfRequested.has(name)) return true // keep deprecated dependency
       return this.options.runDeprecated === true
     })
     const allowedSet = new Set(filtered)

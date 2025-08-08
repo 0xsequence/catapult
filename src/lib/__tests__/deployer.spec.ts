@@ -28,6 +28,7 @@ describe('Deployer', () => {
   let mockJob1: Job
   let mockJob2: Job
   let mockJob3: Job
+  let deprecatedJob: Job
   let mockTemplate1: Template
   let mockLoader: jest.Mocked<ProjectLoader>
   let mockGraph: jest.Mocked<DependencyGraph>
@@ -69,6 +70,16 @@ describe('Deployer', () => {
       only_networks: [1], // Only mainnet
       actions: [
         { name: 'action3', template: 'template1', arguments: {} }
+      ]
+    }
+
+    deprecatedJob = {
+      name: 'legacy-job',
+      version: '0.1.0',
+      description: 'Deprecated job',
+      deprecated: true,
+      actions: [
+        { name: 'legacy-action', template: 'template1', arguments: {} }
       ]
     }
 
@@ -757,6 +768,44 @@ describe('Deployer', () => {
           const fullOrder = ['job1', 'job2', 'job3']
           const plan = (deployer as any).getJobExecutionPlan(fullOrder)
           expect(plan).toEqual(['job1', 'job2'])
+        })
+
+        it('should include deprecated dependencies when no runJobs specified', () => {
+          // Add deprecated job and make job2 depend on it transitively
+          ;(mockLoader.jobs as Map<string, Job>).set('legacy-job', deprecatedJob)
+
+          // full order includes all
+          const fullOrder = ['legacy-job', 'job1', 'job2', 'job3']
+
+          // Mock dependency graph: job2 depends on job1 and legacy-job
+          mockGraph.getDependencies.mockImplementation((jobName: string) => {
+            if (jobName === 'job2') return new Set(['job1', 'legacy-job'])
+            return new Set()
+          })
+          ;(deployer as any).graph = mockGraph
+          const plan = (deployer as any).getJobExecutionPlan(fullOrder)
+          // Expect legacy-job to be included because it is a dependency of non-deprecated job2
+          expect(plan).toEqual(['legacy-job', 'job1', 'job2', 'job3'])
+        })
+
+        it('should keep deprecated dependencies when specific jobs are requested', async () => {
+          // Add deprecated job and dependency relation
+          ;(mockLoader.jobs as Map<string, Job>).set('legacy-job', deprecatedJob)
+          const options: DeployerOptions = {
+            ...deployerOptions,
+            runJobs: ['job2']
+          }
+          const depDeployer = new Deployer(options)
+          ;(depDeployer as any).graph = mockGraph
+
+          mockGraph.getDependencies.mockImplementation((jobName: string) => {
+            if (jobName === 'job2') return new Set(['job1', 'legacy-job'])
+            return new Set()
+          })
+
+          const fullOrder = ['legacy-job', 'job1', 'job2', 'job3']
+          const plan = (depDeployer as any).getJobExecutionPlan(fullOrder)
+          expect(plan).toEqual(['legacy-job', 'job1', 'job2'])
         })
       })
 
