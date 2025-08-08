@@ -5,8 +5,8 @@ export class SourcifyVerificationPlatform implements VerificationPlatform {
   readonly name = 'sourcify'
 
   supportsNetwork(network: Network): boolean {
-    // Sourcify supports most networks, but we can add specific logic here if needed
-    return !network.supports || network.supports.includes(this.name)
+    // Only support networks that explicitly include this platform in their supports list
+    return Array.isArray(network.supports) && network.supports.includes(this.name)
   }
 
   isConfigured(): boolean {

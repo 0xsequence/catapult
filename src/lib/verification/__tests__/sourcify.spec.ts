@@ -24,8 +24,8 @@ describe('Sourcify Verification Platform', () => {
       expect(platform.name).toBe('sourcify')
     })
 
-    it('should support networks by default', () => {
-      expect(platform.supportsNetwork(mockNetwork)).toBe(true)
+    it('should not support networks by default when supports is undefined', () => {
+      expect(platform.supportsNetwork(mockNetwork)).toBe(false)
     })
 
     it('should respect network supports configuration', () => {

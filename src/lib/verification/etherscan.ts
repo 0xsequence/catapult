@@ -420,7 +420,8 @@ export class EtherscanVerificationPlatform implements VerificationPlatform {
   }
 
   supportsNetwork(network: Network): boolean {
-    return !network.supports || network.supports.includes(this.name)
+    // Only support networks that explicitly include this platform in their supports list
+    return Array.isArray(network.supports) && network.supports.includes(this.name)
   }
 
   isConfigured(): boolean {
