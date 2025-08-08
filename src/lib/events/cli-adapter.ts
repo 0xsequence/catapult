@@ -58,8 +58,10 @@ export class CLIEventAdapter {
     const level1Events = new Set([
       'project_loading_started', 'project_loaded', 'execution_plan',
       'transaction_sent', 'transaction_confirmed',
+      'contract_created',
       'verification_started', 'verification_submitted', 'verification_completed',
-      'output_writing_started', 'output_file_written', 'no_outputs'
+      'output_writing_started', 'output_file_written', 'no_outputs',
+      'run_summary'
     ])
 
     // Level 2 (-vv): Add action details and operations
@@ -187,6 +189,9 @@ export class CLIEventAdapter {
         break
 
       case 'deployment_completed':
+        // Print a compact, high-signal run summary. The Deployer will have emitted
+        // preceding info, so we only render a final banner here. Detailed counts
+        // are printed via a separate 'run_summary' event.
         console.log(chalk.bold.inverse('\n CATAPULT: DEPLOYMENT RUN COMPLETED SUCCESSFULLY '))
         break
 
@@ -242,7 +247,37 @@ export class CLIEventAdapter {
         break
 
       case 'verification_retry':
-        console.log(`Verification attempt ${event.data.attempt} failed with "contract not found" error`)
+        // Keep short to reduce noise
+        console.log(chalk.gray(`        Verification retry ${event.data.attempt}/${event.data.maxRetries}: ${event.data.error}`))
+        break
+      case 'contract_created':
+        console.log(chalk.gray(`        contract: ${event.data.contractAddress}`))
+        break
+
+      case 'context_disposal_warning':
+        console.warn(chalk.yellow(`Warning: context cleanup issue for job "${event.data.jobName}" on ${event.data.networkName}: ${event.data.error}`))
+        break
+
+      case 'deprecated_jobs_skipped':
+        if (Array.isArray(event.data.jobs) && event.data.jobs.length > 0) {
+          const names = event.data.jobs.map((j: any) => typeof j === 'string' ? j : j.name).filter(Boolean)
+          console.log(chalk.yellow(`Skipping deprecated jobs (not requested): ${names.join(', ')}`))
+        }
+        break
+
+      case 'run_summary':
+        // Rich end-of-run summary
+        console.log(chalk.blue('\n5. Summary'))
+        console.log(chalk.gray(`   Networks: ${event.data.networkCount}, Jobs: ${event.data.jobCount}`))
+        console.log(chalk.green(`   ✓ Success: ${event.data.successCount}`))
+        if (event.data.skippedCount > 0) console.log(chalk.yellow(`   ↪ Skipped: ${event.data.skippedCount}`))
+        if (event.data.failedCount > 0) console.log(chalk.red(`   ✗ Failed: ${event.data.failedCount}`))
+        if (Array.isArray(event.data.keyContracts) && event.data.keyContracts.length > 0) {
+          console.log(chalk.gray('   Key contracts:'))
+          for (const c of event.data.keyContracts) {
+            console.log(chalk.gray(`     - ${c.job}.${c.action}: ${c.address}`))
+          }
+        }
         break
 
       case 'job_execution_failed':

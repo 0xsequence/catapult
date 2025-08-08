@@ -19,6 +19,7 @@ interface RunOptions {
   failEarly: boolean
   noPostCheckConditions: boolean
   flatOutput: boolean
+  summary: boolean
 }
  
 export function makeRunCommand(): Command {
@@ -32,6 +33,7 @@ export function makeRunCommand(): Command {
     .option('--fail-early', 'Stop execution as soon as any job fails. Default: false', false)
     .option('--no-post-check-conditions', 'Skip post-execution check of skip conditions. Default: false (post-check enabled)', false)
     .option('--flat-output', 'Write output files in a single flat directory instead of mirroring the jobs directory structure. Default: false', false)
+    .option('--no-summary', 'Hide final summary at the end of the run. Default: show', false)
     .option('--run-deprecated', 'Allow running jobs marked as deprecated. By default deprecated jobs are skipped unless explicitly targeted.', false)
 
   projectOption(run)
@@ -104,6 +106,7 @@ export function makeRunCommand(): Command {
         etherscanApiKey,
         failEarly: options.failEarly,
         noPostCheckConditions: options.noPostCheckConditions,
+        showSummary: options.summary !== false,
         loaderOptions: {
           loadStdTemplates: options.std !== false
         },

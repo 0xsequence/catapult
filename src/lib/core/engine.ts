@@ -1413,29 +1413,40 @@ export class ExecutionEngine {
    * Returns true on first successful check; otherwise waits delayMs and retries up to retries times.
    */
   private async retryBooleanCheck(checkFn: () => Promise<boolean>, retries: number = 3, delayMs: number = 2000): Promise<boolean> {
-    for (let attempt = 0; attempt <= retries; attempt++) {
+    // Throttle debug logging: log first, 25%, 50%, 75%, and final attempt
+    const milestones = new Set<number>()
+    const total = retries + 1
+    milestones.add(1)
+    milestones.add(Math.max(1, Math.floor(total * 0.25)))
+    milestones.add(Math.max(1, Math.floor(total * 0.5)))
+    milestones.add(Math.max(1, Math.floor(total * 0.75)))
+    milestones.add(total)
+
+    for (let attempt = 0; attempt < total; attempt++) {
       try {
         const result = await checkFn()
         if (result) {
           return true
         }
-        // Log attempt failure at debug level
-        this.events.emitEvent({
-          type: 'debug_info',
-          level: 'debug',
-          data: {
-            message: `Post-execution check returned false (attempt ${attempt + 1}/${retries + 1}).`
-          }
-        })
+        if (milestones.has(attempt + 1)) {
+          this.events.emitEvent({
+            type: 'debug_info',
+            level: 'debug',
+            data: {
+              message: `Post-execution check returned false (attempt ${attempt + 1}/${total}).`
+            }
+          })
+        }
       } catch (err) {
-        // Log unexpected errors but continue retrying
-        this.events.emitEvent({
-          type: 'debug_info',
-          level: 'debug',
-          data: {
-            message: `Post-execution check threw error (attempt ${attempt + 1}/${retries + 1}): ${err instanceof Error ? err.message : String(err)}`
-          }
-        })
+        if (milestones.has(attempt + 1)) {
+          this.events.emitEvent({
+            type: 'debug_info',
+            level: 'debug',
+            data: {
+              message: `Post-execution check threw error (attempt ${attempt + 1}/${total}): ${err instanceof Error ? err.message : String(err)}`
+            }
+          })
+        }
       }
       if (attempt < retries) {
         await new Promise(res => setTimeout(res, delayMs))

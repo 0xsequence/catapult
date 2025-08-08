@@ -48,6 +48,9 @@ export interface DeployerOptions {
 
   /** Optional: Allow running jobs marked as deprecated when true. */
   runDeprecated?: boolean
+
+  /** Optional: Show end-of-run summary (default: true). */
+  showSummary?: boolean
 }
 
 /**
@@ -60,6 +63,7 @@ export class Deployer {
   public readonly events: DeploymentEventEmitter
   private readonly loader: ProjectLoader
   private readonly noPostCheckConditions: boolean
+  private readonly showSummary: boolean
   
   // Store both successful and failed execution results
   private readonly results = new Map<string, {
@@ -74,6 +78,7 @@ export class Deployer {
     this.events = options.eventEmitter || deploymentEvents
     this.loader = new ProjectLoader(options.projectRoot, options.loaderOptions)
     this.noPostCheckConditions = options.noPostCheckConditions ?? false
+    this.showSummary = options.showSummary !== false
   }
 
 
@@ -261,6 +266,11 @@ export class Deployer {
       // 5. Write results to output files.
       await this.writeOutputFiles()
 
+      // Emit end-of-run summary before final status
+      if (this.showSummary) {
+        this.emitRunSummary(hasFailures)
+      }
+
       // Check if any jobs failed and exit with error if so
       if (hasFailures) {
         const error = new Error('One or more jobs failed during execution')
@@ -291,6 +301,58 @@ export class Deployer {
       // Re-throw to allow CLI to exit with a non-zero code
       throw error
     }
+  }
+
+  /**
+   * Emit a concise run summary event for the CLI to render at the end.
+   */
+  private emitRunSummary(hasFailures: boolean): void {
+    // Compute counts
+    let jobCount = this.results.size
+    let successCount = 0
+    let failedCount = 0
+    let skippedCount = 0
+
+    // Detect skipped by comparing planned jobs across networks vs executed entries
+    // Here we approximate: an entry exists per job and per network outcome. We count
+    // successes/errors; skips were emitted as events during execution and are not persisted
+    // in results. We cannot perfectly reconstruct skipped count without tracking, so we
+    // expose it as 0 for now; could be improved by tracking per-network skip events.
+
+    for (const [, result] of this.results) {
+      for (const [, netResult] of result.outputs) {
+        if (netResult.status === 'success') successCount++
+        else failedCount++
+      }
+    }
+
+    // Collect key contract addresses from outputs for quick visibility
+    const keyContracts: Array<{ job: string; action: string; address: string }> = []
+    for (const [, result] of this.results) {
+      for (const [, netResult] of result.outputs) {
+        if (netResult.status !== 'success') continue
+        const outputs = netResult.data as Map<string, unknown>
+        for (const [k, v] of outputs) {
+          if (k.endsWith('.address') && typeof v === 'string') {
+            const action = k.split('.')[0]
+            keyContracts.push({ job: result.job.name, action, address: v })
+          }
+        }
+      }
+    }
+
+    this.events.emitEvent({
+      type: 'run_summary',
+      level: hasFailures ? 'warn' : 'info',
+      data: {
+        networkCount: this.options.networks.length,
+        jobCount,
+        successCount,
+        failedCount,
+        skippedCount,
+        keyContracts: keyContracts.slice(0, 10) // cap to avoid spam
+      }
+    } as any)
   }
 
   /**

@@ -227,6 +227,17 @@ export interface TransactionConfirmedEvent extends BaseEvent {
   }
 }
 
+// Contract lifecycle events
+export interface ContractCreatedEvent extends BaseEvent {
+  type: 'contract_created'
+  level: 'info'
+  data: {
+    contractAddress: string
+    txHash: string
+    blockNumber: number
+  }
+}
+
 // Output events
 export interface OutputStoredEvent extends BaseEvent {
   type: 'output_stored'
@@ -270,6 +281,24 @@ export interface MissingNetworkConfigWarningEvent extends BaseEvent {
   level: 'warn'
   data: {
     missingChainIds: number[]
+  }
+}
+
+export interface ContextDisposalWarningEvent extends BaseEvent {
+  type: 'context_disposal_warning'
+  level: 'warn'
+  data: {
+    jobName: string
+    networkName: string
+    error: string
+  }
+}
+
+export interface DeprecatedJobsSkippedEvent extends BaseEvent {
+  type: 'deprecated_jobs_skipped'
+  level: 'warn'
+  data: {
+    jobs: string[] | { name: string }[]
   }
 }
 
@@ -378,6 +407,20 @@ export interface VerificationRetryEvent extends BaseEvent {
   }
 }
 
+// End-of-run summary
+export interface RunSummaryEvent extends BaseEvent {
+  type: 'run_summary'
+  level: 'info' | 'warn'
+  data: {
+    networkCount: number
+    jobCount: number
+    successCount: number
+    failedCount: number
+    skippedCount: number
+    keyContracts: Array<{ job: string; action: string; address: string }>
+  }
+}
+
 // Union type of all events
 export type DeploymentEvent =
   | DeploymentStartedEvent
@@ -404,12 +447,15 @@ export type DeploymentEvent =
   | PrimitiveActionEvent
   | TransactionSentEvent
   | TransactionConfirmedEvent
+  | ContractCreatedEvent
   | OutputStoredEvent
   | OutputFileWrittenEvent
   | NoOutputsEvent
   | OutputWritingStartedEvent
   | DuplicateArtifactWarningEvent
   | MissingNetworkConfigWarningEvent
+  | ContextDisposalWarningEvent
+  | DeprecatedJobsSkippedEvent
   | NetworkStartedEvent
   | UnhandledRejectionEvent
   | UncaughtExceptionEvent
@@ -420,3 +466,4 @@ export type DeploymentEvent =
   | VerificationCompletedEvent
   | VerificationFailedEvent
   | VerificationRetryEvent 
+  | RunSummaryEvent
