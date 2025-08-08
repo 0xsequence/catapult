@@ -504,13 +504,21 @@ export class Deployer {
     const jobWithNetworkFilters = job as Job & { only_networks?: number[]; skip_networks?: number[]; min_evm_version?: string }
 
     // Check only_networks: if present, the job only runs on these networks.
+    // If the network is NOT in only_networks, skip immediately. If it IS included, continue to other checks (e.g., min_evm_version).
     if (jobWithNetworkFilters.only_networks && jobWithNetworkFilters.only_networks.length > 0) {
-      return !jobWithNetworkFilters.only_networks.includes(network.chainId)
+      if (!jobWithNetworkFilters.only_networks.includes(network.chainId)) {
+        return true
+      }
+      // Network allowed by only_networks → fall through to min_evm_version checks
     }
     
     // Check skip_networks: if present, the job skips these networks.
+    // Only skip if the current network is explicitly listed; otherwise continue evaluating other constraints.
     if (jobWithNetworkFilters.skip_networks && jobWithNetworkFilters.skip_networks.length > 0) {
-      return jobWithNetworkFilters.skip_networks.includes(network.chainId)
+      if (jobWithNetworkFilters.skip_networks.includes(network.chainId)) {
+        return true
+      }
+      // Not in skip list → fall through to min_evm_version checks
     }
     
     // Check minimal EVM hardfork requirement if present on job and network declares an EVM version
