@@ -17,6 +17,7 @@ Catapult addresses the challenge of managing complex contract deployment scenari
 - **✅ Skip Conditions**: Smart conditional logic to avoid redundant deployments
 - **🔍 Validation & Dry Run**: Validate configurations and preview deployment plans without execution
 - **📊 Event System**: Rich event system for monitoring deployment progress and debugging
+- **🧾 Multi-platform Verification**: Verify on Etherscan v2 and Sourcify (tries all configured platforms by default)
 
 ## Installation
 
@@ -82,10 +83,9 @@ Create a `networks.yaml` file in your project root to define target networks:
 The `supports` field is optional and specifies which verification platforms are available for the network. Currently supported platforms:
 
 - `etherscan_v2`: Etherscan v2 verification API (supports Ethereum, Polygon, Arbitrum, BSC, etc.)
+- `sourcify`: Sourcify verification (no API key required)
 
-The `gasLimit` field is optional and specifies a fixed gas limit to use for all transactions on this network. If not specified, the system will use ethers.js default gas estimation.
-
-If a network doesn't specify `supports` or doesn't include a verification platform, verification jobs will be silently skipped on that network.
+If `supports` is omitted, all built-in platforms are allowed for that network. Etherscan requires an API key to be considered “configured”; Sourcify requires no configuration. The `gasLimit` field is optional and specifies a fixed gas limit to use for all transactions on this network. If not specified, the system will use ethers.js default gas estimation.
 
 ### Job Definitions
 
@@ -203,6 +203,42 @@ Deploy to specific networks:
 catapult run --network 1 42161 --private-key YOUR_PRIVATE_KEY
 ```
 
+Common options (run):
+
+- `-p, --project <path>`: Project root directory (defaults to current directory)
+- `--dotenv <path>`: Load environment variables from a custom .env file (run command only)
+- `-n, --network <chainIds...>`: One or more chain IDs to target
+- `--rpc-url <url>`: Run against a single custom RPC; chain ID is auto-detected (no networks.yaml required)
+- `-k, --private-key <key>`: EOA private key (or set `PRIVATE_KEY`)
+- `--etherscan-api-key <key>`: Etherscan API key (or set `ETHERSCAN_API_KEY`)
+- `--fail-early`: Stop as soon as any job fails
+- `--no-post-check-conditions`: Skip post-execution evaluation of skip conditions
+- `--flat-output`: Write outputs in a single flat `output/` directory (do not mirror `jobs/` structure)
+- `--no-summary`: Hide the end-of-run summary
+- `--run-deprecated`: Allow running jobs marked `deprecated: true` (otherwise skipped unless explicitly targeted)
+- `--no-std`: Do not load built-in standard templates
+- `-v, --verbose` (repeatable): Increase logging verbosity (`-v`, `-vv`, `-vvv`)
+
+Examples:
+
+- Using a custom RPC (no networks.yaml needed):
+
+```bash
+catapult run --rpc-url http://127.0.0.1:8545 -k $PRIVATE_KEY
+```
+
+- Write outputs flat instead of mirroring `jobs/` folders:
+
+```bash
+catapult run --flat-output -k $PRIVATE_KEY
+```
+
+- Run a deprecated job explicitly:
+
+```bash
+catapult run legacy-job --run-deprecated -k $PRIVATE_KEY
+```
+
 ### Validation and Dry Run
 
 Validate your configuration without executing transactions:
@@ -253,6 +289,39 @@ List only non-test networks:
 
 ```bash
 catapult list networks --only-non-testnets
+```
+
+List constants (top-level and per-job):
+
+```bash
+catapult list constants
+```
+
+Simple outputs for scripting:
+
+```bash
+# Names only, one per line
+catapult list networks --simple
+
+# Chain IDs only, one per line
+catapult list networks --simple-chain-ids
+```
+
+Utilities:
+
+```bash
+# Convert chain ID to network name
+catapult utils chain-id-to-name 42161 -p ./my-project
+```
+
+Etherscan helpers:
+
+```bash
+# Fetch ABI from Etherscan v2
+catapult etherscan abi -n 1 -a 0xdAC17F958D2ee523a2206206994597C13D831ec7 --etherscan-api-key $ETHERSCAN_API_KEY
+
+# Fetch source (standard-json or flattened) from Etherscan v2
+catapult etherscan source -n 1 -a 0xdAC17F958D2ee523a2206206994597C13D831ec7 --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
 ## Built-in Actions
@@ -309,7 +378,29 @@ Example with complex data:
       enabled: true
 ```
 
-This would make `config.value.endpoint`, `config.value.timeout`, and `config.value.enabled` available for use in subsequent actions.
+This makes `config.value.endpoint`, `config.value.timeout`, and `config.value.enabled` available for use in subsequent actions.
+
+### `create-contract`
+Create a contract by sending its creation bytecode (and optional value):
+
+```yaml
+- type: "create-contract"
+  name: "deploy-foo"
+  arguments:
+    data: "{{Contract(Foo).creationCode}}"
+    gasMultiplier: 1.2
+```
+
+### `json-request`
+Make an HTTP JSON request and use the result downstream:
+
+```yaml
+- type: "json-request"
+  name: "get-config"
+  arguments:
+    url: "https://example.com/config.json"
+    method: "GET"
+```
 
 ## Value Resolvers
 
@@ -338,6 +429,17 @@ creationCode:
     creationCode: "{{Contract(MyContract).creationCode}}"
     types: ["address", "uint256"]
     values: ["{{factory.address}}", "100"]
+```
+
+### `abi-pack`
+Pack values per ABI types into bytes:
+
+```yaml
+payload:
+  type: "abi-pack"
+  arguments:
+    types: ["address", "uint256"]
+    values: ["{{recipient}}", "{{amount}}"]
 ```
 
 ### `compute-create2`
@@ -386,6 +488,16 @@ result:
 ```
 
 ### `verify-contract`
+### `read-json`
+Read a value from a JSON object at a given path:
+
+```yaml
+tokenAddress:
+  type: "read-json"
+  arguments:
+    json: "{{get-config.response}}"
+    path: "tokens.usdc.address"
+```
 Verify deployed contracts on block explorers:
 
 ```yaml
@@ -427,7 +539,10 @@ Catapult includes several standard templates:
 
 - **`sequence-universal-deployer-2`**: Deploy contracts using Sequence's Universal Deployer v2
 - **`nano-universal-deployer`**: Deploy contracts using the Nano Universal Deployer
+- **`erc-2470`** and raw variant: CREATE2 Deployer (singleton factory)
+- **`assured-deployment`**: Helper to ensure a contract is deployed at a specific address
 - **`min-balance`**: Ensure minimum balance for any given address
+- Raw building blocks: `raw-sequence-universal-deployer-2`, `raw-nano-universal-deployer`, `raw-erc-2470`
 
 ## Contract Resolution
 
@@ -505,10 +620,20 @@ This format ensures:
 - **Clear error tracking**: Individual network failures are clearly documented
 - **Scalability**: The format remains readable even with deployments across dozens of networks
 
+Output layout and selection:
+
+- By default, output files mirror the structure under `jobs/` (e.g., `jobs/core/job.yaml` -> `output/core/job.json`). Use `--flat-output` to write all job JSON files directly under `output/`.
+- You can control which action outputs are persisted per job using the `output` flag on actions:
+  - `output: true` to include all outputs for that action
+  - `output: false` to exclude outputs for that action
+  - `output: { key1: true, key2: true }` to include only specific keys from that action (e.g., `txHash`, `address`)
+
 ## Environment Variables
 
-- `PRIVATE_KEY`: Signer private key (alternative to `--private-key` flag)
-- `PROJECT_ROOT`: Project root directory (alternative to `--project` flag)
+- `PRIVATE_KEY`: Signer private key (alternative to `--private-key`)
+- `ETHERSCAN_API_KEY`: API key for Etherscan v2 verification (alternative to `--etherscan-api-key`)
+
+You can load environment variables from a file using `--dotenv <path>` on the `run` command (defaults to `.env` in the current directory when provided).
 
 ## Development
 
@@ -535,3 +660,7 @@ npm run watch
 - `npm run build` - Compile TypeScript to JavaScript
 - `npm run dev` - Run the CLI in development mode with ts-node
 - `npm run watch`
+
+---
+
+_Co-authored with Sonet-4, GLM-4.5-Air, and GPT-5. This project was vibe-coded._
