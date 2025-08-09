@@ -114,8 +114,8 @@ export function makeUtilsCommand(): Command {
                 let address: string | undefined
                 if (typeof value === 'string' && addressRegex.test(value)) {
                   address = value
-                } else if (value && typeof value === 'object' && typeof (value as { address?: unknown }).address === 'string' && addressRegex.test((value as { address?: string }).address)) {
-                  address = (value as { address?: string }).address
+                } else if (value && typeof value === 'object' && 'address' in value && typeof value.address === 'string' && addressRegex.test(value.address)) {
+                  address = value.address
                 }
                 if (!address) continue
                 rows.push({
