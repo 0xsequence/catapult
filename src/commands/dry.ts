@@ -6,12 +6,13 @@ import { DependencyGraph } from '../lib/core/graph'
 import { projectOption, noStdOption, verbosityOption } from './common'
 import { validateContractReferences, extractUsedContractReferences } from '../lib/validation/contract-references'
 import { setVerbosity } from '../index'
+import { resolveSelectedChainIds } from '../lib/network-selection'
 import { Template } from '../lib/types'
 
 interface DryRunOptions {
   project: string
   std: boolean
-  network?: string[]
+  network?: string
   verbose: number
 }
 
@@ -49,7 +50,7 @@ export function makeDryRunCommand(): Command {
   const dryRun = new Command('dry-run')
     .description('Validate project configuration and show execution plan without running transactions')
     .argument('[jobs...]', 'Specific job names to validate (and their dependencies).')
-    .option('-n, --network <chainIds...>', 'One or more network chain IDs to simulate running on.')
+    .option('-n, --network <selectors>', 'Comma-separated network selectors (by chain ID or name).')
   
   projectOption(dryRun)
   noStdOption(dryRun)
@@ -171,7 +172,7 @@ export function makeDryRunCommand(): Command {
       console.log(chalk.green('   - All constant references are valid.'))
       
       const runJobs = jobs.length > 0 ? jobs : undefined
-      const runOnNetworks = options.network?.map(Number)
+      const runOnNetworks = resolveSelectedChainIds(options.network, allNetworks)
 
       const jobsToRun = new Set<string>()
       if (runJobs) {

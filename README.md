@@ -348,14 +348,17 @@ catapult run job1 job? -k $PRIVATE_KEY
 Deploy to specific networks:
 
 ```bash
-catapult run --network 1 42161 --private-key YOUR_PRIVATE_KEY
+# Comma-separated, supports chain IDs and network names (name matches include all networks with that name)
+catapult run --network 1,42161 --private-key YOUR_PRIVATE_KEY
+catapult run --network mainnet --private-key YOUR_PRIVATE_KEY       # all networks named "Mainnet"
+catapult run --network mainnet,polygon -k $PRIVATE_KEY core-contracts
 ```
 
 Common options (run):
 
 - `-p, --project <path>`: Project root directory (defaults to current directory)
 - `--dotenv <path>`: Load environment variables from a custom .env file (run command only)
-- `-n, --network <chainIds...>`: One or more chain IDs to target
+- `-n, --network <selectors>`: Comma-separated selectors by chain ID or network name
 - `--rpc-url <url>`: Run against a single custom RPC; chain ID is auto-detected (no networks.yaml required)
 - `-k, --private-key <key>`: EOA private key (or set `PRIVATE_KEY`)
 - `--etherscan-api-key <key>`: Etherscan API key (or set `ETHERSCAN_API_KEY`)
@@ -403,6 +406,8 @@ Validate specific jobs:
 
 ```bash
 catapult dry-run core-contracts --network 1
+catapult dry-run core-contracts --network polygon
+catapult dry-run core-contracts --network mainnet,42161
 ```
 
 ### Listing Resources
@@ -471,9 +476,11 @@ Etherscan helpers:
 ```bash
 # Fetch ABI from Etherscan v2
 catapult etherscan abi -n 1 -a 0xdAC17F958D2ee523a2206206994597C13D831ec7 --etherscan-api-key $ETHERSCAN_API_KEY
+catapult etherscan abi -n mainnet -a 0xdAC17F... --etherscan-api-key $ETHERSCAN_API_KEY
 
 # Fetch source (standard-json or flattened) from Etherscan v2
 catapult etherscan source -n 1 -a 0xdAC17F958D2ee523a2206206994597C13D831ec7 --etherscan-api-key $ETHERSCAN_API_KEY
+catapult etherscan source -n mainnet -a 0xdAC17F... --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
 ## Built-in Actions

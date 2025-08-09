@@ -1,6 +1,7 @@
 import { Command } from 'commander'
 import chalk from 'chalk'
 import { loadNetworks } from '../lib/network-loader'
+import { resolveSingleChainId } from '../lib/network-selection'
 import { projectOption, verbosityOption } from './common'
 import { setVerbosity } from '../index'
 import * as solc from 'solc'
@@ -120,7 +121,7 @@ export function makeEtherscanCommand(): Command {
     verbosityOption(cmd)
     cmd
       .option('--etherscan-api-key <key>', 'Etherscan API key. Can also be set via ETHERSCAN_API_KEY env var.')
-      .option('-n, --network <chainId>', 'Target network chain ID (required to select proper Etherscan endpoint)')
+     .option('-n, --network <selector>', 'Target network (chain ID or name). When a name matches multiple networks, the first match is used.')
       .option('-a, --address <address>', 'Contract address to query', '')
       .option('--raw', 'Print raw response (no pretty JSON). Useful for piping.', false)
     return cmd
@@ -147,22 +148,15 @@ export function makeEtherscanCommand(): Command {
 
       // Determine chainId
       let chainId: number | undefined
+      const networks = await loadNetworks(options.project)
       if (options.network) {
-        const parsed = Number(options.network)
-        if (Number.isNaN(parsed)) {
-          console.error(chalk.red('Invalid --network value. Must be a chain ID number.'))
-          process.exit(1)
-        }
-        chainId = parsed
-      } else {
-        // If network not provided, try to infer: if only one network configured, use it
-        const networks = await loadNetworks(options.project)
-        if (networks.length === 1) {
-          chainId = networks[0].chainId
-        } else {
-          console.error(chalk.red('Please provide --network <chainId> (multiple or zero networks configured).'))
-          process.exit(1)
-        }
+        chainId = resolveSingleChainId(options.network, networks)
+      } else if (networks.length === 1) {
+        chainId = networks[0].chainId
+      }
+      if (!chainId) {
+        console.error(chalk.red('Please provide --network <selector>. When multiple networks are configured, selection is required.'))
+        process.exit(1)
       }
 
       const result = await fetchFromEtherscan(chainId!, apiKey, options.address, 'getabi')
@@ -201,21 +195,15 @@ export function makeEtherscanCommand(): Command {
 
       // Determine chainId
       let chainId: number | undefined
+      const networks2 = await loadNetworks(options.project)
       if (options.network) {
-        const parsed = Number(options.network)
-        if (Number.isNaN(parsed)) {
-          console.error(chalk.red('Invalid --network value. Must be a chain ID number.'))
-          process.exit(1)
-        }
-        chainId = parsed
-      } else {
-        const networks = await loadNetworks(options.project)
-        if (networks.length === 1) {
-          chainId = networks[0].chainId
-        } else {
-          console.error(chalk.red('Please provide --network <chainId> (multiple or zero networks configured).'))
-          process.exit(1)
-        }
+        chainId = resolveSingleChainId(options.network, networks2)
+      } else if (networks2.length === 1) {
+        chainId = networks2[0].chainId
+      }
+      if (!chainId) {
+        console.error(chalk.red('Please provide --network <selector>. When multiple networks are configured, selection is required.'))
+        process.exit(1)
       }
 
       const result = await fetchFromEtherscan(chainId!, apiKey, options.address, 'getsourcecode') as EtherscanSourceEnvelope

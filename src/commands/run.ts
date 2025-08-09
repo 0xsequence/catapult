@@ -5,12 +5,13 @@ import { detectNetworkFromRpc, isValidRpcUrl } from '../lib/network-utils'
 import { deploymentEvents } from '../lib/events'
 import { Network } from '../lib/types'
 import { projectOption, dotenvOption, noStdOption, verbosityOption, loadDotenv } from './common'
+import { resolveSelectedChainIds } from '../lib/network-selection'
 import { setVerbosity } from '../index'
 
 interface RunOptions {
   project: string
   privateKey?: string
-  network?: string[]
+  network?: string
   rpcUrl?: string
   dotenv?: string
   std: boolean
@@ -27,7 +28,7 @@ export function makeRunCommand(): Command {
     .description('Run deployment jobs on specified networks')
     .argument('[jobs...]', 'Specific job names or patterns to run (and their dependencies). Supports wildcards like "sequence/*" or "job?". If not provided, all jobs are run.')
     .option('-k, --private-key <key>', 'Signer private key. Can also be set via PRIVATE_KEY env var.')
-    .option('-n, --network <chainIds...>', 'One or more network chain IDs to run on. If not provided, runs on all configured networks.')
+    .option('-n, --network <selectors>', 'Comma-separated network selectors (by chain ID or name). If not provided, runs on all configured networks.')
     .option('--rpc-url <url>', 'Custom RPC URL to run on. The system will automatically detect chainId and network information. This overrides networks.yaml configuration.')
     .option('--etherscan-api-key <key>', 'Etherscan API key for contract verification. Can also be set via ETHERSCAN_API_KEY env var.')
     .option('--fail-early', 'Stop execution as soon as any job fails. Default: false', false)
@@ -97,12 +98,13 @@ export function makeRunCommand(): Command {
         throw new Error('No networks configured. Please create a networks.yaml file in your project root or use --rpc-url to specify a custom network.')
       }
 
+      const selectedChainIds = resolveSelectedChainIds(options.network, networks)
       const deployerOptions: DeployerOptions = {
         projectRoot,
         privateKey,
         networks,
         runJobs: jobs.length > 0 ? jobs : undefined,
-        runOnNetworks: options.network?.map(Number),
+        runOnNetworks: selectedChainIds,
         etherscanApiKey,
         failEarly: options.failEarly,
         noPostCheckConditions: options.noPostCheckConditions,
