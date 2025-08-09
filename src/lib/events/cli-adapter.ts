@@ -202,10 +202,21 @@ export class CLIEventAdapter {
 
       case 'deployment_failed':
         console.error(chalk.red.bold('\n💥 DEPLOYMENT FAILED!'))
-        if (event.data.stack) {
-          console.error(chalk.red(event.data.stack))
-        } else {
-          console.error(chalk.red(event.data.error))
+        // Show concise failed jobs table if present
+        const failedJobs = (event as any).data?.failedJobs as Array<{ jobName: string; networkName: string; chainId: number; error: string }> | undefined
+        if (Array.isArray(failedJobs) && failedJobs.length > 0) {
+          console.error(chalk.red('   ✗ Failed jobs:'))
+          for (const f of failedJobs) {
+            const where = `${f.networkName} (ChainID: ${f.chainId})`
+            console.error(chalk.red(`     - ${f.jobName} on ${where}`))
+            console.error(chalk.red(`       Error: ${f.error}`))
+          }
+        }
+        // Always print the top-level error and stack last
+        if ((event as any).data?.stack) {
+          console.error(chalk.red((event as any).data.stack))
+        } else if ((event as any).data?.error) {
+          console.error(chalk.red((event as any).data.error))
         }
         break
 

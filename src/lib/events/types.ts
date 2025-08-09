@@ -29,6 +29,12 @@ export interface DeploymentFailedEvent extends BaseEvent {
   data: {
     error: string
     stack?: string
+    failedJobs?: Array<{
+      jobName: string
+      networkName: string
+      chainId: number
+      error: string
+    }>
   }
 }
 

@@ -316,12 +316,32 @@ export class Deployer {
       // Check if any jobs failed and exit with error if so
       if (hasFailures) {
         const error = new Error('One or more jobs failed during execution')
+
+        // Build a flat list of failed jobs with network context and error messages
+        const failedJobs: Array<{ jobName: string; networkName: string; chainId: number; error: string }> = []
+        for (const [, result] of this.results) {
+          const job = result.job
+          for (const [chainId, netResult] of result.outputs) {
+            if (netResult.status === 'error') {
+              // Resolve network name from configured networks (fallback to chainId if missing)
+              const network = this.options.networks.find(n => n.chainId === chainId)
+              failedJobs.push({
+                jobName: job.name,
+                networkName: network?.name || `chain-${chainId}`,
+                chainId,
+                error: String(netResult.data)
+              })
+            }
+          }
+        }
+
         this.events.emitEvent({
           type: 'deployment_failed',
           level: 'error',
           data: {
             error: error.message,
-            stack: error.stack
+            stack: error.stack,
+            failedJobs
           }
         })
         throw error
