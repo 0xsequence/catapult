@@ -22,7 +22,7 @@ function getEtherscanApiUrl(chainId: number): string {
 }
 
 type EtherscanSourceEnvelope = {
-  rawResult: Record<string, any>
+  rawResult: Record<string, unknown>
   parsedSource: unknown // standard-json object or flattened string
 }
 
@@ -81,7 +81,7 @@ async function fetchFromEtherscan(
     if (!Array.isArray(data.result) || data.result.length === 0) {
       throw new Error('Empty result from Etherscan')
     }
-    const first = (data.result as Array<{ SourceCode?: string }>)[0] as Record<string, any>
+    const first = (data.result as Array<{ SourceCode?: string }>)[0] as Record<string, unknown>
     const sourceCodeRaw = first?.SourceCode as string
     if (typeof sourceCodeRaw !== 'string' || sourceCodeRaw.length === 0) {
       throw new Error('No SourceCode found on Etherscan')
@@ -228,18 +228,29 @@ export function makeEtherscanCommand(): Command {
       const optimizationUsed = (raw?.OptimizationUsed as string | undefined) || ''
       const runsStr = (raw?.Runs as string | undefined) || ''
       const evmVersionRaw = (raw?.EVMVersion as string | undefined) || ''
-      const isStandardJson = parsed && typeof parsed === 'object' && (parsed as any).language && (parsed as any).sources
+      const isStandardJson = !!(parsed && typeof parsed === 'object' && 'language' in parsed && 'sources' in parsed)
 
       // If we have a standard JSON input, use it; otherwise build one from flattened source
-      let input: any
+      type SolcInput = {
+        language: string
+        sources: Record<string, { content?: string }>
+        settings?: {
+          optimizer?: { enabled?: boolean; runs?: number }
+          evmVersion?: string
+          outputSelection?: Record<string, Record<string, string[]>>
+          viaIR?: boolean
+          libraries?: Record<string, Record<string, string>>
+        }
+      }
+      let input: SolcInput
       if (isStandardJson) {
-        input = { ...(parsed as any) }
+        input = parsed as SolcInput
         // Ensure outputSelection includes required entries to get creation bytecode and metadata
-        const currentSel = input.settings?.outputSelection || {}
-        const mergedSel = {
+        const currentSel = (input.settings?.outputSelection ?? {}) as Record<string, Record<string, string[]>>
+        const mergedSel: Record<string, Record<string, string[]>> = {
           '*': {
-            '*': Array.from(new Set([
-              ...(currentSel?.['*']?.['*'] || []),
+            '*': Array.from(new Set<string>([
+              ...((currentSel?.['*']?.['*']) || []),
               'abi',
               'evm.bytecode',
               'evm.deployedBytecode',
@@ -295,8 +306,8 @@ export function makeEtherscanCommand(): Command {
       if (versionTag) {
         outputRaw = await new Promise<string>((resolve, reject) => {
           // @ts-ignore - loadRemoteVersion exists in solc js
-          solc.loadRemoteVersion(versionTag, (err: any, specificSolc: any) => {
-            if (err || !specificSolc) return reject(err || new Error('Failed to load solc version'))
+          solc.loadRemoteVersion(versionTag, (err: unknown, specificSolc: { compile: (input: string) => string } | undefined) => {
+            if (err || !specificSolc) return reject((err as Error) || new Error('Failed to load solc version'))
             try {
               resolve(specificSolc.compile(solcInput))
             } catch (e) {
@@ -314,7 +325,8 @@ export function makeEtherscanCommand(): Command {
 
       // Determine solc versions
       const solcLongVersion = (output?.compiler?.version as string | undefined) || (compilerVersion ? compilerVersion.replace(/^v/, '') : undefined)
-      const solcVersion = (solcLongVersion || '').split('+')[0] || (typeof (solc as any).version === 'function' ? (solc as any).version() : 'unknown')
+      const solcMaybe = solc as unknown as { version?: () => string }
+      const solcVersion = (solcLongVersion || '').split('+')[0] || (typeof solcMaybe.version === 'function' ? solcMaybe.version() : 'unknown')
 
       // Augment settings with defaults similar to reference format
       const basePath = process.cwd()

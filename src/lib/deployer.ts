@@ -208,12 +208,19 @@ export class Deployer {
             // Emit signer info once per network using the first job's context
             if (!signerInfoPrintedForChain.has(network.chainId)) {
               try {
-                const getSignerFn = (context as unknown as { getResolvedSigner?: () => Promise<any>; signer?: any }).getResolvedSigner
-                const signer = getSignerFn ? await getSignerFn.call(context) : (context as unknown as { signer?: any }).signer
+                const getSignerFn = (context as unknown as {
+                  getResolvedSigner?: () => Promise<{ getAddress: () => Promise<string> }>
+                  signer?: { getAddress: () => Promise<string> }
+                }).getResolvedSigner
+                const signer = getSignerFn
+                  ? await getSignerFn.call(context)
+                  : (context as unknown as { signer?: { getAddress: () => Promise<string> } }).signer
                 if (signer && typeof signer.getAddress === 'function') {
                   const address = await signer.getAddress()
                   // provider may not exist on mocked contexts; guard for it
-                  const provider = (context as unknown as { provider?: { getBalance: (addr: string) => Promise<any> } }).provider
+                  const provider = (context as unknown as {
+                    provider?: { getBalance: (addr: string) => Promise<bigint | number | { toString: () => string }> }
+                  }).provider
                   if (provider && typeof provider.getBalance === 'function') {
                     const balanceBn = await provider.getBalance(address)
                     const balanceWei = balanceBn.toString()
