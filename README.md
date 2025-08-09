@@ -1,5 +1,7 @@
 # Catapult
 
+[![CI](https://github.com/0xsequence/catapult/actions/workflows/ci.yml/badge.svg)](https://github.com/0xsequence/catapult/actions/workflows/ci.yml)
+
 **Catapult** is a powerful Ethereum contract deployment and management framework designed to simplify the orchestration of complex contract deployments across multiple blockchain networks. Built with TypeScript and Node.js, it provides a declarative YAML-based approach to defining deployment jobs, templates, and dependencies.
 
 ## Overview
@@ -21,6 +23,33 @@ Catapult addresses the challenge of managing complex contract deployment scenari
 
 ## Installation
 
+### From npm (recommended)
+
+Available on npm as `@0xsequence/catapult`.
+
+Global install (provides the `catapult` CLI on your PATH):
+
+```bash
+npm install -g @0xsequence/catapult
+# or
+yarn global add @0xsequence/catapult
+# or
+pnpm add -g @0xsequence/catapult
+```
+
+Project-local install (use via npx or package.json scripts):
+
+```bash
+npm install -D @0xsequence/catapult
+# or
+yarn add -D @0xsequence/catapult
+# or
+pnpm add -D @0xsequence/catapult
+
+# then run
+npx catapult --help
+```
+
 ### From Source
 
 ```bash
@@ -31,10 +60,10 @@ npm run build
 npm link
 ```
 
-### Global Installation (when published)
+### Global Installation (from npm)
 
 ```bash
-npm install -g catapult
+npm install -g @0xsequence/catapult
 ```
 
 ## Project Structure
@@ -816,14 +845,6 @@ npm run watch
 ```
 
 ### Scripts
-<<<<<<< Current (Your changes)
 - `npm run build` - Compile TypeScript to JavaScript
 - `npm run dev` - Run the CLI in development mode with ts-node
-- `npm run watch`
-
----
-
-_Co-authored with Sonet-4, GLM-4.5-Air, and GPT-5. This project was vibe-coded._
-=======
-- `npm run build`
->>>>>>> Incoming (Background Agent changes)
+- `npm run watch` - Watch for changes
