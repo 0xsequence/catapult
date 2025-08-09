@@ -312,6 +312,22 @@ export interface NetworkStartedEvent extends BaseEvent {
   }
 }
 
+/**
+ * Emitted right after a network run starts to inform which address will be used
+ * to send transactions and its current balance.
+ */
+export interface NetworkSignerInfoEvent extends BaseEvent {
+  type: 'network_signer_info'
+  level: 'info'
+  data: {
+    networkName: string
+    chainId: number
+    address: string
+    balanceWei: string
+    balance: string // formatted in ETH
+  }
+}
+
 // Process error events
 export interface UnhandledRejectionEvent extends BaseEvent {
   type: 'unhandled_rejection'
@@ -457,6 +473,7 @@ export type DeploymentEvent =
   | ContextDisposalWarningEvent
   | DeprecatedJobsSkippedEvent
   | NetworkStartedEvent
+  | NetworkSignerInfoEvent
   | UnhandledRejectionEvent
   | UncaughtExceptionEvent
   | CLIErrorEvent

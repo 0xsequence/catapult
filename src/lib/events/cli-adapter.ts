@@ -48,7 +48,7 @@ export class CLIEventAdapter {
     const level0Events = new Set([
       'deployment_started', 'deployment_completed', 'deployment_failed',
       'job_started', 'job_completed', 'job_skipped', 'job_execution_failed',
-      'network_started',
+      'network_started', 'network_signer_info',
       'duplicate_artifact_warning', 'missing_network_config_warning',
       'unhandled_rejection', 'uncaught_exception', 'cli_error',
       'verification_failed'
@@ -113,6 +113,11 @@ export class CLIEventAdapter {
 
       case 'network_started':
         console.log(chalk.cyan.bold(`\nNetwork: ${event.data.networkName} (ChainID: ${event.data.chainId})`))
+        break
+
+      case 'network_signer_info':
+        console.log(chalk.gray(`        Sender: ${event.data.address}`))
+        console.log(chalk.gray(`        Balance: ${event.data.balance} ETH (${event.data.balanceWei} wei)`))
         break
 
       case 'job_started':

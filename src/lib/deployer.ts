@@ -158,6 +158,8 @@ export class Deployer {
       
       // Track if any jobs have failed
       let hasFailures = false
+      // Emit signer info once per network (chainId)
+      const signerInfoPrintedForChain = new Set<number>()
       
       for (const network of targetNetworks) {
         this.events.emitEvent({
@@ -168,7 +170,6 @@ export class Deployer {
             chainId: network.chainId
           }
         })
-        
         for (const jobName of jobsToRun) {
           const job = this.loader.jobs.get(jobName)!
           
@@ -204,6 +205,39 @@ export class Deployer {
               (context as unknown as { setJobConstants: (constants: unknown) => void }).setJobConstants(job.constants)
             }
             
+            // Emit signer info once per network using the first job's context
+            if (!signerInfoPrintedForChain.has(network.chainId)) {
+              try {
+                const getSignerFn = (context as unknown as { getResolvedSigner?: () => Promise<any>; signer?: any }).getResolvedSigner
+                const signer = getSignerFn ? await getSignerFn.call(context) : (context as unknown as { signer?: any }).signer
+                if (signer && typeof signer.getAddress === 'function') {
+                  const address = await signer.getAddress()
+                  // provider may not exist on mocked contexts; guard for it
+                  const provider = (context as unknown as { provider?: { getBalance: (addr: string) => Promise<any> } }).provider
+                  if (provider && typeof provider.getBalance === 'function') {
+                    const balanceBn = await provider.getBalance(address)
+                    const balanceWei = balanceBn.toString()
+                    const balanceEth = (Number(balanceBn) / 1e18).toString()
+                    this.events.emitEvent({
+                      type: 'network_signer_info',
+                      level: 'info',
+                      data: {
+                        networkName: network.name,
+                        chainId: network.chainId,
+                        address,
+                        balanceWei,
+                        balance: balanceEth
+                      }
+                    })
+                  }
+                }
+              } catch {
+                // ignore non-fatal signer info errors
+              } finally {
+                signerInfoPrintedForChain.add(network.chainId)
+              }
+            }
+
             // Populate context with outputs from previously executed dependent jobs
             this.populateContextWithDependentJobOutputs(job, context, network)
             
