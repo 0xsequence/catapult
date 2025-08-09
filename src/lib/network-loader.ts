@@ -37,7 +37,8 @@ function resolveRpcUrlTokens(rpcUrl: string): string {
     }
     const value = process.env[varName]
     if (typeof value === 'undefined') {
-      throw new Error(`Environment variable ${varName} is not set but is required for rpcUrl token replacement`)
+      // Default to empty string if missing
+      return ''
     }
     return value
   })

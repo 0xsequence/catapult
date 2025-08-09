@@ -152,7 +152,7 @@ https://node.url/something/my-secret-token
 ```
 
 Notes:
-- If an `{{RPC_*}}` placeholder is present and the corresponding environment variable is not set, loading will fail with a clear error.
+- If an `{{RPC_*}}` placeholder is present and the corresponding environment variable is not set, it now defaults to an empty string. This allows templates like `https://node.url/{{RPC_TOKEN}}` to collapse gracefully to `https://node.url/` without failing the load.
 - Multiple RPC tokens in one URL are supported, and whitespace inside the token delimiters is ignored (e.g., `{{  RPC_TOKEN  }}`).
 
 ### Job Definitions

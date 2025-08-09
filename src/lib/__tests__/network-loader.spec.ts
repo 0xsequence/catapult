@@ -84,7 +84,7 @@ describe('network-loader rpcUrl token replacement', () => {
     expect(networks[0].rpcUrl).toBe('https://node.example.com/XYZ')
   })
 
-  test('throws error when RPC token has no matching env var', async () => {
+  test('defaults to empty string when RPC token has no matching env var', async () => {
     const projectRoot = path.join(tmpDir, 'case5')
     delete process.env.RPC_MISSING
     const yaml = `
@@ -94,6 +94,7 @@ describe('network-loader rpcUrl token replacement', () => {
 `
     await writeNetworksYaml(projectRoot, yaml)
 
-    await expect(loadNetworks(projectRoot)).rejects.toThrow('Environment variable RPC_MISSING is not set')
+    const networks = await loadNetworks(projectRoot)
+    expect(networks[0].rpcUrl).toBe('https://node.example.com/')
   })
 })
