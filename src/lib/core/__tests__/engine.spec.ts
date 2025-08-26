@@ -26,7 +26,9 @@ const TEST_BYTECODES = {
   // Mini contract with multiplication function
   MINI_CONTRACT: '0x608060405234801561000f575f5ffd5b5060043610610034575f3560e01c80636df5b97a14610038578063f8a8fd6d14610068575b5f5ffd5b610052600480360381019061004d91906100da565b610086565b60405161005f9190610127565b60405180910390f35b61007061009b565b60405161007d9190610127565b60405180910390f35b5f8183610093919061016d565b905092915050565b5f602a905090565b5f5ffd5b5f819050919050565b6100b9816100a7565b81146100c3575f5ffd5b50565b5f813590506100d4816100b0565b92915050565b5f5f604083850312156100f0576100ef6100a3565b5b5f6100fd858286016100c6565b925050602061010e858286016100c6565b9150509250929050565b610121816100a7565b82525050565b5f60208201905061013a5f830184610118565b92915050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5f610177826100a7565b9150610182836100a7565b9250828202610190816100a7565b915082820484148315176101a7576101a6610140565b5b509291505056fea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033',
   // Minimal deployment bytecode
-  MINIMAL_DEPLOY: '0x608060405234801561000f575f5ffd5b50603e80601c5f395ff3fe60806040525f80fdfea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033'
+  MINIMAL_DEPLOY: '0x608060405234801561000f575f5ffd5b50603e80601c5f395ff3fe60806040525f80fdfea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033',
+  // Broken bytecode
+  BROKEN_BYTECODE: '0xff',
 } as const
 
 const TEST_VALUES = {
@@ -1478,6 +1480,19 @@ describe('ExecutionEngine', () => {
 
       // Should have success output
       expect(context.getOutput('nick-test.success')).toBe(true)
+    })
+
+    it('should prevent Nick\'s method from being tested twice', async () => {
+      const action: Action = {
+        type: 'test-nicks-method',
+        name: 'nick-test-fail-twice',
+        arguments: {
+          bytecode: TEST_BYTECODES.BROKEN_BYTECODE, // Will break
+        }
+      }
+
+      await expect((engine as any).executeAction(action, context, new Map())).rejects.toThrow(new Error(`Nick's method test failed for action "nick-test-fail-twice"`))
+      await expect((engine as any).executeAction(action, context, new Map())).rejects.toThrow(new Error('Nick\'s method test already performed this run'))
     })
 
     it('should handle missing optional parameters', async () => {
