@@ -19,13 +19,22 @@ export class ExecutionEngine {
   private readonly events: DeploymentEventEmitter
   private readonly verificationRegistry: VerificationPlatformRegistry
   private readonly noPostCheckConditions: boolean
+  private readonly allowMultipleNicksMethodTests: boolean
+  private nicksMethodTested: boolean = false
 
-  constructor(templates: Map<string, Template>, eventEmitter?: DeploymentEventEmitter, verificationRegistry?: VerificationPlatformRegistry, noPostCheckConditions?: boolean) {
+  constructor(
+    templates: Map<string, Template>,
+    eventEmitter?: DeploymentEventEmitter,
+    verificationRegistry?: VerificationPlatformRegistry,
+    noPostCheckConditions?: boolean,
+    allowMultipleNicksMethodTests?: boolean
+  ) {
     this.resolver = new ValueResolver()
     this.templates = templates
     this.events = eventEmitter || deploymentEvents
     this.verificationRegistry = verificationRegistry || createDefaultVerificationRegistry()
     this.noPostCheckConditions = noPostCheckConditions ?? false
+    this.allowMultipleNicksMethodTests = allowMultipleNicksMethodTests ?? false
   }
 
   /**
@@ -781,6 +790,11 @@ export class ExecutionEngine {
         break
       }
       case 'test-nicks-method': {
+        if (this.nicksMethodTested && !this.allowMultipleNicksMethodTests) {
+          throw new Error(`Nick's method test already performed this run`)
+        }
+        this.nicksMethodTested = true
+
         // Default bytecode if none provided
         const defaultBytecode = '0x608060405234801561001057600080fd5b5061013d806100206000396000f3fe60806040526004361061001e5760003560e01c80639c4ae2d014610023575b600080fd5b6100cb6004803603604081101561003957600080fd5b81019060208101813564010000000081111561005457600080fd5b82018360208201111561006657600080fd5b8035906020019184600183028401116401000000008311171561008857600080fd5b91908080601f01602080910402602001604051908101604052809392919081815260200183838082843760009201919091525092955050913592506100cd915050565b005b60008183516020850134f56040805173ffffffffffffffffffffffffffffffffffffffff83168152905191925081900360200190a050505056fea264697066735822122033609f614f03931b92d88c309d698449bb77efcd517328d341fa4f923c5d8c7964736f6c63430007060033'
         
