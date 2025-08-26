@@ -8,6 +8,13 @@ import { createDefaultVerificationRegistry, VerificationPlatformRegistry } from 
 import { BuildInfo } from '../types/buildinfo'
 import { ethers } from 'ethers'
 
+export type EngineOptions = {
+  eventEmitter?: DeploymentEventEmitter
+  verificationRegistry?: VerificationPlatformRegistry
+  noPostCheckConditions?: boolean
+  allowMultipleNicksMethodTests?: boolean
+}
+
 /**
  * The ExecutionEngine is the core component that runs jobs and their actions.
  * It interprets the declarative YAML files, resolves values, interacts with the
@@ -22,19 +29,13 @@ export class ExecutionEngine {
   private readonly allowMultipleNicksMethodTests: boolean
   private nicksMethodTested: boolean = false
 
-  constructor(
-    templates: Map<string, Template>,
-    eventEmitter?: DeploymentEventEmitter,
-    verificationRegistry?: VerificationPlatformRegistry,
-    noPostCheckConditions?: boolean,
-    allowMultipleNicksMethodTests?: boolean
-  ) {
+  constructor(templates: Map<string, Template>, options?: EngineOptions) {
     this.resolver = new ValueResolver()
     this.templates = templates
-    this.events = eventEmitter || deploymentEvents
-    this.verificationRegistry = verificationRegistry || createDefaultVerificationRegistry()
-    this.noPostCheckConditions = noPostCheckConditions ?? false
-    this.allowMultipleNicksMethodTests = allowMultipleNicksMethodTests ?? false
+    this.events = options?.eventEmitter || deploymentEvents
+    this.verificationRegistry = options?.verificationRegistry || createDefaultVerificationRegistry()
+    this.noPostCheckConditions = options?.noPostCheckConditions ?? false
+    this.allowMultipleNicksMethodTests = options?.allowMultipleNicksMethodTests ?? false
   }
 
   /**

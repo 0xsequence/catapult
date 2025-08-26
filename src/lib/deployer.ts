@@ -154,7 +154,11 @@ export class Deployer {
 
       // 4. Execute the plan.
       const verificationRegistry = createDefaultVerificationRegistry(this.options.etherscanApiKey)
-      const engine = new ExecutionEngine(this.loader.templates, this.events, verificationRegistry, this.noPostCheckConditions)
+      const engine = new ExecutionEngine(this.loader.templates, {
+        eventEmitter: this.events,
+        verificationRegistry,
+        noPostCheckConditions: this.noPostCheckConditions
+      })
       
       // Track if any jobs have failed
       let hasFailures = false

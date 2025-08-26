@@ -68,7 +68,7 @@ describe('ExecutionEngine', () => {
     
     // Create empty verification registry for tests
     const verificationRegistry = new VerificationPlatformRegistry()
-    engine = new ExecutionEngine(templates, undefined, verificationRegistry)
+    engine = new ExecutionEngine(templates, { verificationRegistry })
   })
 
   afterEach(async () => {
