@@ -1482,7 +1482,7 @@ describe('ExecutionEngine', () => {
       expect(context.getOutput('nick-test.success')).toBe(true)
     })
 
-    it('should prevent Nick\'s method from being tested twice', async () => {
+    it('should prevent failing Nick\'s method from being tested twice', async () => {
       const action: Action = {
         type: 'test-nicks-method',
         name: 'nick-test-fail-twice',
@@ -1493,6 +1493,22 @@ describe('ExecutionEngine', () => {
 
       await expect((engine as any).executeAction(action, context, new Map())).rejects.toThrow(new Error(`Nick's method test failed for action "nick-test-fail-twice"`))
       await expect((engine as any).executeAction(action, context, new Map())).rejects.toThrow(new Error('Nick\'s method test already performed this run'))
+    })
+
+    it('should prevent passing Nick\'s method from being tested twice', async () => {
+      const action: Action = {
+        type: 'test-nicks-method',
+        name: 'nick-test-pass-twice',
+        arguments: {
+          bytecode: TEST_BYTECODES.SIMPLE_RETURN_42, // Will pass
+        }
+      }
+
+      await (engine as any).executeAction(action, context, new Map())
+      await (engine as any).executeAction(action, context, new Map())
+
+      // Should have success output
+      expect(context.getOutput('nick-test-pass-twice.success')).toBe(true)
     })
 
     it('should handle missing optional parameters', async () => {

@@ -792,7 +792,14 @@ export class ExecutionEngine {
       }
       case 'test-nicks-method': {
         if (this.nicksMethodTested && !this.allowMultipleNicksMethodTests) {
-          throw new Error(`Nick's method test already performed this run`)
+          try {
+            if (context.getOutput(`${action.name}.success`) === true) {
+              // Return previous result
+              break
+            }
+          } catch (e) {
+            throw new Error(`Nick's method test already performed this run`)
+          }
         }
         this.nicksMethodTested = true
 
