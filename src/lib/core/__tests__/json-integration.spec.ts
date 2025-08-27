@@ -31,7 +31,7 @@ describe('JSON Integration Tests', () => {
 
     templates = new Map()
     const verificationRegistry = new VerificationPlatformRegistry()
-    engine = new ExecutionEngine(templates, undefined, verificationRegistry)
+    engine = new ExecutionEngine(templates, { verificationRegistry })
     resolver = new ValueResolver()
   })
 

@@ -1,6 +1,4 @@
 import * as fs from 'fs/promises'
-import * as path from 'path'
-import chalk from 'chalk'
 import { Deployer, DeployerOptions } from '../deployer'
 import { ProjectLoader } from '../core/loader'
 import { DependencyGraph } from '../core/graph'
@@ -174,7 +172,7 @@ describe('Deployer', () => {
         expect(mockLoader.load).toHaveBeenCalledTimes(1)
         expect(MockDependencyGraph).toHaveBeenCalledWith(mockLoader.jobs, mockLoader.templates)
         expect(mockGraph.getExecutionOrder).toHaveBeenCalledTimes(1)
-        expect(MockExecutionEngine).toHaveBeenCalledWith(mockLoader.templates, expect.any(Object), expect.any(Object), false)
+        expect(MockExecutionEngine).toHaveBeenCalledWith(mockLoader.templates, expect.any(Object))
         expect(mockEngine.executeJob).toHaveBeenCalledTimes(5) // job1&job2 on 2 networks + job3 on 1 network
         expect(MockExecutionContext).toHaveBeenCalledTimes(5)
         expect(mockFs.mkdir).toHaveBeenCalledWith('/test/project/output', { recursive: true })

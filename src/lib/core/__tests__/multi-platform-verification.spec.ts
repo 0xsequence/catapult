@@ -68,7 +68,7 @@ describe('Multi-Platform Verification Integration', () => {
     verificationRegistry.register(mockSourcifyPlatform)
 
     templates = new Map()
-    engine = new ExecutionEngine(templates, undefined, verificationRegistry)
+    engine = new ExecutionEngine(templates, { verificationRegistry })
 
     // Set up mock contract and build info
     const mockContract = {
