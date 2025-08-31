@@ -11,7 +11,7 @@ describe('Event System', () => {
   beforeEach(() => {
     eventEmitter = new DeploymentEventEmitter()
     cliAdapter = new CLIEventAdapter(eventEmitter, 3)
-    
+
     // Mock console methods
     consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {})
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
@@ -339,5 +339,54 @@ describe('Event System', () => {
 
       expect(handler).not.toHaveBeenCalled()
     })
+
+    it('should respect debug_info event level for verbosity filtering', () => {
+      // Test with verbosity 0 (default) - should NOT show any debug_info events
+      cliAdapter.setVerbosity(0)
+
+      eventEmitter.emitEvent({
+        type: 'debug_info',
+        level: 'warn',
+        data: {
+          message: 'This warning should NOT be shown at verbosity 0'
+        }
+      })
+
+      expect(consoleLogSpy).not.toHaveBeenCalled()
+
+      // Clear previous calls
+      consoleLogSpy.mockClear()
+
+      // Test with verbosity 3 - should show warn level with correct formatting
+      cliAdapter.setVerbosity(3)
+
+      eventEmitter.emitEvent({
+        type: 'debug_info',
+        level: 'warn',
+        data: {
+          message: 'This warning should be shown at verbosity 3'
+        }
+      })
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[WARN] This warning should be shown at verbosity 3')
+      )
+
+      // Clear previous calls
+      consoleLogSpy.mockClear()
+
+      // Test with verbosity 3 - should show debug level with correct formatting
+      eventEmitter.emitEvent({
+        type: 'debug_info',
+        level: 'debug',
+        data: {
+          message: 'This debug message should be shown at verbosity 3'
+        }
+      })
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(
+        expect.stringContaining('[DEBUG] This debug message should be shown at verbosity 3')
+      )
+    })
   })
-}) 
+})

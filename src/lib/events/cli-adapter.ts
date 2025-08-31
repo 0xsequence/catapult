@@ -5,7 +5,7 @@ import { DeploymentEventEmitter } from './emitter'
 /**
  * Verbosity levels for filtering console output:
  * 0 (default): Critical info only - errors, warnings, main deployment steps
- * 1 (-v): Add transaction details and verification steps  
+ * 1 (-v): Add transaction details and verification steps
  * 2 (-vv): Add action details and file operations
  * 3 (-vvv): Full debug - show everything including template transitions
  */
@@ -81,7 +81,7 @@ export class CLIEventAdapter {
     if (level1Events.has(eventType)) return 1
     if (level2Events.has(eventType)) return 2
     if (level3Events.has(eventType)) return 3
-    
+
     // Default to level 3 for any new events we haven't categorized
     return 3
   }
@@ -314,7 +314,11 @@ export class CLIEventAdapter {
         break
 
       case 'debug_info':
-        console.log(chalk.gray(`        [DEBUG] ${event.data.message}`))
+        const levelPrefix = event.level.toUpperCase()
+        const levelColor = event.level === 'warn' ? chalk.yellow :
+                          event.level === 'info' ? chalk.blue :
+                          chalk.gray
+        console.log(levelColor(`        [${levelPrefix}] ${event.data.message}`))
         break
 
       default:
@@ -338,4 +342,4 @@ export class CLIEventAdapter {
   public destroy(): void {
     this.emitter.removeAllListeners()
   }
-} 
+}
