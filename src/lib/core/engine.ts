@@ -1126,9 +1126,54 @@ export class ExecutionEngine {
       
       // Generate a valid ECDSA signature using Nick's method approach
       const result = await this.generateNicksMethodTransaction(bytecode, defaultGasPrice, defaultGasLimit)
-      const rawTx = result.rawTx
+      const {signedTx, unsignedTx} = result
       eoaAddress = result.eoaAddress
       wallet = result.wallet
+
+      // Simulate the contract creation transaction
+      try {
+        const simulationTx = {
+          ...unsignedTx,
+          from: eoaAddress,
+        };
+
+        if (simulationTx.gasLimit) {
+          // Simulate the transaction expected gas usage
+          const estimatedGas = await context.provider.estimateGas(simulationTx);
+          const estimatedGasStr = estimatedGas.toString();
+          const simulationTxGasLimitStr = simulationTx.gasLimit.toString();
+          if (estimatedGas > BigInt(simulationTxGasLimitStr)) {
+            this.events.emitEvent({
+              type: "debug_info",
+              level: "warn",
+              data: {
+                message: `Estimated gas (${estimatedGasStr}) is greater than gas provided in the transaction (${simulationTxGasLimitStr}). This may cause the transaction to revert.`,
+              },
+            });
+          } else {
+            this.events.emitEvent({
+              type: "debug_info",
+              level: "debug",
+              data: {
+                message: `Estimated gas: ${estimatedGasStr}, Gas provided: ${simulationTxGasLimitStr}`,
+              },
+            });
+          }
+        }
+      } catch (simulationError) {
+        this.events.emitEvent({
+          type: "debug_info",
+          level: "warn",
+          data: {
+            message: `Simulation failed: ${
+              simulationError instanceof Error
+                ? simulationError.message
+                : String(simulationError)
+            }`,
+          },
+        });
+        // Continue with the test even if simulation fails
+      }
       
       this.events.emitEvent({
         type: 'debug_info',
@@ -1221,11 +1266,11 @@ export class ExecutionEngine {
         type: 'debug_info',
         level: 'debug',
         data: {
-          message: `[NICK'S METHOD DEBUG] Broadcasting Nick's method transaction. RawTx: ${rawTx.substring(0, 100)}...`
+          message: `[NICK'S METHOD DEBUG] Broadcasting Nick's method transaction. RawTx: ${signedTx.substring(0, 100)}...`
         }
       })
       
-      const deployTx = await context.provider.broadcastTransaction(rawTx)
+      const deployTx = await context.provider.broadcastTransaction(signedTx)
       
       this.events.emitEvent({
         type: 'debug_info',
@@ -1322,7 +1367,7 @@ export class ExecutionEngine {
     bytecode: string,
     gasPrice: ethers.BigNumberish,
     gasLimit: ethers.BigNumberish
-  ): Promise<{ rawTx: string; eoaAddress: string; wallet: ethers.HDNodeWallet }> {
+  ): Promise<{ unsignedTx: ethers.TransactionRequest; signedTx: string; eoaAddress: string; wallet: ethers.HDNodeWallet }> {
     // Generate a random private key for the test
     const wallet = ethers.Wallet.createRandom()
     
@@ -1346,9 +1391,10 @@ export class ExecutionEngine {
     const eoaAddress = parsedTx.from!
     
     return {
-      rawTx: signedTx,
-      eoaAddress: eoaAddress,
-      wallet: wallet
+      unsignedTx,
+      signedTx,
+      eoaAddress,
+      wallet,
     }
   }
 
