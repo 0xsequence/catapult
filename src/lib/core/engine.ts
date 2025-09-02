@@ -1440,9 +1440,26 @@ export class ExecutionEngine {
     const connectedWallet = wallet.connect(context.provider)
     
     // Estimate gas for a simple transfer
-    const gasPrice = await context.provider.getFeeData().then(data => data.gasPrice || ethers.parseUnits('20', 'gwei'))
+    const feeData = await context.provider.getFeeData()
+    const txGas = feeData.maxFeePerGas ? {
+      maxFeePerGas: feeData.maxFeePerGas,
+      maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || ethers.parseUnits('20', 'gwei')
+    } : {
+      gasPrice: feeData.gasPrice || undefined,
+    }
+    const effectiveGasPrice = txGas.maxFeePerGas || txGas.gasPrice
+    if (!effectiveGasPrice) {
+      this.events.emitEvent({
+        type: 'action_failed',
+        level: 'error',
+        data: {
+          message: `No gas price available`
+        }
+      })
+      return
+    }
     const gasLimit = 21000n // Standard gas limit for ETH transfer
-    const gasCost = BigInt(gasPrice.toString()) * gasLimit
+    const gasCost = effectiveGasPrice * gasLimit
     
     // Check if we have enough balance to cover gas costs
     if (remainingBalance <= gasCost) {
@@ -1474,8 +1491,8 @@ export class ExecutionEngine {
     const returnTx = await connectedWallet.sendTransaction({
       to: await (await context.getResolvedSigner()).getAddress(),
       value: amountToSend,
-      gasPrice: gasPrice,
-      gasLimit: gasLimit
+      gasLimit: gasLimit,
+      ...txGas,
     })
     
     await returnTx.wait()
