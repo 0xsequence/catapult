@@ -147,7 +147,7 @@ export interface ActionInfoEvent extends BaseEvent {
 
 export interface DebugInfoEvent extends BaseEvent {
   type: 'debug_info'
-  level: 'debug'
+  level: 'debug' | 'info' | 'warn'
   data: {
     message: string
   }
