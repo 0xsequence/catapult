@@ -1137,6 +1137,28 @@ export class ExecutionEngine {
           from: eoaAddress,
         };
 
+        if (unsignedTx.gasPrice) {
+          // Check gas price
+          const gasPrice = await context.provider.getFeeData().then(data => data.gasPrice)
+          if (!gasPrice) {
+            this.events.emitEvent({
+              type: "debug_info",
+              level: "debug",
+              data: {
+                message: `Legacy gas price not available.`,
+              },
+            });
+          } else if (BigInt(unsignedTx.gasPrice.toString()) < gasPrice) {
+            this.events.emitEvent({
+              type: "debug_info",
+              level: "warn",
+              data: {
+                message: `Gas price (${unsignedTx.gasPrice}) is lower than the current gas price (${gasPrice}). This may cause the transaction to not be mined.`,
+              },
+            });
+          }
+        }
+
         if (simulationTx.gasLimit) {
           // Simulate the transaction expected gas usage
           const estimatedGas = await context.provider.estimateGas(simulationTx);
