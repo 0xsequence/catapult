@@ -13,17 +13,18 @@
 # code before the call data, hence the wrapping pattern.
 name: "assured-deployment"
 type: "template"
+description: "Wraps a factory call with a CREATE that runs a minimal assurance program"
 
 arguments:
-  # The address that is expected to exist after the factory call (e.g., CREATE2 result)
   targetAddress:
     type: "address"
-  # The factory that will perform the deployment
+    description: "The address that is expected to exist after the factory call (e.g., CREATE2 result)"
   factoryAddress:
     type: "address"
-  # Encoded call to the factory (e.g., abi-encoded deploy(...))
+    description: "The factory that will perform the deployment"
   callData:
     type: "bytes"
+    description: "The encoded call to the factory (e.g., abi-encoded deploy(...))"
 
 actions:
   - type: "create-contract"

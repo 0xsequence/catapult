@@ -7,12 +7,15 @@ type: "template"
 arguments:
   creationCode:
     type: "bytes"
+    description: "The creation code of the contract to deploy"
   salt:
     type: "bytes32"
+    description: "The salt for deployment"
 
 returns:
   address:
     type: "address"
+    description: "The address of the deployed contract"
 
 setup:
   skip_condition:

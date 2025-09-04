@@ -7,10 +7,12 @@ type: "template"
 arguments:
   creationCode:
     type: "bytes"
+    description: "The creation code of the contract to deploy"
 
 returns:
   address:
     type: "address"
+    description: "The address of the deployed contract"
 
 setup:
   skip_condition:

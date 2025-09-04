@@ -1,11 +1,14 @@
 name: "min-balance"
 type: "template"
+description: "Ensures a minimum balance for any given address"
 
 arguments:
   address:
     type: "address"
+    description: "The address to check the balance of"
   balance:
     type: "uint256"
+    description: "The minimum balance required"
 
 actions:
   - type: "send-transaction"

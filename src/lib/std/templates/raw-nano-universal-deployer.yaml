@@ -1,13 +1,16 @@
 name: "raw-nano-universal-deployer"
 type: "template"
+description: "Deploy a contract using the Nano Universal Deployer"
 
 arguments:
   creationCode:
     type: "bytes"
+    description: "The creation code of the contract to deploy"
 
 returns:
   address:
     type: "address"
+    description: "The address of the deployed contract"
 
 setup:
   skip_condition:
