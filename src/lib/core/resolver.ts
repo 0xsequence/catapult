@@ -9,12 +9,12 @@ import {
   ReadBalanceValue,
   BasicArithmeticValue,
   CallValue,
-  ContractExistsCondition,
   ContractExistsValue,
   JobCompletedValue,
   ReadJsonValue,
 } from '../types'
 import { ExecutionContext } from './context'
+import { isAddress, isBigNumberish, isBytesLike } from '../utils/assertion'
 
 /**
  * A scope for resolving local variables, such as template arguments.
@@ -260,7 +260,7 @@ export class ValueResolver {
     }
 
     // Validate that creation code is valid bytecode
-    if (!ethers.isBytesLike(creationCode)) {
+    if (!isBytesLike(creationCode)) {
       throw new Error(`Invalid creation code: ${creationCode}`)
     }
 
@@ -283,7 +283,7 @@ export class ValueResolver {
   private resolveComputeCreate2(args: ComputeCreate2Value['arguments']): string {
     const { deployerAddress, salt, initCode } = args
     // Check if the deployer address is a valid address
-    if (!ethers.isAddress(deployerAddress)) {
+    if (!isAddress(deployerAddress)) {
       throw new Error(`Invalid deployer address: ${deployerAddress}`)
     }
     // Check if the salt is a valid bytes value
@@ -291,7 +291,7 @@ export class ValueResolver {
       throw new Error(`Invalid salt: ${salt}`)
     }
     // Check if the init code is a valid bytes value
-    if (!ethers.isBytesLike(initCode)) {
+    if (!isBytesLike(initCode)) {
       throw new Error(`Invalid init code: ${initCode}`)
     }
     // Hash the init code using Keccak256
@@ -304,7 +304,7 @@ export class ValueResolver {
     // Check if the address is a valid address
     const addressValue = args.address as any
 
-    if (!ethers.isAddress(addressValue)) {
+    if (!isAddress(addressValue)) {
       throw new Error(`Invalid address: ${addressValue}`)
     }
 
@@ -349,7 +349,7 @@ export class ValueResolver {
     }
 
     // Validate that the target address is a valid Ethereum address
-    if (!ethers.isAddress(to)) {
+    if (!isAddress(to)) {
       throw new Error(`call: invalid target address: ${to}`)
     }
 
@@ -407,7 +407,7 @@ export class ValueResolver {
   private async resolveContractExists(args: ContractExistsValue['arguments'], context: ExecutionContext): Promise<boolean> {
     const { address } = args
 
-    if (!ethers.isAddress(address)) {
+    if (!isAddress(address)) {
       throw new Error(`contract-exists: invalid address: ${address}`)
     }
 
