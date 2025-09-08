@@ -5,6 +5,7 @@ import {
   AbiEncodeValue,
   AbiPackValue,
   ConstructorEncodeValue,
+  ComputeCreateValue,
   ComputeCreate2Value,
   ReadBalanceValue,
   BasicArithmeticValue,
@@ -154,6 +155,8 @@ export class ValueResolver {
         return this.resolveAbiPack(resolvedArgs as AbiPackValue['arguments'])
       case 'constructor-encode':
         return this.resolveConstructorEncode(resolvedArgs as ConstructorEncodeValue['arguments'])
+      case 'compute-create':
+        return this.resolveComputeCreate(resolvedArgs as ComputeCreateValue['arguments'])
       case 'compute-create2':
         return this.resolveComputeCreate2(resolvedArgs as ComputeCreate2Value['arguments'])
       case 'read-balance':
@@ -280,6 +283,24 @@ export class ValueResolver {
     return '0x' + cleanCreationCode + cleanEncodedArgs
   }
 
+  private resolveComputeCreate(args: ComputeCreateValue['arguments']): string {
+    const { deployerAddress, nonce } = args
+    // Check if the deployer address is a valid address
+    if (!isAddress(deployerAddress)) {
+      throw new Error(`Invalid deployer address: ${deployerAddress}`)
+    }
+    // Check if the salt is a valid bytes value
+    if (!isBigNumberish(nonce)) {
+      throw new Error(`Invalid nonce: ${nonce}`)
+    }
+    const bnNonce = ethers.toBigInt(nonce)
+    // Create the create address
+    return ethers.getCreateAddress({
+      from: deployerAddress,
+      nonce: bnNonce,
+    })
+  }
+
   private resolveComputeCreate2(args: ComputeCreate2Value['arguments']): string {
     const { deployerAddress, salt, initCode } = args
     // Check if the deployer address is a valid address
@@ -287,7 +308,7 @@ export class ValueResolver {
       throw new Error(`Invalid deployer address: ${deployerAddress}`)
     }
     // Check if the salt is a valid bytes value
-    if (!ethers.isBytesLike(salt)) {
+    if (!isBytesLike(salt)) {
       throw new Error(`Invalid salt: ${salt}`)
     }
     // Check if the init code is a valid bytes value

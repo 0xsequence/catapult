@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { ValueResolver } from '../resolver'
 import { ExecutionContext } from '../context'
-import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, AbiPackValue, CallValue, ContractExistsValue } from '../../types'
+import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, AbiPackValue, CallValue, ContractExistsValue, ComputeCreateValue } from '../../types'
 import { ContractRepository } from '../../contracts/repository'
 
 describe('ValueResolver', () => {
@@ -491,6 +491,155 @@ describe('ValueResolver', () => {
       }
       const result = await resolver.resolve(value, context)
       expect(result).toBe('0x70f2b2914A2a4b783FaEFb75f459A580616Fcb5e')
+    })
+  })
+
+  describe('compute-create', () => {
+    it('should compute CREATE address with hardcoded test case 1', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '0x0000000000000000000000000000000000000000',
+          nonce: '0',
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0xBd770416a3345F91E4B34576cb804a576fa48EB1')
+    })
+
+    it('should compute CREATE address with hardcoded test case 2', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '0xC6064FfBaDB0687Da29721C8EC02ACa71e735a3e',
+          nonce: '1',
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0x6d2E686984620c01Af3cd125F9E1A2E23a972FFc')
+    })
+
+    it('should compute CREATE address with hardcoded test case 3', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '0xC6064FfBaDB0687Da29721C8EC02ACa71e735a3e',
+          nonce: '2',
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0xBA6CfaFc33eD8229D2Af9a5a7BC22e8834cE0873')
+    })
+
+    it('should compute CREATE address with hardcoded test case ERC-2470', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '0xBb6e024b9cFFACB947A71991E386681B1Cd1477D',
+          nonce: '0',
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0xce0042B868300000d44A59004Da54A005ffdcf9f')
+    })
+
+    it('should compute CREATE address with hardcoded test case Universal Deployer', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '0x9c5a87452d4FAC0cbd53BDCA580b20A45526B3AB',
+          nonce: '0',
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0x1B926fBB24A9F78DCDd3272f2d86F5D0660E59c0')
+    })
+
+    it('should resolve values from context before computing CREATE address', async () => {
+      context.setOutput('myDeployer', '0x0000000000000000000000000000000000000000')
+      context.setOutput('myNonce', '0')
+      
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '{{myDeployer}}',
+          nonce: '{{myNonce}}',
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0xBd770416a3345F91E4B34576cb804a576fa48EB1')
+    })
+
+    it('should throw error for invalid deployer address', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: 'invalid-address',
+          nonce: '0',
+        },
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid deployer address: invalid-address')
+    })
+
+    it('should throw error for invalid nonce', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '0x0000000000000000000000000000000000000000',
+          nonce: 'invalid-nonce',
+        },
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid nonce: invalid-nonce')
+    })
+
+    it('should throw error for null deployer address', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: null as any,
+          nonce: '0',
+        },
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid deployer address: null')
+    })
+
+    it('should throw error for undefined nonce', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '0x0000000000000000000000000000000000000000',
+          nonce: undefined as any,
+        },
+      }
+      
+      await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid nonce: undefined')
+    })
+
+    it('should handle checksummed addresses', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '0xdEADBEeF00000000000000000000000000000000',
+          nonce: '0',
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0xf2048C36a5536FeA3Bc71d49ed59f2c65C546EEA')
+    })
+
+    it('should handle number nonce', async () => {
+      const value: ComputeCreateValue = {
+        type: 'compute-create',
+        arguments: {
+          deployerAddress: '0x0000000000000000000000000000000000000000',
+          nonce: 69420,
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0x7Bd7F19787DA009bD75b849c92Db10CE11916487')
     })
   })
 
