@@ -289,7 +289,7 @@ export class ValueResolver {
     if (!isAddress(deployerAddress)) {
       throw new Error(`Invalid deployer address: ${deployerAddress}`)
     }
-    // Check if the salt is a valid bytes value
+    // Check if the nonce is a valid value
     if (!isBigNumberish(nonce)) {
       throw new Error(`Invalid nonce: ${nonce}`)
     }
