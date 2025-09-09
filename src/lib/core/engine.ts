@@ -474,7 +474,7 @@ export class ExecutionEngine {
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
         
-        await this.logGasEstimate(actionName, txParams, context, signer)
+        await this.checkFundsForTransaction(actionName, txParams, context, signer)
         const tx = await signer.sendTransaction(txParams)
         
         this.events.emitEvent({
@@ -805,7 +805,7 @@ export class ExecutionEngine {
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
 
-        await this.logGasEstimate(actionName, txParams, context, signer)
+        await this.checkFundsForTransaction(actionName, txParams, context, signer)
         const tx = await signer.sendTransaction(txParams)
         
         this.events.emitEvent({
@@ -1703,9 +1703,12 @@ export class ExecutionEngine {
     return sorted
   }
 
-  private async logGasEstimate(actionName: string, txParams: ethers.TransactionRequest, context: ExecutionContext, signer: ethers.Signer) {
+  /**
+   * Checks if the signer has enough funds to cover the estimated cost of the transaction.
+   * Returns true if the signer has enough funds, false if the signer does not have enough funds, and null if no gas price is available.
+   */
+  private async checkFundsForTransaction(actionName: string, txParams: ethers.TransactionRequest, context: ExecutionContext, signer: ethers.Signer): Promise<boolean | null> {
     try {
-      // Check cost. This does not prevent the transaction from being sent if the signer has insufficient funds.
       const gasPrice = txParams.gasPrice || await context.provider.getFeeData().then(data => data.gasPrice)
       if (!gasPrice) {
         this.events.emitEvent({
@@ -1716,7 +1719,7 @@ export class ExecutionEngine {
             message: `No gas price available`
           }
         })
-        return
+        return null
       }
       const gasLimit = txParams.gasLimit || await signer.estimateGas(txParams)
       const requiredETH = BigInt(gasLimit) * BigInt(gasPrice)
@@ -1730,6 +1733,9 @@ export class ExecutionEngine {
             message: `Insufficient funds: signer has ${ethers.formatEther(signerBalance)} ETH but estimated cost is ${ethers.formatEther(requiredETH)} ETH`
           }
         })
+        return false
+      } else {
+        return true
       }
     } catch (error) {
       this.events.emitEvent({
@@ -1741,6 +1747,7 @@ export class ExecutionEngine {
         }
       })
     }
+    return null
   }
 
   /**
