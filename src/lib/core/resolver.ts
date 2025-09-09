@@ -5,16 +5,17 @@ import {
   AbiEncodeValue,
   AbiPackValue,
   ConstructorEncodeValue,
+  ComputeCreateValue,
   ComputeCreate2Value,
   ReadBalanceValue,
   BasicArithmeticValue,
   CallValue,
-  ContractExistsCondition,
   ContractExistsValue,
   JobCompletedValue,
   ReadJsonValue,
 } from '../types'
 import { ExecutionContext } from './context'
+import { isAddress, isBigNumberish, isBytesLike } from '../utils/assertion'
 
 /**
  * A scope for resolving local variables, such as template arguments.
@@ -154,6 +155,8 @@ export class ValueResolver {
         return this.resolveAbiPack(resolvedArgs as AbiPackValue['arguments'])
       case 'constructor-encode':
         return this.resolveConstructorEncode(resolvedArgs as ConstructorEncodeValue['arguments'])
+      case 'compute-create':
+        return this.resolveComputeCreate(resolvedArgs as ComputeCreateValue['arguments'])
       case 'compute-create2':
         return this.resolveComputeCreate2(resolvedArgs as ComputeCreate2Value['arguments'])
       case 'read-balance':
@@ -260,7 +263,7 @@ export class ValueResolver {
     }
 
     // Validate that creation code is valid bytecode
-    if (!ethers.isBytesLike(creationCode)) {
+    if (!isBytesLike(creationCode)) {
       throw new Error(`Invalid creation code: ${creationCode}`)
     }
 
@@ -280,18 +283,36 @@ export class ValueResolver {
     return '0x' + cleanCreationCode + cleanEncodedArgs
   }
 
+  private resolveComputeCreate(args: ComputeCreateValue['arguments']): string {
+    const { deployerAddress, nonce } = args
+    // Check if the deployer address is a valid address
+    if (!isAddress(deployerAddress)) {
+      throw new Error(`Invalid deployer address: ${deployerAddress}`)
+    }
+    // Check if the nonce is a valid value
+    if (!isBigNumberish(nonce)) {
+      throw new Error(`Invalid nonce: ${nonce}`)
+    }
+    const bnNonce = ethers.toBigInt(nonce)
+    // Create the create address
+    return ethers.getCreateAddress({
+      from: deployerAddress,
+      nonce: bnNonce,
+    })
+  }
+
   private resolveComputeCreate2(args: ComputeCreate2Value['arguments']): string {
     const { deployerAddress, salt, initCode } = args
     // Check if the deployer address is a valid address
-    if (!ethers.isAddress(deployerAddress)) {
+    if (!isAddress(deployerAddress)) {
       throw new Error(`Invalid deployer address: ${deployerAddress}`)
     }
     // Check if the salt is a valid bytes value
-    if (!ethers.isBytesLike(salt)) {
+    if (!isBytesLike(salt)) {
       throw new Error(`Invalid salt: ${salt}`)
     }
     // Check if the init code is a valid bytes value
-    if (!ethers.isBytesLike(initCode)) {
+    if (!isBytesLike(initCode)) {
       throw new Error(`Invalid init code: ${initCode}`)
     }
     // Hash the init code using Keccak256
@@ -304,7 +325,7 @@ export class ValueResolver {
     // Check if the address is a valid address
     const addressValue = args.address as any
 
-    if (!ethers.isAddress(addressValue)) {
+    if (!isAddress(addressValue)) {
       throw new Error(`Invalid address: ${addressValue}`)
     }
 
@@ -349,7 +370,7 @@ export class ValueResolver {
     }
 
     // Validate that the target address is a valid Ethereum address
-    if (!ethers.isAddress(to)) {
+    if (!isAddress(to)) {
       throw new Error(`call: invalid target address: ${to}`)
     }
 
@@ -407,7 +428,7 @@ export class ValueResolver {
   private async resolveContractExists(args: ContractExistsValue['arguments'], context: ExecutionContext): Promise<boolean> {
     const { address } = args
 
-    if (!ethers.isAddress(address)) {
+    if (!isAddress(address)) {
       throw new Error(`contract-exists: invalid address: ${address}`)
     }
 

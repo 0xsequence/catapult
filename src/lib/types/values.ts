@@ -32,6 +32,14 @@ export interface ConstructorEncodeValue {
   };
 }
 
+export interface ComputeCreateValue {
+  type: 'compute-create';
+  arguments: {
+    deployerAddress: AddressValue;
+    nonce: Uint256Value;
+  };
+}
+
 export interface ComputeCreate2Value {
   type: 'compute-create2';
   arguments: {
@@ -94,6 +102,7 @@ export type ValueResolver =
   | AbiEncodeValue
   | AbiPackValue
   | ConstructorEncodeValue
+  | ComputeCreateValue
   | ComputeCreate2Value
   | ReadBalanceValue
   | BasicArithmeticValue
