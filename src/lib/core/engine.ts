@@ -801,7 +801,7 @@ export class ExecutionEngine {
           txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
         } else if (gasMultiplier) {
           // If gasMultiplier is specified but no network gasLimit, estimate gas first
-          const estimatedGas = await signer.estimateGas({ to: null, data, value })
+          const estimatedGas = await signer.estimateGas(txParams)
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
 
@@ -1724,6 +1724,14 @@ export class ExecutionEngine {
       const gasLimit = txParams.gasLimit || await signer.estimateGas(txParams)
       const requiredETH = BigInt(gasLimit) * BigInt(gasPrice)
       const signerBalance = await context.provider.getBalance(await signer.getAddress())
+      this.events.emitEvent({
+        type: 'debug_info',
+          level: 'debug',
+          data: {
+            actionName: actionName,
+            message: `Transaction ${txParams.gasLimit ? 'set' : 'estimated'} gas limit: ${gasLimit}, ${txParams.gasPrice ? 'set' : 'estimated'} gas price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei, required ETH: ${ethers.formatEther(requiredETH)}`
+          }
+        })
       if (signerBalance < requiredETH) {
         this.events.emitEvent({
         type: 'debug_info',
