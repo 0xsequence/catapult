@@ -266,6 +266,30 @@ export class CLIEventAdapter {
         // Keep short to reduce noise
         console.log(chalk.gray(`        Verification retry ${event.data.attempt}/${event.data.maxRetries}: ${event.data.error}`))
         break
+
+      case 'verification_skipped':
+        console.log(chalk.yellow(`        ⚠️  ${event.data.reason}`))
+        break
+
+      case 'verification_warnings_report':
+        // Display detailed verification warnings report
+        console.log(chalk.yellow('\n📋 Verification Warnings Report'))
+        console.log(chalk.yellow(`   Total warnings: ${event.data.totalWarnings}`))
+        console.log('')
+        
+        if (event.data.warnings && event.data.warnings.length > 0) {
+          for (const warning of event.data.warnings) {
+            console.log(chalk.red(`   ❌ ${warning.actionName} (${warning.contractName})`))
+            console.log(chalk.gray(`      Address: ${warning.address}`))
+            console.log(chalk.gray(`      Platform: ${warning.platform}`))
+            if (warning.networkName) {
+              console.log(chalk.gray(`      Network: ${warning.networkName}`))
+            }
+            console.log(chalk.gray(`      Error: ${warning.error}`))
+            console.log('')
+          }
+        }
+        break
       case 'contract_created':
         console.log(chalk.gray(`        contract: ${event.data.contractAddress}`))
         break

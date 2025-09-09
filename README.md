@@ -392,6 +392,7 @@ Common options (run):
 - `-k, --private-key <key>`: EOA private key (or set `PRIVATE_KEY`)
 - `--etherscan-api-key <key>`: Etherscan API key (or set `ETHERSCAN_API_KEY`)
 - `--fail-early`: Stop as soon as any job fails
+- `--ignore-verify-errors`: Convert verification errors to warnings and show complete report at end (instead of exiting with error code)
 - `--no-post-check-conditions`: Skip post-execution evaluation of skip conditions
 - `--flat-output`: Write outputs in a single flat `output/` directory (do not mirror `jobs/` structure)
 - `--no-summary`: Hide the end-of-run summary
@@ -696,6 +697,21 @@ Verify deployed contracts on block explorers:
     constructorArguments: "0x000000000000000000000000..."  # Optional hex-encoded args
     platform: "etherscan_v2"  # Optional, defaults to "all" (tries all configured platforms)
 ```
+
+#### Verification Error Handling
+
+By default, verification failures will cause the deployment to exit with an error code. To continue deployment even when verification fails and receive a comprehensive warning report at the end, use the `--ignore-verify-errors` flag:
+
+```bash
+catapult run --ignore-verify-errors
+```
+
+This is useful when:
+- You want to complete all deployments even if some contract verifications fail
+- Working with networks where verification platforms may be unreliable
+- Running in CI/CD environments where you prefer warnings over hard failures for verification issues
+
+When enabled, verification errors are converted to warnings and a detailed report is shown at the end of the deployment with all verification failures.
 
 ## Skip Conditions
 

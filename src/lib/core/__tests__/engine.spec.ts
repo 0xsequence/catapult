@@ -1542,4 +1542,325 @@ describe('ExecutionEngine', () => {
       expect(context.getOutput('nick-test-default-bytecode.success')).toBe(true)
     })
   })
+
+  describe('ignore verify errors feature', () => {
+    beforeEach(() => {
+      // Mock fs.readFile to return valid build info
+      jest.doMock('fs/promises', () => ({
+        readFile: jest.fn().mockResolvedValue(JSON.stringify({
+          _format: 'hh-sol-build-info-1',
+          id: 'test-id',
+          solcVersion: '0.8.0',
+          input: {
+            language: 'Solidity',
+            sources: {
+              'TestContract.sol': {
+                content: 'contract TestContract { }'
+              }
+            },
+            settings: {
+              optimizer: { enabled: true, runs: 200 },
+              outputSelection: { '*': { '*': ['*'] } }
+            }
+          },
+          output: {
+            contracts: {},
+            sources: {}
+          }
+        }))
+      }))
+
+      // Create a mock verification registry with a failing platform
+      const mockVerificationRegistry = new VerificationPlatformRegistry()
+      const mockPlatform = {
+        name: 'mock-platform',
+        supportsNetwork: jest.fn().mockReturnValue(true),
+        isConfigured: jest.fn().mockReturnValue(true),
+        getConfigurationRequirements: jest.fn().mockReturnValue(''),
+        isContractAlreadyVerified: jest.fn().mockResolvedValue(false),
+        verifyContract: jest.fn().mockRejectedValue(new Error('Verification failed'))
+      }
+      mockVerificationRegistry.register(mockPlatform)
+      
+      engine = new ExecutionEngine(templates, { 
+        verificationRegistry: mockVerificationRegistry,
+        ignoreVerifyErrors: true
+      })
+    })
+
+    it('should collect verification warnings when ignoreVerifyErrors is enabled', async () => {
+      const mockContract = {
+        sourceName: 'TestContract.sol',
+        contractName: 'TestContract',
+        compiler: { version: '0.8.0' },
+        buildInfoId: 'test-build-id',
+        source: 'contract TestContract { }',
+        creationCode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+        abi: [],
+        _sources: new Set(['TestContract.sol', '/path/to/build-info/test.json'])
+      }
+      
+      context.contractRepository.addForTesting({
+        contractName: mockContract.contractName,
+        abi: mockContract.abi,
+        bytecode: mockContract.creationCode,
+        sourceName: mockContract.sourceName,
+        source: mockContract.source,
+        compiler: mockContract.compiler,
+        buildInfoId: mockContract.buildInfoId,
+        _path: '/test/path',
+        _hash: 'test-hash'
+      })
+      
+      const action: Action = {
+        type: 'verify-contract',
+        name: 'test-verify',
+        arguments: {
+          address: TEST_ADDRESSES.RECIPIENT_1,
+          contract: '{{Contract(TestContract)}}',
+          platform: 'mock-platform'
+        }
+      }
+
+      // Should not throw even though verification fails
+      await expect((engine as any).executePrimitive(action, context, new Map()))
+        .resolves.not.toThrow()
+
+      // Should have collected the warning
+      const warnings = engine.getVerificationWarnings()
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toMatchObject({
+        actionName: 'test-verify',
+        address: TEST_ADDRESSES.RECIPIENT_1,
+        contractName: 'TestContract.sol:TestContract',
+        platform: 'mock-platform',
+        error: 'Action "test-verify": No build-info file found in contract sources'
+      })
+    })
+
+    it('should throw verification errors when ignoreVerifyErrors is disabled', async () => {
+      // Create engine with ignoreVerifyErrors disabled
+      const mockVerificationRegistry = new VerificationPlatformRegistry()
+      const mockPlatform = {
+        name: 'mock-platform',
+        supportsNetwork: jest.fn().mockReturnValue(true),
+        isConfigured: jest.fn().mockReturnValue(true),
+        getConfigurationRequirements: jest.fn().mockReturnValue(''),
+        isContractAlreadyVerified: jest.fn().mockResolvedValue(false),
+        verifyContract: jest.fn().mockRejectedValue(new Error('Verification failed'))
+      }
+      mockVerificationRegistry.register(mockPlatform)
+      
+      const engineWithoutIgnore = new ExecutionEngine(templates, { 
+        verificationRegistry: mockVerificationRegistry,
+        ignoreVerifyErrors: false
+      })
+
+      const mockContract = {
+        sourceName: 'TestContract.sol',
+        contractName: 'TestContract',
+        compiler: { version: '0.8.0' },
+        buildInfoId: 'test-build-id',
+        source: 'contract TestContract { }',
+        creationCode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+        abi: [],
+        _sources: new Set(['TestContract.sol', '/path/to/build-info/test.json'])
+      }
+      
+      context.contractRepository.addForTesting({
+        contractName: mockContract.contractName,
+        abi: mockContract.abi,
+        bytecode: mockContract.creationCode,
+        sourceName: mockContract.sourceName,
+        source: mockContract.source,
+        compiler: mockContract.compiler,
+        buildInfoId: mockContract.buildInfoId,
+        _path: '/test/path',
+        _hash: 'test-hash'
+      })
+      
+      const action: Action = {
+        type: 'verify-contract',
+        name: 'test-verify',
+        arguments: {
+          address: TEST_ADDRESSES.RECIPIENT_1,
+          contract: '{{Contract(TestContract)}}',
+          platform: 'mock-platform'
+        }
+      }
+
+      // Should throw when ignoreVerifyErrors is disabled
+      await expect((engineWithoutIgnore as any).executePrimitive(action, context, new Map()))
+        .rejects.toThrow('Action "test-verify": No build-info file found in contract sources')
+    })
+
+    it('should handle multiple platform verification failures with ignoreVerifyErrors', async () => {
+      const mockVerificationRegistry = new VerificationPlatformRegistry()
+      
+      // Create multiple failing platforms
+      const platforms = ['platform1', 'platform2', 'platform3']
+      platforms.forEach(name => {
+        const mockPlatform = {
+          name,
+          supportsNetwork: jest.fn().mockReturnValue(true),
+          isConfigured: jest.fn().mockReturnValue(true),
+          getConfigurationRequirements: jest.fn().mockReturnValue(''),
+          isContractAlreadyVerified: jest.fn().mockResolvedValue(false),
+          verifyContract: jest.fn().mockRejectedValue(new Error(`${name} verification failed`))
+        }
+        mockVerificationRegistry.register(mockPlatform)
+      })
+      
+      engine = new ExecutionEngine(templates, { 
+        verificationRegistry: mockVerificationRegistry,
+        ignoreVerifyErrors: true
+      })
+
+      const mockContract = {
+        sourceName: 'TestContract.sol',
+        contractName: 'TestContract',
+        compiler: { version: '0.8.0' },
+        buildInfoId: 'test-build-id',
+        source: 'contract TestContract { }',
+        creationCode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+        abi: [],
+        _sources: new Set(['TestContract.sol', '/path/to/build-info/test.json'])
+      }
+      
+      context.contractRepository.addForTesting({
+        contractName: mockContract.contractName,
+        abi: mockContract.abi,
+        bytecode: mockContract.creationCode,
+        sourceName: mockContract.sourceName,
+        source: mockContract.source,
+        compiler: mockContract.compiler,
+        buildInfoId: mockContract.buildInfoId,
+        _path: '/test/path',
+        _hash: 'test-hash'
+      })
+      
+      const action: Action = {
+        type: 'verify-contract',
+        name: 'test-verify',
+        arguments: {
+          address: TEST_ADDRESSES.RECIPIENT_1,
+          contract: '{{Contract(TestContract)}}',
+          platform: platforms
+        }
+      }
+
+      // Should not throw even with multiple platform failures
+      await expect((engine as any).executePrimitive(action, context, new Map()))
+        .resolves.not.toThrow()
+
+      // Should have collected warnings for all platforms
+      const warnings = engine.getVerificationWarnings()
+      expect(warnings).toHaveLength(3)
+      
+      platforms.forEach((platform, index) => {
+        expect(warnings[index]).toMatchObject({
+          actionName: 'test-verify',
+          platform,
+          error: 'Action "test-verify": No build-info file found in contract sources'
+        })
+      })
+    })
+
+    it('should provide methods to get and clear verification warnings', () => {
+      // Initially empty
+      expect(engine.getVerificationWarnings()).toEqual([])
+
+      // Manually add a warning (simulating what happens during verification)
+      ;(engine as any).verificationWarnings.push({
+        actionName: 'test',
+        address: '0x123',
+        contractName: 'Test',
+        platform: 'test-platform',
+        error: 'test error'
+      })
+
+      // Should return the warning
+      const warnings = engine.getVerificationWarnings()
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toMatchObject({
+        actionName: 'test',
+        error: 'test error'
+      })
+
+      // Clear warnings
+      engine.clearVerificationWarnings()
+      expect(engine.getVerificationWarnings()).toEqual([])
+    })
+
+    it('should emit verification_skipped events when all platforms fail and ignoreVerifyErrors is enabled', async () => {
+      const mockVerificationRegistry = new VerificationPlatformRegistry()
+      const mockPlatform = {
+        name: 'mock-platform',
+        supportsNetwork: jest.fn().mockReturnValue(true),
+        isConfigured: jest.fn().mockReturnValue(true),
+        getConfigurationRequirements: jest.fn().mockReturnValue(''),
+        isContractAlreadyVerified: jest.fn().mockResolvedValue(false),
+        verifyContract: jest.fn().mockRejectedValue(new Error('Verification failed'))
+      }
+      mockVerificationRegistry.register(mockPlatform)
+      mockVerificationRegistry.getConfiguredPlatforms = jest.fn().mockReturnValue([mockPlatform])
+      
+      const mockEventEmitter = {
+        emitEvent: jest.fn()
+      }
+      
+      engine = new ExecutionEngine(templates, { 
+        verificationRegistry: mockVerificationRegistry,
+        ignoreVerifyErrors: true,
+        eventEmitter: mockEventEmitter as any
+      })
+
+      const mockContract = {
+        sourceName: 'TestContract.sol',
+        contractName: 'TestContract',
+        compiler: { version: '0.8.0' },
+        buildInfoId: 'test-build-id',
+        source: 'contract TestContract { }',
+        creationCode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+        abi: [],
+        _sources: new Set(['TestContract.sol', '/path/to/build-info/test.json'])
+      }
+      
+      context.contractRepository.addForTesting({
+        contractName: mockContract.contractName,
+        abi: mockContract.abi,
+        bytecode: mockContract.creationCode,
+        sourceName: mockContract.sourceName,
+        source: mockContract.source,
+        compiler: mockContract.compiler,
+        buildInfoId: mockContract.buildInfoId,
+        _path: '/test/path',
+        _hash: 'test-hash'
+      })
+      
+      const action: Action = {
+        type: 'verify-contract',
+        name: 'test-verify',
+        arguments: {
+          address: TEST_ADDRESSES.RECIPIENT_1,
+          contract: '{{Contract(TestContract)}}',
+          platform: 'all'
+        }
+      }
+
+      await (engine as any).executePrimitive(action, context, new Map())
+
+      // Should emit verification_skipped event
+      expect(mockEventEmitter.emitEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'verification_skipped',
+          level: 'warn',
+          data: expect.objectContaining({
+            actionName: 'test-verify',
+            reason: expect.stringContaining('continuing due to --ignore-verify-errors')
+          })
+        })
+      )
+    })
+  })
 }) 

@@ -117,7 +117,8 @@ describe('Deployer', () => {
     } as any
 
     mockEngine = {
-      executeJob: jest.fn().mockResolvedValue(undefined)
+      executeJob: jest.fn().mockResolvedValue(undefined),
+      getVerificationWarnings: jest.fn().mockReturnValue([])
     } as any
 
     mockContext = {
@@ -1197,6 +1198,112 @@ describe('Deployer', () => {
       
       // Should complete all executions
       expect(mockEngine.executeJob).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('ignore verify errors feature', () => {
+    it('should pass ignoreVerifyErrors option to ExecutionEngine', async () => {
+      const optionsWithIgnoreVerifyErrors = {
+        ...deployerOptions,
+        ignoreVerifyErrors: true
+      }
+
+      const deployer = new Deployer(optionsWithIgnoreVerifyErrors)
+      await deployer.run()
+
+      // Verify that ExecutionEngine was created with ignoreVerifyErrors option
+      expect(MockExecutionEngine).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          ignoreVerifyErrors: true
+        })
+      )
+    })
+
+    it('should emit verification warnings report when ignoreVerifyErrors is enabled', async () => {
+      const mockWarnings = [
+        {
+          actionName: 'verify-test',
+          address: '0x1234567890123456789012345678901234567890',
+          contractName: 'TestContract',
+          platform: 'etherscan_v2',
+          error: 'Failed to verify contract',
+          networkName: 'mainnet'
+        }
+      ]
+
+      // Mock engine to return warnings
+      mockEngine.getVerificationWarnings = jest.fn().mockReturnValue(mockWarnings)
+
+      const optionsWithIgnoreVerifyErrors = {
+        ...deployerOptions,
+        ignoreVerifyErrors: true
+      }
+
+      const deployer = new Deployer(optionsWithIgnoreVerifyErrors)
+      
+      // Mock event emitter to track events
+      const mockEmitEvent = jest.fn()
+      ;(deployer as any).events = { emitEvent: mockEmitEvent }
+
+      await deployer.run()
+
+      // Verify that verification warnings report was emitted
+      expect(mockEmitEvent).toHaveBeenCalledWith({
+        type: 'verification_warnings_report',
+        level: 'warn',
+        data: {
+          totalWarnings: 1,
+          warnings: mockWarnings
+        }
+      })
+    })
+
+    it('should not emit verification warnings report when ignoreVerifyErrors is disabled', async () => {
+      const optionsWithoutIgnoreVerifyErrors = {
+        ...deployerOptions,
+        ignoreVerifyErrors: false
+      }
+
+      const deployer = new Deployer(optionsWithoutIgnoreVerifyErrors)
+      
+      // Mock event emitter to track events
+      const mockEmitEvent = jest.fn()
+      ;(deployer as any).events = { emitEvent: mockEmitEvent }
+
+      await deployer.run()
+
+      // Verify that verification warnings report was NOT emitted
+      expect(mockEmitEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'verification_warnings_report'
+        })
+      )
+    })
+
+    it('should not emit verification warnings report when there are no warnings', async () => {
+      // Mock engine to return no warnings
+      mockEngine.getVerificationWarnings = jest.fn().mockReturnValue([])
+
+      const optionsWithIgnoreVerifyErrors = {
+        ...deployerOptions,
+        ignoreVerifyErrors: true
+      }
+
+      const deployer = new Deployer(optionsWithIgnoreVerifyErrors)
+      
+      // Mock event emitter to track events
+      const mockEmitEvent = jest.fn()
+      ;(deployer as any).events = { emitEvent: mockEmitEvent }
+
+      await deployer.run()
+
+      // Verify that verification warnings report was NOT emitted when no warnings
+      expect(mockEmitEvent).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'verification_warnings_report'
+        })
+      )
     })
   })
 }) 

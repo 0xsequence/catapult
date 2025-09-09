@@ -21,6 +21,7 @@ interface RunOptions {
   noPostCheckConditions: boolean
   flatOutput: boolean
   summary: boolean
+  ignoreVerifyErrors: boolean
 }
  
 export function makeRunCommand(): Command {
@@ -36,6 +37,7 @@ export function makeRunCommand(): Command {
     .option('--flat-output', 'Write output files in a single flat directory instead of mirroring the jobs directory structure. Default: false', false)
     .option('--no-summary', 'Hide final summary at the end of the run. Default: show', false)
     .option('--run-deprecated', 'Allow running jobs marked as deprecated. By default deprecated jobs are skipped unless explicitly targeted.', false)
+    .option('--ignore-verify-errors', 'Convert verification errors to warnings instead of exiting with error code. Shows complete warning report at the end.', false)
 
   projectOption(run)
   dotenvOption(run)
@@ -113,7 +115,8 @@ export function makeRunCommand(): Command {
           loadStdTemplates: options.std !== false
         },
         flatOutput: options.flatOutput === true,
-        runDeprecated: (options as { runDeprecated?: boolean }).runDeprecated === true
+        runDeprecated: (options as { runDeprecated?: boolean }).runDeprecated === true,
+        ignoreVerifyErrors: options.ignoreVerifyErrors === true
       } as DeployerOptions
 
       const deployer = new Deployer(deployerOptions)
