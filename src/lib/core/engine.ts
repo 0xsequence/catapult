@@ -13,6 +13,7 @@ export type EngineOptions = {
   verificationRegistry?: VerificationPlatformRegistry
   noPostCheckConditions?: boolean
   allowMultipleNicksMethodTests?: boolean
+  ignoreVerifyErrors?: boolean
 }
 
 /**
@@ -27,7 +28,17 @@ export class ExecutionEngine {
   private readonly verificationRegistry: VerificationPlatformRegistry
   private readonly noPostCheckConditions: boolean
   private readonly allowMultipleNicksMethodTests: boolean
+  private readonly ignoreVerifyErrors: boolean
   private nicksMethodTested: boolean = false
+  private verificationWarnings: Array<{
+    actionName: string
+    address: string
+    contractName: string
+    platform: string
+    error: string
+    jobName?: string
+    networkName?: string
+  }> = []
 
   constructor(templates: Map<string, Template>, options?: EngineOptions) {
     this.resolver = new ValueResolver()
@@ -36,6 +47,7 @@ export class ExecutionEngine {
     this.verificationRegistry = options?.verificationRegistry || createDefaultVerificationRegistry()
     this.noPostCheckConditions = options?.noPostCheckConditions ?? false
     this.allowMultipleNicksMethodTests = options?.allowMultipleNicksMethodTests ?? false
+    this.ignoreVerifyErrors = options?.ignoreVerifyErrors ?? false
   }
 
   /**
@@ -631,6 +643,20 @@ export class ExecutionEngine {
               )
               anySuccess = true
             } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error)
+              
+              // If ignoreVerifyErrors is enabled, add to warnings and continue
+              if (this.ignoreVerifyErrors) {
+                this.verificationWarnings.push({
+                  actionName: actionName,
+                  address,
+                  contractName,
+                  platform: platform.name,
+                  error: errorMessage,
+                  networkName: network.name
+                })
+              }
+              
               // Log the error but continue with other platforms
               this.events.emitEvent({
                 type: 'verification_failed',
@@ -640,14 +666,26 @@ export class ExecutionEngine {
                   address,
                   contractName,
                   platform: platform.name,
-                  error: error instanceof Error ? error.message : String(error)
+                  error: errorMessage
                 }
               })
             }
           }
 
           if (!anySuccess) {
-            throw new Error(`Verification failed on all configured platforms for network ${network.name}`)
+            if (this.ignoreVerifyErrors) {
+              // Don't throw error if ignoreVerifyErrors is enabled - warnings already collected
+              this.events.emitEvent({
+                type: 'verification_skipped',
+                level: 'warn',
+                data: {
+                  actionName: actionName,
+                  reason: `Verification failed on all configured platforms for network ${network.name}, but continuing due to --ignore-verify-errors`
+                }
+              })
+            } else {
+              throw new Error(`Verification failed on all configured platforms for network ${network.name}`)
+            }
           }
         } else {
           // Handle specific platform(s) verification
@@ -673,6 +711,20 @@ export class ExecutionEngine {
               )
               anySuccess = true
             } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error)
+              
+              // If ignoreVerifyErrors is enabled, add to warnings
+              if (this.ignoreVerifyErrors) {
+                this.verificationWarnings.push({
+                  actionName: actionName,
+                  address,
+                  contractName,
+                  platform: platform.name,
+                  error: errorMessage,
+                  networkName: network.name
+                })
+              }
+              
               // Log the error but continue with other platforms if multiple specified
               this.events.emitEvent({
                 type: 'verification_failed',
@@ -682,19 +734,31 @@ export class ExecutionEngine {
                   address,
                   contractName,
                   platform: platform.name,
-                  error: error instanceof Error ? error.message : String(error)
+                  error: errorMessage
                 }
               })
               
-              // If only one platform specified, re-throw the error
-              if (platformsToTry.length === 1) {
+              // If only one platform specified, re-throw the error unless ignoreVerifyErrors is enabled
+              if (platformsToTry.length === 1 && !this.ignoreVerifyErrors) {
                 throw error
               }
             }
           }
 
           if (!anySuccess && platformsToTry.length > 1) {
-            throw new Error(`Verification failed on all specified platforms: ${platformsToTry.join(', ')}`)
+            if (this.ignoreVerifyErrors) {
+              // Don't throw error if ignoreVerifyErrors is enabled - warnings already collected
+              this.events.emitEvent({
+                type: 'verification_skipped',
+                level: 'warn',
+                data: {
+                  actionName: actionName,
+                  reason: `Verification failed on all specified platforms: ${platformsToTry.join(', ')}, but continuing due to --ignore-verify-errors`
+                }
+              })
+            } else {
+              throw new Error(`Verification failed on all specified platforms: ${platformsToTry.join(', ')}`)
+            }
           }
         }
 
@@ -1634,5 +1698,27 @@ export class ExecutionEngine {
     }
 
     return sorted
+  }
+
+  /**
+   * Get all verification warnings that were collected when ignoreVerifyErrors is enabled
+   */
+  public getVerificationWarnings(): Array<{
+    actionName: string
+    address: string
+    contractName: string
+    platform: string
+    error: string
+    jobName?: string
+    networkName?: string
+  }> {
+    return [...this.verificationWarnings]
+  }
+
+  /**
+   * Clear verification warnings (useful for testing)
+   */
+  public clearVerificationWarnings(): void {
+    this.verificationWarnings = []
   }
 }

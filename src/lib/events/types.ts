@@ -429,6 +429,32 @@ export interface VerificationRetryEvent extends BaseEvent {
   }
 }
 
+export interface VerificationSkippedEvent extends BaseEvent {
+  type: 'verification_skipped'
+  level: 'warn'
+  data: {
+    actionName: string
+    reason: string
+  }
+}
+
+export interface VerificationWarningsReportEvent extends BaseEvent {
+  type: 'verification_warnings_report'
+  level: 'warn'
+  data: {
+    totalWarnings: number
+    warnings: Array<{
+      actionName: string
+      address: string
+      contractName: string
+      platform: string
+      error: string
+      jobName?: string
+      networkName?: string
+    }>
+  }
+}
+
 // End-of-run summary
 export interface RunSummaryEvent extends BaseEvent {
   type: 'run_summary'
@@ -488,5 +514,7 @@ export type DeploymentEvent =
   | VerificationSubmittedEvent
   | VerificationCompletedEvent
   | VerificationFailedEvent
-  | VerificationRetryEvent 
+  | VerificationRetryEvent
+  | VerificationSkippedEvent
+  | VerificationWarningsReportEvent
   | RunSummaryEvent

@@ -52,6 +52,9 @@ export interface DeployerOptions {
 
   /** Optional: Show end-of-run summary (default: true). */
   showSummary?: boolean
+
+  /** Optional: Convert verification errors to warnings instead of failing (default: false). */
+  ignoreVerifyErrors?: boolean
 }
 
 /**
@@ -157,7 +160,8 @@ export class Deployer {
       const engine = new ExecutionEngine(this.loader.templates, {
         eventEmitter: this.events,
         verificationRegistry,
-        noPostCheckConditions: this.noPostCheckConditions
+        noPostCheckConditions: this.noPostCheckConditions,
+        ignoreVerifyErrors: this.options.ignoreVerifyErrors ?? false
       })
       
       // Track if any jobs have failed
@@ -312,6 +316,11 @@ export class Deployer {
       // 5. Write results to output files.
       await this.writeOutputFiles()
 
+      // Show verification warnings report if ignoreVerifyErrors is enabled
+      if (this.options.ignoreVerifyErrors) {
+        this.emitVerificationWarningsReport(engine)
+      }
+
       // Emit end-of-run summary before final status
       if (this.showSummary) {
         this.emitRunSummary(hasFailures)
@@ -421,6 +430,24 @@ export class Deployer {
     } satisfies Omit<RunSummaryEvent, 'timestamp'>
 
     this.events.emitEvent(summaryEvent)
+  }
+
+  /**
+   * Emit verification warnings report when ignoreVerifyErrors is enabled
+   */
+  private emitVerificationWarningsReport(engine: ExecutionEngine): void {
+    const warnings = engine.getVerificationWarnings()
+    
+    if (warnings.length > 0) {
+      this.events.emitEvent({
+        type: 'verification_warnings_report',
+        level: 'warn',
+        data: {
+          totalWarnings: warnings.length,
+          warnings: warnings
+        }
+      })
+    }
   }
 
   /**
