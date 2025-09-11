@@ -116,6 +116,22 @@ export class ValueResolver {
       return value
     }
 
+    // Check for Network(...) property access
+    const networkMatch = expression.match(/^Network\(\)\.(.\w+)$/)
+    if (networkMatch) {
+      const [, property] = networkMatch
+      const network = context.getNetwork()
+      if (property === 'testnet') {
+        // Special case for testnet property. Default to false if not set.
+        return !!network.testnet
+      }
+      const value = (network as any)[property]
+      if (value === undefined) {
+        throw new Error(`Property "${property}" does not exist on network`)
+      }
+      return value
+    }
+
     // Check scope for local variables (template arguments) first
     if (scope.has(expression)) {
       return scope.get(expression)
@@ -132,7 +148,7 @@ export class ValueResolver {
       return context.getOutput(expression)
     } catch (e) {
       // Provide a more helpful error if an unresolved reference is found
-      throw new Error(`Failed to resolve expression "{{${expression}}}". It is not a valid Contract(...) reference, local scope variable, constant, or a known output.`)
+      throw new Error(`Failed to resolve expression "{{${expression}}}". It is not a valid Contract(...) or Network() reference, local scope variable, constant, or a known output.`)
     }
   }
 
