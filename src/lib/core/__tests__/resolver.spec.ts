@@ -15,7 +15,14 @@ describe('ValueResolver', () => {
     mockRegistry = new ContractRepository()
     // Allow configuring RPC URL via environment variable for CI
     const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545'
-    mockNetwork = { name: 'testnet', chainId: 999, rpcUrl }
+    mockNetwork = {
+      name: 'testnet',
+      chainId: 999,
+      rpcUrl,
+      supports: ["sourcify", "etherscan_v2"],
+      gasLimit: 10000000,
+      evmVersion: 'cancun',
+    }
     // A dummy private key is fine as these tests don't send transactions
     const mockPrivateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
     context = new ExecutionContext(mockNetwork, mockPrivateKey, mockRegistry)
@@ -1206,7 +1213,7 @@ describe('ValueResolver', () => {
     })
   })
 
-  describe('artifact function expressions', () => {
+  describe('contract artifact function expressions', () => {
     beforeEach(() => {
       // Add test artifacts to the registry
       const testArtifact1 = {
@@ -1486,6 +1493,78 @@ describe('ValueResolver', () => {
         const contractName = await resolver.resolve('{{contractName}}', context)
         const result = await resolver.resolve(`{{Contract(${contractName}).creationCode}}`, context)
         expect(result).toBe('0x608060405234801561000f575f5ffd5b50602a5f526020601ff3')
+      })
+    })
+  })
+
+  describe('network function expressions', () => {
+    describe('Network().property', () => {
+      it('should return name for valid network', async () => {
+        const result = await resolver.resolve('{{Network().name}}', context)
+        expect(result).toBe(mockNetwork.name)
+      })
+
+      it('should return handle whitespace after expression', async () => {
+        const result = await resolver.resolve('{{Network().name }}', context)
+        expect(result).toBe(mockNetwork.name)
+      })
+
+      it('should return handle whitespace before expression', async () => {
+        const result = await resolver.resolve('{{ Network().name}}', context)
+        expect(result).toBe(mockNetwork.name)
+      })
+
+      it('should return handle whitespace around expression', async () => {
+        const result = await resolver.resolve('{{ Network().name }}', context)
+        expect(result).toBe(mockNetwork.name)
+      })
+  
+      it('should return chainId for valid network', async () => {
+        const result = await resolver.resolve('{{Network().chainId}}', context)
+        expect(result).toBe(mockNetwork.chainId)
+      })
+  
+      it('should return rpcUrl for valid network', async () => {
+        const result = await resolver.resolve('{{Network().rpcUrl}}', context)
+        expect(result).toBe(mockNetwork.rpcUrl)
+      })
+  
+      it('should return supports for valid network', async () => {
+        const result = await resolver.resolve('{{Network().supports}}', context)
+        expect(result).toBe(mockNetwork.supports)
+      })
+  
+      it('should return gasLimit for valid network', async () => {
+        const result = await resolver.resolve('{{Network().gasLimit}}', context)
+        expect(result).toBe(mockNetwork.gasLimit)
+      })
+
+      it('should return testnet for valid network', async () => {
+        // Note: Expect true because testnet is not set
+        const result = await resolver.resolve('{{Network().testnet}}', context)
+        expect(result).toBe(false)
+      })
+
+      it('should return evmVersion for valid network', async () => {
+        const result = await resolver.resolve('{{Network().evmVersion}}', context)
+        expect(result).toBe(mockNetwork.evmVersion)
+      })
+    })
+
+    describe('invalid Network expressions', () => {
+      it('should fail for invalid property', async () => {
+        await expect(resolver.resolve('{{Network().invalid}}', context))
+          .rejects.toThrow('Property "invalid" does not exist on network')
+      })
+
+      it('should fail for undefined property', async () => {
+        await expect(resolver.resolve('{{Network().undefined}}', context))
+          .rejects.toThrow('Property "undefined" does not exist on network')
+      })
+
+      it('should fail for network with reference', async () => {
+        await expect(resolver.resolve('{{Network(testnet).name}}', context))
+          .rejects.toThrow('Failed to resolve expression \"{{Network(testnet).name}}\". It is not a valid Contract(...) or Network() reference, local scope variable, constant, or a known output.')
       })
     })
   })
