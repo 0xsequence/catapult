@@ -117,7 +117,7 @@ export class ValueResolver {
     }
 
     // Check for Network(...) property access
-    const networkMatch = expression.match(/^Network\(\)\.(.\w+)$/)
+    const networkMatch = expression.match(/^Network\(\)\.(\w+)$/)
     if (networkMatch) {
       const [, property] = networkMatch
       const network = context.getNetwork()
