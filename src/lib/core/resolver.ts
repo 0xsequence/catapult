@@ -117,7 +117,7 @@ export class ValueResolver {
     }
 
     // Check for Network(...) property access
-    const networkMatch = expression.match(/^Network\(\)\.(.\w+)$/)
+    const networkMatch = expression.match(/^Network\(\)\.(\w+)$/)
     if (networkMatch) {
       const [, property] = networkMatch
       const network = context.getNetwork()
@@ -187,6 +187,8 @@ export class ValueResolver {
         return this.resolveJobCompleted(resolvedArgs as JobCompletedValue['arguments'], context)
       case 'read-json':
         return this.resolveReadJson(resolvedArgs as ReadJsonValue['arguments'])
+      case 'resolve-json':
+        return this.resolveJsonValue(resolvedArgs, context)
       default:
         throw new Error(`Unknown value resolver type: ${(obj as any).type}`)
     }
@@ -510,6 +512,21 @@ export class ValueResolver {
       return current
     } catch (error) {
       throw new Error(`read-json: Failed to access path "${path}": ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  private async resolveJsonValue(args: any, context: ExecutionContext): Promise<any> {
+    if (Array.isArray(args)) {
+      return Promise.all(args.map(v => this.resolveJsonValue(v, context)))
+    } else if (typeof args === 'object' && args !== null) {
+      const resolved: Record<string, any> = {}
+      for (const [k, v] of Object.entries(args)) {
+        resolved[k] = await this.resolveJsonValue(v, context)
+      }
+      return resolved
+    } else {
+      // For primitive values, resolve them using the main resolve method
+      return this.resolve(args, context)
     }
   }
 
