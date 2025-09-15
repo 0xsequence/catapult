@@ -1492,7 +1492,7 @@ describe('ExecutionEngine', () => {
       }
 
       await expect((engine as any).executeAction(action, context, new Map())).rejects.toThrow(new Error(`Nick's method test failed for action "nick-test-fail-twice"`))
-      await expect((engine as any).executeAction(action, context, new Map())).rejects.toThrow(new Error('Nick\'s method test already performed this run'))
+      await expect((engine as any).executeAction(action, context, new Map())).rejects.toThrow(new Error('Nick\'s method test already failed this run'))
     })
 
     it('should prevent passing Nick\'s method from being tested twice', async () => {
