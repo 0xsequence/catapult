@@ -464,17 +464,17 @@ export class ExecutionEngine {
         
         // Handle gas limit with optional multiplier
         const network = context.getNetwork()
+        const signer = await context.getResolvedSigner()
         if (network.gasLimit) {
           const baseGasLimit = network.gasLimit
           txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
         } else if (gasMultiplier) {
           // If gasMultiplier is specified but no network gasLimit, estimate gas first
-          const signer = await context.getResolvedSigner()
           const estimatedGas = await signer.estimateGas({ to, data, value })
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
         
-        const signer = await context.getResolvedSigner()
+        await this.checkFundsForTransaction(actionName, txParams, context, signer)
         const tx = await signer.sendTransaction(txParams)
         
         this.events.emitEvent({
@@ -795,17 +795,17 @@ export class ExecutionEngine {
         
         // Handle gas limit with optional multiplier
         const network = context.getNetwork()
+        const signer = await context.getResolvedSigner()
         if (network.gasLimit) {
           const baseGasLimit = network.gasLimit
           txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
         } else if (gasMultiplier) {
           // If gasMultiplier is specified but no network gasLimit, estimate gas first
-          const signer = await context.getResolvedSigner()
-          const estimatedGas = await signer.estimateGas({ to: null, data, value })
+          const estimatedGas = await signer.estimateGas(txParams)
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
-        
-        const signer = await context.getResolvedSigner()
+
+        await this.checkFundsForTransaction(actionName, txParams, context, signer)
         const tx = await signer.sendTransaction(txParams)
         
         this.events.emitEvent({
@@ -1701,6 +1701,61 @@ export class ExecutionEngine {
     }
 
     return sorted
+  }
+
+  /**
+   * Checks if the signer has enough funds to cover the estimated cost of the transaction.
+   * Returns true if the signer has enough funds, false if the signer does not have enough funds, and null if no gas price is available.
+   */
+  private async checkFundsForTransaction(actionName: string, txParams: ethers.TransactionRequest, context: ExecutionContext, signer: ethers.Signer): Promise<boolean | null> {
+    try {
+      const gasPrice = txParams.gasPrice || await context.provider.getFeeData().then(data => data.gasPrice)
+      if (!gasPrice) {
+        this.events.emitEvent({
+          type: 'debug_info',
+          level: 'warn',
+          data: {
+            actionName: actionName,
+            message: `No gas price available`
+          }
+        })
+        return null
+      }
+      const gasLimit = txParams.gasLimit || await signer.estimateGas(txParams)
+      const requiredETH = BigInt(gasLimit) * BigInt(gasPrice)
+      const signerBalance = await context.provider.getBalance(await signer.getAddress())
+      this.events.emitEvent({
+        type: 'debug_info',
+          level: 'debug',
+          data: {
+            actionName: actionName,
+            message: `Transaction ${txParams.gasLimit ? 'set' : 'estimated'} gas limit: ${gasLimit}, ${txParams.gasPrice ? 'set' : 'estimated'} gas price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei, required ETH: ${ethers.formatEther(requiredETH)}`
+          }
+        })
+      if (signerBalance < requiredETH) {
+        this.events.emitEvent({
+        type: 'debug_info',
+          level: 'warn',
+          data: {
+            actionName: actionName,
+            message: `Insufficient funds: signer has ${ethers.formatEther(signerBalance)} ETH but estimated cost is ${ethers.formatEther(requiredETH)} ETH`
+          }
+        })
+        return false
+      } else {
+        return true
+      }
+    } catch (error) {
+      this.events.emitEvent({
+        type: 'debug_info',
+        level: 'warn',
+        data: {
+          actionName: actionName,
+          message: "Error checking signer balance: " + (error instanceof Error ? error.message : String(error))
+        }
+      })
+    }
+    return null
   }
 
   /**
