@@ -688,16 +688,26 @@ export class Deployer {
 
   /**
    * Populates the execution context with outputs from previously executed dependent jobs.
+   * Throws an error if any dependency failed.
    */
   private populateContextWithDependentJobOutputs(job: Job, context: ExecutionContext, network: Network): void {
     if (!job.depends_on) return
 
     for (const dependentJobName of job.depends_on) {
       const dependentJobResults = this.results.get(dependentJobName)
-      if (!dependentJobResults) continue
+      if (!dependentJobResults) {
+        throw new Error(`Job "${job.name}" depends on "${dependentJobName}", but "${dependentJobName}" has not been executed yet.`)
+      }
 
       const networkResult = dependentJobResults.outputs.get(network.chainId)
-      if (!networkResult || networkResult.status !== 'success') continue
+      if (!networkResult) {
+        throw new Error(`Job "${job.name}" depends on "${dependentJobName}", but "${dependentJobName}" has not been executed on network ${network.name} (chainId: ${network.chainId}).`)
+      }
+
+      if (networkResult.status !== 'success') {
+        const errorMessage = typeof networkResult.data === 'string' ? networkResult.data : 'Unknown error'
+        throw new Error(`Job "${job.name}" depends on "${dependentJobName}", but "${dependentJobName}" failed: ${errorMessage}`)
+      }
 
       // Add outputs with job name prefixes for cross-job access
       const outputs = networkResult.data as Map<string, unknown>
