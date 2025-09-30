@@ -16,31 +16,31 @@ import type { RunSummaryEvent } from './events'
 export interface DeployerOptions {
   /** The root directory of the deployment project. */
   projectRoot: string
-  
+
   /** The private key of the EOA to be used as the signer/relayer. Optional if an implicit sender from RPC is desired. */
   privateKey?: string
-  
+
   /** An array of network configurations to use for deployment. */
   networks: Network[]
-  
+
   /** Optional: An array of job names to execute. If not provided, all jobs are considered. */
   runJobs?: string[]
-  
+
   /** Optional: An array of chain IDs to run on. If not provided, all configured networks are used. */
   runOnNetworks?: number[]
-  
+
   /** Optional: Custom event emitter instance. If not provided, uses the global singleton. */
   eventEmitter?: DeploymentEventEmitter
-  
+
   /** Optional: Project loader options (e.g., whether to load standard templates). */
   loaderOptions?: ProjectLoaderOptions
-  
+
   /** Optional Etherscan API key for contract verification. */
   etherscanApiKey?: string
-  
+
   /** Optional: Stop execution as soon as any job fails. Defaults to false. */
   failEarly?: boolean
-  
+
   /** Optional: Skip post-execution check of skip conditions. Defaults to false (post-check enabled). */
   noPostCheckConditions?: boolean
 
@@ -68,11 +68,11 @@ export class Deployer {
   private readonly loader: ProjectLoader
   private readonly noPostCheckConditions: boolean
   private readonly showSummary: boolean
-  
+
   // Store both successful and failed execution results
   private readonly results = new Map<string, {
     job: Job;
-    outputs: Map<number, { status: 'success' | 'error'; data: Map<string, unknown> | string }>
+    outputs: Map<number, { status: 'success' | 'error' | 'skipped'; data: Map<string, unknown> | string }>
   }>()
   private graph?: DependencyGraph
 
@@ -97,7 +97,7 @@ export class Deployer {
         projectRoot: this.options.projectRoot
       }
     })
-    
+
     try {
       // 1. Load all project artifacts, templates, and jobs.
       this.events.emitEvent({
@@ -107,9 +107,9 @@ export class Deployer {
           projectRoot: this.options.projectRoot
         }
       })
-      
+
       await this.loader.load()
-      
+
       this.events.emitEvent({
         type: 'project_loaded',
         level: 'info',
@@ -118,7 +118,7 @@ export class Deployer {
           templateCount: this.loader.templates.size
         }
       })
-      
+
       // 2. Build the dependency graph and determine execution order.
       const graph = new DependencyGraph(this.loader.jobs, this.loader.templates)
       this.graph = graph
@@ -142,7 +142,7 @@ export class Deployer {
         }
       }
       const targetNetworks = this.getTargetNetworks()
-      
+
       this.events.emitEvent({
         type: 'execution_plan',
         level: 'info',
@@ -163,12 +163,12 @@ export class Deployer {
         noPostCheckConditions: this.noPostCheckConditions,
         ignoreVerifyErrors: this.options.ignoreVerifyErrors ?? false
       })
-      
+
       // Track if any jobs have failed
       let hasFailures = false
       // Emit signer info once per network (chainId)
       const signerInfoPrintedForChain = new Set<number>()
-      
+
       for (const network of targetNetworks) {
         this.events.emitEvent({
           type: 'network_started',
@@ -180,7 +180,12 @@ export class Deployer {
         })
         for (const jobName of jobsToRun) {
           const job = this.loader.jobs.get(jobName)!
-          
+
+          // Initialize results storage for this job if not exists
+          if (!this.results.has(job.name)) {
+            this.results.set(job.name, { job, outputs: new Map() })
+          }
+
           if (this.shouldSkipJobOnNetwork(job, network)) {
             this.events.emitEvent({
               type: 'job_skipped',
@@ -191,14 +196,16 @@ export class Deployer {
                 reason: 'configuration'
               }
             })
+
+            // Store skipped result
+            this.results.get(job.name)!.outputs.set(network.chainId, {
+              status: 'skipped',
+              data: 'Job skipped due to network configuration'
+            })
+
             continue
           }
-          
-          // Initialize results storage for this job if not exists
-          if (!this.results.has(job.name)) {
-            this.results.set(job.name, { job, outputs: new Map() })
-          }
-          
+
           let context: ExecutionContext | undefined
           try {
             context = new ExecutionContext(
@@ -212,7 +219,7 @@ export class Deployer {
             if (typeof (context as unknown as { setJobConstants?: (constants: unknown) => void }).setJobConstants === 'function') {
               (context as unknown as { setJobConstants: (constants: unknown) => void }).setJobConstants(job.constants)
             }
-            
+
             // Emit signer info once per network using the first job's context
             if (!signerInfoPrintedForChain.has(network.chainId)) {
               try {
@@ -253,11 +260,35 @@ export class Deployer {
               }
             }
 
+            // Check job-level skip conditions before execution
+            if (job.skip_condition) {
+              const shouldSkip = await engine.evaluateSkipConditions(job.skip_condition, context, new Map())
+              if (shouldSkip) {
+                // Store skipped result
+                this.results.get(job.name)!.outputs.set(network.chainId, {
+                  status: 'skipped',
+                  data: `Job "${job.name}" skipped due to skip condition`
+                })
+
+                this.events.emitEvent({
+                  type: 'job_skipped',
+                  level: 'warn',
+                  data: {
+                    jobName: job.name,
+                    networkName: network.name,
+                    reason: 'skip_condition'
+                  }
+                })
+
+                continue // Skip to next job
+              }
+            }
+
             // Populate context with outputs from previously executed dependent jobs
             this.populateContextWithDependentJobOutputs(job, context, network)
-            
+
             await engine.executeJob(job, context)
-            
+
             // Store successful results
             this.results.get(job.name)!.outputs.set(network.chainId, {
               status: 'success',
@@ -270,7 +301,7 @@ export class Deployer {
               status: 'error',
               data: errorMessage
             })
-            
+
             this.events.emitEvent({
               type: 'job_execution_failed',
               level: 'error',
@@ -281,15 +312,15 @@ export class Deployer {
                 error: errorMessage
               }
             })
-            
+
             // Mark that we have failures
             hasFailures = true
-            
+
             // If fail-early is enabled, throw the error immediately
             if (this.options.failEarly) {
               throw error
             }
-            
+
             // Otherwise, continue to next job/network
           } finally {
             // Clean up the context to prevent hanging connections
@@ -312,7 +343,7 @@ export class Deployer {
           }
         }
       }
-      
+
       // 5. Write results to output files.
       await this.writeOutputFiles()
 
@@ -386,18 +417,13 @@ export class Deployer {
     const jobCount = this.results.size
     let successCount = 0
     let failedCount = 0
-    const skippedCount = 0
-
-    // Detect skipped by comparing planned jobs across networks vs executed entries
-    // Here we approximate: an entry exists per job and per network outcome. We count
-    // successes/errors; skips were emitted as events during execution and are not persisted
-    // in results. We cannot perfectly reconstruct skipped count without tracking, so we
-    // expose it as 0 for now; could be improved by tracking per-network skip events.
+    let skippedCount = 0
 
     for (const [, result] of this.results) {
       for (const [, netResult] of result.outputs) {
         if (netResult.status === 'success') successCount++
-        else failedCount++
+        else if (netResult.status === 'skipped') skippedCount++
+        else if (netResult.status === 'error') failedCount++
       }
     }
 
@@ -437,7 +463,7 @@ export class Deployer {
    */
   private emitVerificationWarningsReport(engine: ExecutionEngine): void {
     const warnings = engine.getVerificationWarnings()
-    
+
     if (warnings.length > 0) {
       this.events.emitEvent({
         type: 'verification_warnings_report',
@@ -530,7 +556,7 @@ export class Deployer {
       const allowed = new Set<string>([...nonDeprecatedJobs, ...requiredDeprecated])
       return fullOrder.filter(name => allowed.has(name))
     }
-    
+
     // Expand patterns to concrete names
     const expandedRunJobs = expandRunJobs(this.options.runJobs)
     const explicitlyRequested = new Set<string>(expandedRunJobs)
@@ -557,7 +583,7 @@ export class Deployer {
       return this.options.runDeprecated === true
     })
     const allowedSet = new Set(filtered)
-    
+
     // Filter the original execution order to only include the required jobs, preserving the correct sequence.
     return fullOrder.filter(jobName => allowedSet.has(jobName))
   }
@@ -569,10 +595,10 @@ export class Deployer {
     if (!this.options.runOnNetworks || this.options.runOnNetworks.length === 0) {
       return this.options.networks // Run on all configured networks
     }
-    
+
     const targetChainIds = new Set(this.options.runOnNetworks)
     const filteredNetworks = this.options.networks.filter(n => targetChainIds.has(n.chainId))
-    
+
     if (filteredNetworks.length !== this.options.runOnNetworks.length) {
         const foundIds = new Set(filteredNetworks.map(n => n.chainId))
         const missingIds = this.options.runOnNetworks.filter(id => !foundIds.has(id))
@@ -584,7 +610,7 @@ export class Deployer {
           }
         })
     }
-    
+
     return filteredNetworks
   }
 
@@ -611,7 +637,7 @@ export class Deployer {
         }
       }
     }
-    
+
     // Check minimal EVM hardfork requirement if present on job and network declares an EVM version
     if (jobWithNetworkFilters.min_evm_version) {
       const jobMin = this.normalizeEvmVersion(jobWithNetworkFilters.min_evm_version)
@@ -622,7 +648,7 @@ export class Deployer {
       }
       // If network has no evmVersion declared, do not skip (assume compatible)
     }
-    
+
     return false // Run by default
   }
 
@@ -704,6 +730,11 @@ export class Deployer {
         throw new Error(`Job "${job.name}" depends on "${dependentJobName}", but "${dependentJobName}" has not been executed on network ${network.name} (chainId: ${network.chainId}).`)
       }
 
+      // Skip jobs don't provide outputs, but they don't prevent dependent jobs from running
+      if (networkResult.status === 'skipped') {
+        continue
+      }
+
       if (networkResult.status !== 'success') {
         const errorMessage = typeof networkResult.data === 'string' ? networkResult.data : 'Unknown error'
         throw new Error(`Job "${job.name}" depends on "${dependentJobName}", but "${dependentJobName}" failed: ${errorMessage}`)
@@ -736,7 +767,7 @@ export class Deployer {
 
     const outputRoot = path.join(this.options.projectRoot, 'output')
     await fs.mkdir(outputRoot, { recursive: true })
-    
+
     this.events.emitEvent({
       type: 'output_writing_started',
       level: 'info'
@@ -765,7 +796,7 @@ export class Deployer {
       const outputFilePath = path.join(outputRoot, relativeJobSubpath)
       const outputFileDir = path.dirname(outputFilePath)
       await fs.mkdir(outputFileDir, { recursive: true })
-      
+
       // Group networks by identical status and outputs
       const groupedResults = this.groupNetworkResults(resultData.outputs, resultData.job)
 
@@ -775,7 +806,7 @@ export class Deployer {
         lastRun: new Date().toISOString(),
         networks: groupedResults
       }
-      
+
       await fs.writeFile(outputFilePath, JSON.stringify(fileContent, null, 2))
       this.events.emitEvent({
         type: 'output_file_written',
@@ -875,20 +906,20 @@ export class Deployer {
    */
   private filterOutDependencyOutputs(outputs: Map<string, unknown>, job: Job): Record<string, unknown> {
     const filtered = new Map<string, unknown>()
-    
+
     // Get list of dependency job names
     const dependencyNames = job.depends_on || []
-    
+
     for (const [key, value] of outputs) {
       // Check if this output key starts with any dependency job name prefix
       const isDependencyOutput = dependencyNames.some(depName => key.startsWith(`${depName}.`))
-      
+
       // Only include outputs that are NOT from dependencies
       if (!isDependencyOutput) {
         filtered.set(key, value)
       }
     }
-    
+
     return Object.fromEntries(filtered)
   }
 
@@ -897,8 +928,8 @@ export class Deployer {
    * - Success states with identical outputs are grouped together with chainIds array
    * - Error states are kept separate (one entry per network)
    */
-  private groupNetworkResults(outputs: Map<number, { status: 'success' | 'error'; data: Map<string, unknown> | string }>, job: Job): Array<{
-    status: 'success' | 'error';
+  private groupNetworkResults(outputs: Map<number, { status: 'success' | 'error' | 'skipped'; data: Map<string, unknown> | string }>, job: Job): Array<{
+    status: 'success' | 'error' | 'skipped';
     chainIds?: string[];
     chainId?: string;
     outputs?: Record<string, unknown>;
@@ -910,20 +941,20 @@ export class Deployer {
       chainId: string;
       error: string;
     }> = []
-    
+
     for (const [chainId, result] of outputs.entries()) {
       if (result.status === 'success') {
         // Group successful results by identical outputs, filtered by action output flags
         const outputsObj = result.data instanceof Map ? this.filterOutputsByActionFlags(result.data, job) : {}
         const key = JSON.stringify(outputsObj)
-        
+
         if (!successGroups.has(key)) {
           successGroups.set(key, {
             chainIds: [],
             outputs: outputsObj
           })
         }
-        
+
         successGroups.get(key)!.chainIds.push(chainId.toString())
       } else {
         // Keep error results separate - one entry per network
@@ -934,14 +965,14 @@ export class Deployer {
         })
       }
     }
-    
+
     // Convert success groups to array format
     const successEntries = Array.from(successGroups.values()).map(group => ({
       status: 'success' as const,
       chainIds: group.chainIds.sort(), // Sort for consistent output
       outputs: group.outputs
     }))
-    
+
     // Return all entries: successes first, then errors
     return [...successEntries, ...errorEntries]
   }

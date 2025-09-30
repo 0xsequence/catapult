@@ -1632,7 +1632,7 @@ export class ExecutionEngine {
   /**
    * Evaluates a list of conditions and returns true if any of them are met.
    */
-  private async evaluateSkipConditions(
+  public async evaluateSkipConditions(
     conditions: Condition[] | undefined,
     context: ExecutionContext,
     scope: ResolutionScope,
