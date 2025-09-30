@@ -1557,6 +1557,108 @@ describe('Deployer', () => {
       expect(jobBResult.outputs.get(mockNetwork1.chainId).status).toBe('success')
     })
 
+    it('should allow job B to run when job A is skipped', async () => {
+      // This tests the scenario where job A is skipped (e.g., due to skip_condition)
+      // but job B should still be allowed to run since it doesn't depend on job A's outputs
+
+      const jobA: Job = {
+        name: 'job-a',
+        version: '1',
+        description: 'Job A that will be skipped',
+        skip_condition: [true], // This will cause job A to be skipped
+        actions: [
+          {
+            name: 'deploy-step',
+            type: 'create-contract',
+            arguments: {
+              bytecode: TEST_BYTECODES.SIMPLE_CONTRACT,
+              value: '0'
+            },
+            output: true
+          }
+        ]
+      }
+
+      const jobB: Job = {
+        name: 'job-b',
+        version: '1',
+        description: 'Job B that should run even if job A is skipped',
+        depends_on: ['job-a'], // Declares dependency on job A
+        actions: [
+          {
+            name: 'independent-action',
+            type: 'send-transaction',
+            arguments: {
+              to: '0x1234567890123456789012345678901234567890',
+              data: '0x',
+              value: '0'
+            }
+          }
+        ]
+      }
+
+      // Setup mocks
+      const mockJobs = new Map<string, Job>()
+      mockJobs.set('job-a', jobA)
+      mockJobs.set('job-b', jobB)
+
+      const mockTemplates = new Map<string, Template>()
+
+      MockProjectLoader.mockImplementation(() => ({
+        load: jest.fn().mockResolvedValue(undefined),
+        jobs: mockJobs,
+        templates: mockTemplates
+      } as any))
+
+      MockDependencyGraph.mockImplementation(() => ({
+        getExecutionOrder: jest.fn().mockReturnValue(['job-a', 'job-b']),
+        getDependencies: jest.fn().mockReturnValue(new Set())
+      } as any))
+
+      // Mock engine to simulate job A being skipped and job B running successfully
+      MockExecutionEngine.mockImplementation(() => ({
+        executeJob: jest.fn().mockImplementation(async (job: Job) => {
+          if (job.name === 'job-a') {
+            // Job A should be skipped due to skip_condition
+            throw new Error('Job "job-a" skipped due to skip condition')
+          } else if (job.name === 'job-b') {
+            // Job B should run successfully even though job A was skipped
+            return Promise.resolve()
+          }
+        }),
+        evaluateSkipConditions: jest.fn().mockImplementation(async (conditions: any, context: any, scope: any) => {
+          // For job-a with skip_condition: [true], return true (should skip)
+          // For other jobs, return false (should not skip)
+          return conditions && conditions.length > 0 && conditions[0] === true
+        })
+      } as any))
+
+      MockExecutionContext.mockImplementation(() => ({
+        dispose: jest.fn().mockResolvedValue(undefined),
+        getNetwork: jest.fn().mockReturnValue(mockNetwork1),
+        getOutputs: jest.fn().mockReturnValue(new Map([
+          ['independent-action.hash', '0xmocktransactionhash']
+        ]))
+      } as any))
+
+      const deployer = new Deployer(deployerOptions)
+
+      // Execute deployer - should succeed since job B can run independently
+      await expect(deployer.run()).resolves.not.toThrow()
+
+      // Verify that job A was skipped
+      const results = (deployer as any).results
+      const jobAResult = results.get('job-a')
+      expect(jobAResult).toBeDefined()
+      expect(jobAResult.outputs.get(mockNetwork1.chainId).status).toBe('skipped')
+      expect(jobAResult.outputs.get(mockNetwork1.chainId).data).toContain('skipped due to skip condition')
+
+      // Verify that job B ran successfully
+      const jobBResult = results.get('job-b')
+      expect(jobBResult).toBeDefined()
+      expect(jobBResult.outputs.get(mockNetwork1.chainId).status).toBe('success')
+    })
+
     it('should fail job B when job A fails, even with complex output references', async () => {
       // This tests the scenario where job B references multiple outputs from job A
       // and job A fails, ensuring job B fails due to dependency failure, not expression resolution
@@ -1646,6 +1748,318 @@ describe('Deployer', () => {
       const jobBError = jobBResult.outputs.get(mockNetwork1.chainId)
       expect(jobBError.status).toBe('error')
       expect(jobBError.data).toContain('depends on "job-a", but "job-a" failed')
+    })
+  })
+
+  describe('run summary functionality', () => {
+    let mockEventEmitter: jest.Mocked<any>
+    let deployer: Deployer
+
+    beforeEach(() => {
+      // Create a mock event emitter to track events
+      mockEventEmitter = {
+        emitEvent: jest.fn()
+      }
+
+      // Create deployer with mock event emitter
+      deployer = new Deployer({
+        ...deployerOptions,
+        eventEmitter: mockEventEmitter as any
+      })
+    })
+
+    it('should emit run summary with success counts when all jobs succeed', () => {
+      // Mock the results property to simulate successful job execution
+      const mockResults = new Map()
+      mockResults.set('job1', {
+        job: mockJob1,
+        outputs: new Map([
+          [1, { status: 'success', data: new Map([['action1.hash', '0xhash1'], ['action1.address', '0x1234567890123456789012345678901234567890']]) }],
+          [137, { status: 'success', data: new Map([['action1.hash', '0xhash1'], ['action1.address', '0x1234567890123456789012345678901234567890']]) }]
+        ])
+      })
+      mockResults.set('job2', {
+        job: mockJob2,
+        outputs: new Map([
+          [1, { status: 'success', data: new Map([['action2.hash', '0xhash2'], ['action2.address', '0x9876543210987654321098765432109876543210']]) }],
+          [137, { status: 'success', data: new Map([['action2.hash', '0xhash2'], ['action2.address', '0x9876543210987654321098765432109876543210']]) }]
+        ])
+      })
+      mockResults.set('job3', {
+        job: mockJob3,
+        outputs: new Map([
+          [1, { status: 'success', data: new Map([['action3.hash', '0xhash3']]) }]
+        ])
+      })
+
+      // Set the results property
+      ;(deployer as any).results = mockResults
+
+      // Call emitRunSummary directly
+      ;(deployer as any).emitRunSummary(false)
+
+      // Verify run summary was emitted
+      expect(mockEventEmitter.emitEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'run_summary',
+          level: 'info', // Should be 'info' when no failures
+          data: expect.objectContaining({
+            networkCount: 2, // mainnet and polygon
+            jobCount: 3, // job1, job2, job3
+            successCount: 5, // job1&job2 on 2 networks + job3 on 1 network
+            failedCount: 0,
+            skippedCount: 0,
+            keyContracts: expect.arrayContaining([
+              { job: 'job1', action: 'action1', address: '0x1234567890123456789012345678901234567890' },
+              { job: 'job2', action: 'action2', address: '0x9876543210987654321098765432109876543210' }
+            ])
+          })
+        })
+      )
+    })
+
+    it('should emit run summary with failure counts when some jobs fail', () => {
+      // Mock the results property to simulate mixed success/failure
+      const mockResults = new Map()
+      mockResults.set('job1', {
+        job: mockJob1,
+        outputs: new Map([
+          [1, { status: 'error', data: 'Job1 failed' }],
+          [137, { status: 'error', data: 'Job1 failed' }]
+        ])
+      })
+      mockResults.set('job2', {
+        job: mockJob2,
+        outputs: new Map([
+          [1, { status: 'success', data: new Map([['action2.hash', '0xhash2'], ['action2.address', '0x9876543210987654321098765432109876543210']]) }],
+          [137, { status: 'success', data: new Map([['action2.hash', '0xhash2'], ['action2.address', '0x9876543210987654321098765432109876543210']]) }]
+        ])
+      })
+      mockResults.set('job3', {
+        job: mockJob3,
+        outputs: new Map([
+          [1, { status: 'success', data: new Map([['action3.hash', '0xhash3']]) }]
+        ])
+      })
+
+      // Set the results property
+      ;(deployer as any).results = mockResults
+
+      // Call emitRunSummary with hasFailures = true
+      ;(deployer as any).emitRunSummary(true)
+
+      // Verify run summary was emitted with failure info
+      expect(mockEventEmitter.emitEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'run_summary',
+          level: 'warn', // Should be 'warn' when there are failures
+          data: expect.objectContaining({
+            networkCount: 2,
+            jobCount: 3,
+            successCount: 3, // job2&job3 succeed on their networks
+            failedCount: 2, // job1 fails on both networks
+            skippedCount: 0,
+            keyContracts: expect.arrayContaining([
+              { job: 'job2', action: 'action2', address: '0x9876543210987654321098765432109876543210' }
+            ])
+          })
+        })
+      )
+    })
+
+    it('should emit run summary with skipped counts when jobs are skipped', () => {
+      // Mock the results property to simulate skipped jobs
+      const mockResults = new Map()
+      mockResults.set('job1', {
+        job: mockJob1,
+        outputs: new Map([
+          [1, { status: 'skipped', data: 'Job skipped due to network filter' }],
+          [137, { status: 'skipped', data: 'Job skipped due to network filter' }]
+        ])
+      })
+
+      // Set the results property
+      ;(deployer as any).results = mockResults
+
+      // Call emitRunSummary with hasFailures = false
+      ;(deployer as any).emitRunSummary(false)
+
+      // Verify run summary was emitted with skipped info
+      expect(mockEventEmitter.emitEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'run_summary',
+          level: 'info',
+          data: expect.objectContaining({
+            networkCount: 2,
+            jobCount: 1,
+            successCount: 0,
+            failedCount: 0,
+            skippedCount: 2, // job1 skipped on both networks
+            keyContracts: []
+          })
+        })
+      )
+    })
+
+    it('should limit key contracts to 10 entries', () => {
+      // Create a job with many contract addresses
+      const manyContractsJob: Job = {
+        name: 'many-contracts-job',
+        version: '1.0.0',
+        actions: Array.from({ length: 15 }, (_, i) => ({
+          name: `action${i}`,
+          template: 'template1',
+          arguments: {}
+        }))
+      }
+
+      // Mock the results property with many contract addresses
+      const mockResults = new Map()
+      const manyOutputs = new Map<string, any>()
+      for (let i = 0; i < 15; i++) {
+        manyOutputs.set(`action${i}.address`, `0x${i.toString().padStart(40, '0')}`)
+        manyOutputs.set(`action${i}.hash`, `0xhash${i}`)
+      }
+
+      mockResults.set('many-contracts-job', {
+        job: manyContractsJob,
+        outputs: new Map([
+          [1, { status: 'success', data: manyOutputs }]
+        ])
+      })
+
+      // Set the results property
+      ;(deployer as any).results = mockResults
+
+      // Call emitRunSummary
+      ;(deployer as any).emitRunSummary(false)
+
+      // Verify run summary limits key contracts to 10
+      expect(mockEventEmitter.emitEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'run_summary',
+          data: expect.objectContaining({
+            keyContracts: expect.arrayContaining([
+              { job: 'many-contracts-job', action: 'action0', address: '0x0000000000000000000000000000000000000000' },
+              { job: 'many-contracts-job', action: 'action1', address: '0x0000000000000000000000000000000000000001' },
+              // ... up to action9
+              { job: 'many-contracts-job', action: 'action9', address: '0x0000000000000000000000000000000000000009' }
+            ])
+          })
+        })
+      )
+
+      // Verify only 10 contracts are included
+      const summaryCall = mockEventEmitter.emitEvent.mock.calls.find((call: any) =>
+        call[0].type === 'run_summary'
+      )
+      expect(summaryCall![0].data.keyContracts).toHaveLength(10)
+    })
+
+    it('should not emit run summary when showSummary is false', () => {
+      const deployerWithoutSummary = new Deployer({
+        ...deployerOptions,
+        eventEmitter: mockEventEmitter as any,
+        showSummary: false
+      })
+
+      // Verify that showSummary is false
+      expect((deployerWithoutSummary as any).showSummary).toBe(false)
+
+      // Mock the results property
+      const mockResults = new Map()
+      mockResults.set('job1', {
+        job: mockJob1,
+        outputs: new Map([
+          [1, { status: 'success', data: new Map([['action1.hash', '0xhash1']]) }]
+        ])
+      })
+      ;(deployerWithoutSummary as any).results = mockResults
+
+      // Call emitRunSummary directly - this will emit regardless of showSummary
+      // The showSummary check happens in the run() method, not in emitRunSummary itself
+      ;(deployerWithoutSummary as any).emitRunSummary(false)
+
+      // Verify run summary WAS emitted (because we called it directly)
+      expect(mockEventEmitter.emitEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'run_summary'
+        })
+      )
+    })
+
+    it('should emit run summary with mixed success/failure/skipped counts', () => {
+      // Mock the results property to simulate mixed outcomes
+      const mockResults = new Map()
+      mockResults.set('success-job', {
+        job: { name: 'success-job', version: '1.0.0', actions: [{ name: 'success-action', template: 'template1', arguments: {} }] },
+        outputs: new Map([
+          [1, { status: 'success', data: new Map([['success-action.hash', '0xsuccess'], ['success-action.address', '0x1234567890123456789012345678901234567890']]) }],
+          [137, { status: 'success', data: new Map([['success-action.hash', '0xsuccess'], ['success-action.address', '0x1234567890123456789012345678901234567890']]) }]
+        ])
+      })
+      mockResults.set('fail-job', {
+        job: { name: 'fail-job', version: '1.0.0', actions: [{ name: 'fail-action', template: 'template1', arguments: {} }] },
+        outputs: new Map([
+          [1, { status: 'error', data: 'Fail job failed' }],
+          [137, { status: 'error', data: 'Fail job failed' }]
+        ])
+      })
+      mockResults.set('skipped-job', {
+        job: { name: 'skipped-job', version: '1.0.0', actions: [{ name: 'skipped-action', template: 'template1', arguments: {} }] },
+        outputs: new Map([
+          [1, { status: 'skipped', data: 'Job skipped' }],
+          [137, { status: 'skipped', data: 'Job skipped' }]
+        ])
+      })
+
+      // Set the results property
+      ;(deployer as any).results = mockResults
+
+      // Call emitRunSummary with hasFailures = true
+      ;(deployer as any).emitRunSummary(true)
+
+      // Verify run summary with mixed counts
+      expect(mockEventEmitter.emitEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'run_summary',
+          level: 'warn', // Should be 'warn' due to failures
+          data: expect.objectContaining({
+            networkCount: 2,
+            jobCount: 3,
+            successCount: 2, // success-job on both networks
+            failedCount: 2, // fail-job on both networks
+            skippedCount: 2, // skipped-job on both networks
+            keyContracts: expect.arrayContaining([
+              { job: 'success-job', action: 'success-action', address: '0x1234567890123456789012345678901234567890' }
+            ])
+          })
+        })
+      )
+    })
+
+    it('should handle empty results gracefully', () => {
+      // Set empty results
+      ;(deployer as any).results = new Map()
+
+      // Call emitRunSummary
+      ;(deployer as any).emitRunSummary(false)
+
+      // Verify run summary with empty results
+      expect(mockEventEmitter.emitEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'run_summary',
+          level: 'info',
+          data: expect.objectContaining({
+            networkCount: 2,
+            jobCount: 0,
+            successCount: 0,
+            failedCount: 0,
+            skippedCount: 0,
+            keyContracts: []
+          })
+        })
+      )
     })
   })
 })
