@@ -743,6 +743,7 @@ Catapult includes several standard templates:
 
 - **`sequence-universal-deployer-2`**: Deploy contracts using Sequence's Universal Deployer v2
 - **`nano-universal-deployer`**: Deploy contracts using the Nano Universal Deployer
+- **`arachnid-deterministic-deployment-proxy`**: Deploy contracts via Arachnid's CREATE2 proxy at `0x4e59…`, with automatic factory bootstrapping
 - **`erc-2470`** and raw variant: CREATE2 Deployer (singleton factory)
 - **`assured-deployment`**: Helper to ensure a contract is deployed at a specific address
 - **`min-balance`**: Ensure minimum balance for any given address
