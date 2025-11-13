@@ -687,6 +687,24 @@ tokenAddress:
     json: "{{get-config.response}}"
     path: "tokens.usdc.address"
 ```
+
+### `slice-bytes`
+Slice hex strings by byte offsets (supports negative indexes and range syntax):
+
+```yaml
+trimmedPatchData:
+  type: "slice-bytes"
+  arguments:
+    value:
+      type: "read-json"
+      arguments:
+        json: "{{get-guard-v1-signature.response}}"
+        path: "txs.data"
+    range: ":-1"  # Drop the trailing byte from the payload
+```
+
+You can also provide explicit `start` and `end` byte positions (end is exclusive). Negative indexes count from the end of the byte array, so `end: -1` trims the last byte and `start: -32` keeps the final 32 bytes. `range` accepts either `start:end` or the bracket form `[start:end]`.
+
 Verify deployed contracts on block explorers:
 
 ```yaml

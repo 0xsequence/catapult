@@ -2,7 +2,7 @@ import { ExecutionEngine } from '../engine'
 import { ExecutionContext } from '../context'
 import { ValueResolver } from '../resolver'
 import { ContractRepository } from '../../contracts/repository'
-import { Action, Network, ReadJsonValue } from '../../types'
+import { Action, Network, ReadJsonValue, SliceBytesValue } from '../../types'
 import { VerificationPlatformRegistry } from '../../verification/etherscan'
 
 describe('JSON Integration Tests', () => {
@@ -290,6 +290,31 @@ describe('JSON Integration Tests', () => {
       // Verify both values are correctly extracted
       expect(extractedData).toBe('0x1234')
       expect(extractedTo).toBe('0x596aF90CecdBF9A768886E771178fd5561dD27Ab')
+    })
+
+    it('should allow piping read-json output into slice-bytes', async () => {
+      const response = {
+        txs: {
+          data: '0xaabbccddff'
+        }
+      }
+
+      const value: SliceBytesValue = {
+        type: 'slice-bytes',
+        arguments: {
+          value: {
+            type: 'read-json',
+            arguments: {
+              json: response,
+              path: 'txs.data'
+            }
+          },
+          range: ':-1'
+        }
+      }
+
+      const trimmed = await resolver.resolve(value, context)
+      expect(trimmed).toBe('0xaabbccdd')
     })
 
     it('should handle complex nested API responses', async () => {

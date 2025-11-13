@@ -100,6 +100,16 @@ export interface ResolveJsonValue {
   arguments: Value<any>;
 }
 
+export interface SliceBytesValue {
+  type: 'slice-bytes';
+  arguments: {
+    value: BytesValue;
+    start?: Value<number | string>;
+    end?: Value<number | string>;
+    range?: Value<string>;
+  };
+}
+
 /**
  * A union of all possible value-resolver objects.
  */
@@ -115,7 +125,8 @@ export type ValueResolver =
   | ContractExistsValue
   | JobCompletedValue
   | ReadJsonValue
-  | ResolveJsonValue;
+  | ResolveJsonValue
+  | SliceBytesValue;
 
 /**
  * A generic value type that can be a primitive literal (string, number, boolean),

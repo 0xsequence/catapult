@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { ValueResolver } from '../resolver'
 import { ExecutionContext } from '../context'
-import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, AbiPackValue, CallValue, ContractExistsValue, ComputeCreateValue } from '../../types'
+import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, AbiPackValue, CallValue, ContractExistsValue, ComputeCreateValue, SliceBytesValue } from '../../types'
 import { ContractRepository } from '../../contracts/repository'
 
 describe('ValueResolver', () => {
@@ -1916,6 +1916,74 @@ describe('ValueResolver', () => {
         },
       }
       await expect(resolver.resolve(value, context)).rejects.toThrow('contract-exists: invalid address: invalid-address')
+    })
+  })
+
+  describe('slice-bytes', () => {
+    it('should slice bytes with explicit start and end positions', async () => {
+      const value: SliceBytesValue = {
+        type: 'slice-bytes',
+        arguments: {
+          value: '0x112233445566',
+          start: 1,
+          end: 4,
+        },
+      }
+
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0x223344')
+    })
+
+    it('should support negative indexes to drop trailing bytes', async () => {
+      const value: SliceBytesValue = {
+        type: 'slice-bytes',
+        arguments: {
+          value: '0xdeadbeefcafebabe',
+          end: -1,
+        },
+      }
+
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0xdeadbeefcafeba')
+    })
+
+    it('should accept range syntax', async () => {
+      const value: SliceBytesValue = {
+        type: 'slice-bytes',
+        arguments: {
+          value: '0xaabbccddeeff',
+          range: '0:2',
+        },
+      }
+
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0xaabb')
+    })
+
+    it('should handle open range syntax with missing start', async () => {
+      const value: SliceBytesValue = {
+        type: 'slice-bytes',
+        arguments: {
+          value: '0xaabbccddeeff',
+          range: ':-1',
+        },
+      }
+
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0xaabbccddee')
+    })
+
+    it('should accept bracketed range syntax', async () => {
+      const value: SliceBytesValue = {
+        type: 'slice-bytes',
+        arguments: {
+          value: '0x0102030405',
+          range: '[:3]',
+        },
+      }
+
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('0x010203')
     })
   })
 })

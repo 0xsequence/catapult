@@ -13,6 +13,7 @@ import {
   ContractExistsValue,
   JobCompletedValue,
   ReadJsonValue,
+  SliceBytesValue,
 } from '../types'
 import { ExecutionContext } from './context'
 import { isAddress, isBigNumberish, isBytesLike } from '../utils/assertion'
@@ -189,6 +190,8 @@ export class ValueResolver {
         return this.resolveReadJson(resolvedArgs as ReadJsonValue['arguments'])
       case 'resolve-json':
         return this.resolveJsonValue(resolvedArgs, context)
+      case 'slice-bytes':
+        return this.resolveSliceBytes(resolvedArgs as SliceBytesValue['arguments'])
       default:
         throw new Error(`Unknown value resolver type: ${(obj as any).type}`)
     }
@@ -528,6 +531,116 @@ export class ValueResolver {
       // For primitive values, resolve them using the main resolve method
       return this.resolve(args, context)
     }
+  }
+
+  private resolveSliceBytes(args: SliceBytesValue['arguments']): string {
+    const { value, start, end, range } = args
+
+    if (!isBytesLike(value)) {
+      throw new Error('slice-bytes: value must be bytes-like (hex string, Uint8Array, etc.)')
+    }
+
+    if (range !== undefined && (start !== undefined || end !== undefined)) {
+      throw new Error('slice-bytes: provide either range or start/end, not both')
+    }
+
+    if (range !== undefined && typeof range !== 'string') {
+      throw new Error('slice-bytes: range must be a string in "start:end" format')
+    }
+
+    const normalizedHex = ethers.hexlify(value as ethers.BytesLike)
+    const hexBody = normalizedHex.slice(2)
+
+    if (hexBody.length % 2 !== 0) {
+      throw new Error('slice-bytes: value must have an even-length hex string')
+    }
+
+    const totalBytes = hexBody.length / 2
+    const { startIndex, endIndex } = this.computeSliceBounds(totalBytes, { start, end, range })
+
+    if (startIndex >= endIndex) {
+      return '0x'
+    }
+
+    const sliced = hexBody.slice(startIndex * 2, endIndex * 2)
+    return sliced.length === 0 ? '0x' : `0x${sliced}`
+  }
+
+  private computeSliceBounds(
+    totalBytes: number,
+    params: { start?: any; end?: any; range?: any },
+  ): { startIndex: number; endIndex: number } {
+    let startValue: number | undefined
+    let endValue: number | undefined
+
+    if (params.range !== undefined) {
+      const trimmedRange = (params.range as string).trim()
+      const rangeMatch = trimmedRange.match(/^\[?\s*(-?\d+)?\s*:\s*(-?\d+)?\s*\]?$/)
+
+      if (!rangeMatch) {
+        throw new Error('slice-bytes: range must follow the "start:end" format (e.g., "0:4" or ":-1")')
+      }
+
+      const [, rawStart, rawEnd] = rangeMatch
+      if (rawStart !== undefined) {
+        startValue = this.parseSliceIndex(rawStart, 'range start')
+      }
+      if (rawEnd !== undefined) {
+        endValue = this.parseSliceIndex(rawEnd, 'range end')
+      }
+    } else {
+      if (params.start !== undefined) {
+        startValue = this.parseSliceIndex(params.start, 'start')
+      }
+      if (params.end !== undefined) {
+        endValue = this.parseSliceIndex(params.end, 'end')
+      }
+    }
+
+    const startIndex = this.normalizeSliceIndex(startValue ?? 0, totalBytes)
+    const endIndex = this.normalizeSliceIndex(endValue ?? totalBytes, totalBytes)
+
+    return { startIndex, endIndex }
+  }
+
+  private parseSliceIndex(value: any, label: string): number {
+    if (value === undefined || value === null) {
+      throw new Error(`slice-bytes: ${label} cannot be null or undefined`)
+    }
+
+    const normalizedValue = typeof value === 'string' ? value.trim() : value
+
+    try {
+      const bigIntValue = ethers.toBigInt(normalizedValue)
+      const maxSafe = BigInt(Number.MAX_SAFE_INTEGER)
+      if (bigIntValue > maxSafe || bigIntValue < -maxSafe) {
+        throw new Error(`${label} is outside the supported numeric range`)
+      }
+      return Number(bigIntValue)
+    } catch (_error) {
+      throw new Error(`slice-bytes: ${label} must be an integer or integer-like string`)
+    }
+  }
+
+  private normalizeSliceIndex(index: number, totalBytes: number): number {
+    if (!Number.isFinite(index) || !Number.isInteger(index)) {
+      throw new Error('slice-bytes: slice positions must be finite integers')
+    }
+
+    let normalized = index
+    if (normalized < 0) {
+      normalized = totalBytes + normalized
+    }
+
+    if (normalized < 0) {
+      normalized = 0
+    }
+
+    if (normalized > totalBytes) {
+      normalized = totalBytes
+    }
+
+    return normalized
   }
 
   /**
