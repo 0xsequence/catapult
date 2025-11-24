@@ -121,22 +121,6 @@ export class ProjectLoader {
         }
 
         const job = parseJob(content)
-        // Capture optional job-level constants by peeking the raw YAML for "constants"
-        try {
-          const raw = JSON.parse(JSON.stringify(require('yaml').parse(content)))
-          if (raw && typeof raw === 'object' && raw.constants !== undefined) {
-            if (typeof raw.constants !== 'object' || Array.isArray(raw.constants)) {
-              throw new Error(`Invalid job "${job.name}": "constants" field must be an object if provided.`)
-            }
-            (job as any).constants = raw.constants
-          }
-        } catch (peekErr) {
-          // parseJob already validated YAML; if this peek fails due to YAML parsing, surface it
-          if (peekErr instanceof Error && peekErr.message.includes('Failed to parse')) {
-            throw new Error(`Job constants peek failed for ${filePath}: ${peekErr.message}`)
-          }
-          // Otherwise ignore non-YAML related errors here
-        }
         job._path = filePath
         this.jobs.set(job.name, job)
       } catch (error) {

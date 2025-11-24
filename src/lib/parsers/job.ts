@@ -1,5 +1,27 @@
 import { parse as parseYaml, YAMLParseError } from 'yaml'
-import { Job, JobAction } from '../types'
+import { Condition, Job, JobAction } from '../types'
+
+/**
+ * Determines whether a raw YAML item is a valid Condition.
+ * Mirrors the validation logic used for templates so job-level
+ * skip conditions behave consistently.
+ */
+function isCondition(item: any): item is Condition {
+  if (!item || typeof item !== 'object' || typeof item.type !== 'string') {
+    return false
+  }
+
+  if (['contract-exists', 'job-completed'].includes(item.type)) {
+    return true
+  }
+
+  if (item.type === 'basic-arithmetic') {
+    const op = item.arguments?.operation
+    return typeof op === 'string' && ['eq', 'neq', 'gt', 'lt', 'gte', 'lte'].includes(op)
+  }
+
+  return false
+}
 
 /**
  * Parses a YAML string defining a job into a structured `Job` object.
@@ -88,6 +110,24 @@ export function parseJob(yamlContent: string): Job {
     throw new Error(`Invalid job "${rawObject.name}": "min_evm_version" must be a string if provided.`)
   }
 
+  // --- Optional: validate job-level skip_condition and constants ---
+  if (rawObject.skip_condition !== undefined) {
+    if (!Array.isArray(rawObject.skip_condition)) {
+      throw new Error(`Invalid job "${rawObject.name}": "skip_condition" must be an array if provided.`)
+    }
+    for (const condition of rawObject.skip_condition) {
+      if (!isCondition(condition)) {
+        throw new Error(`Invalid job "${rawObject.name}": "skip_condition" contains an invalid condition entry.`)
+      }
+    }
+  }
+
+  if (rawObject.constants !== undefined) {
+    if (typeof rawObject.constants !== 'object' || rawObject.constants === null || Array.isArray(rawObject.constants)) {
+      throw new Error(`Invalid job "${rawObject.name}": "constants" field must be an object if provided.`)
+    }
+  }
+
   // --- Construct and return the strongly-typed Job object ---
   const job: Job = {
     name: rawObject.name,
@@ -99,7 +139,9 @@ export function parseJob(yamlContent: string): Job {
     only_networks: rawObject.only_networks,
     skip_networks: rawObject.skip_networks,
     min_evm_version: rawObject.min_evm_version,
-    deprecated: rawObject.deprecated === true
+    deprecated: rawObject.deprecated === true,
+    skip_condition: rawObject.skip_condition as Condition[] | undefined,
+    constants: rawObject.constants,
   }
 
   return job
