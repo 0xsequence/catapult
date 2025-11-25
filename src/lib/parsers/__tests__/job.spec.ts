@@ -315,7 +315,7 @@ actions:
 
   // --- New: Job-level constants field parsing ---
 
-  it('should allow an optional job-level constants block as an object', () => {
+  it('should attach an optional job-level constants block as an object', () => {
     const yamlContent = `
 name: "job-with-constants"
 version: "1"
@@ -328,8 +328,31 @@ actions:
     arguments:
       x: "{{FEE}}"
 `
-    const job = parseJob(yamlContent) as any
-    // parseJob doesn't attach constants; loader attaches it. This test ensures YAML is acceptable and does not throw.
-    expect(job.name).toBe('job-with-constants')
+    const job = parseJob(yamlContent)
+    expect(job.constants).toEqual({
+      FEE: '1000',
+      ADMIN: '0x0000000000000000000000000000000000000001'
+    })
+  })
+
+  it('should parse job-level skip conditions', () => {
+    const yamlContent = `
+name: "job-with-skip"
+version: "1"
+skip_condition:
+  - type: "contract-exists"
+    arguments:
+      address: "0xabc"
+actions:
+  - name: "a1"
+    template: "t1"
+    arguments: {}
+`
+    const job = parseJob(yamlContent)
+    expect(job.skip_condition).toHaveLength(1)
+    expect(job.skip_condition?.[0]).toEqual({
+      type: 'contract-exists',
+      arguments: { address: '0xabc' }
+    })
   })
 })
