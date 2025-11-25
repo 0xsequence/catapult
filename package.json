@@ -1,6 +1,6 @@
 {
   "name": "@0xsequence/catapult",
-  "version": "1.3.10",
+  "version": "1.3.11",
   "description": "Ethereum contract deployment CLI tool",
   "main": "dist/index.js",
   "bin": {
