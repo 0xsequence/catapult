@@ -97,6 +97,7 @@ describe('network-loader rpcUrl token replacement', () => {
     const networks = await loadNetworks(projectRoot)
     expect(networks[0].rpcUrl).toBe('https://node.example.com/')
   })
+
 })
 
 describe('network-loader params', () => {
