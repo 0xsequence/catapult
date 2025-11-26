@@ -1,4 +1,14 @@
-import { Job, Template, Action, JobAction, isPrimitiveActionType, Condition } from '../types'
+import {
+  Job,
+  Template,
+  Action,
+  JobAction,
+  isPrimitiveActionType,
+  Condition,
+  SignDigestAction,
+  SignMessageAction,
+  SignTypedDataAction
+} from '../types'
 import { Contract } from '../types/contracts'
 import { ExecutionContext } from './context'
 import { ValueResolver, ResolutionScope } from './resolver'
@@ -7,6 +17,7 @@ import { DeploymentEventEmitter, deploymentEvents } from '../events'
 import { createDefaultVerificationRegistry, VerificationPlatformRegistry } from '../verification/etherscan'
 import { BuildInfo } from '../types/buildinfo'
 import { ethers } from 'ethers'
+import type { TypedDataField } from 'ethers'
 
 export type EngineOptions = {
   eventEmitter?: DeploymentEventEmitter
@@ -987,9 +998,222 @@ export class ExecutionEngine {
         }
         break
       }
+      case 'sign-digest': {
+        const signAction = action as SignDigestAction
+        if (!signAction.arguments?.digest) {
+          throw new Error(`Action "${actionName}": "digest" argument is required for sign-digest.`)
+        }
+
+        let resolvedDigest: any
+        try {
+          resolvedDigest = await this.resolver.resolve(signAction.arguments.digest, context, scope)
+        } catch (error) {
+          if (error instanceof Error && /Unknown value resolver type/.test(error.message)) {
+            resolvedDigest = await this.resolveLiteralObject(signAction.arguments.digest, context, scope)
+          } else {
+            throw error
+          }
+        }
+        let normalizedDigest: string
+        if (typeof resolvedDigest === 'string') {
+          if (!ethers.isHexString(resolvedDigest)) {
+            throw new Error(`Action "${actionName}": digest must be a hex string.`)
+          }
+        }
+        try {
+          normalizedDigest = ethers.hexlify(resolvedDigest)
+        } catch {
+          throw new Error(`Action "${actionName}": digest must resolve to bytes or hex string.`)
+        }
+
+        if (!ethers.isHexString(normalizedDigest, 32)) {
+          throw new Error(`Action "${actionName}": digest must be 32 bytes (got ${ethers.getBytes(normalizedDigest).length}).`)
+        }
+
+        const signer = await context.getResolvedSigner()
+        const signature = await signer.signDigest(normalizedDigest)
+
+        if (action.name && !hasCustomOutput) {
+          context.setOutput(`${action.name}.signature`, signature)
+          context.setOutput(`${action.name}.digest`, normalizedDigest)
+        }
+        break
+      }
+      case 'sign-message': {
+        const signAction = action as SignMessageAction
+        if (!signAction.arguments?.message) {
+          throw new Error(`Action "${actionName}": "message" argument is required for sign-message.`)
+        }
+
+        let resolvedMessage: any
+        try {
+          resolvedMessage = await this.resolver.resolve(signAction.arguments.message, context, scope)
+        } catch (error) {
+          if (error instanceof Error && /Unknown value resolver type/.test(error.message)) {
+            resolvedMessage = await this.resolveLiteralObject(signAction.arguments.message, context, scope)
+          } else {
+            throw error
+          }
+        }
+
+        const { payload, storedRepresentation } = this.normalizeSignMessagePayload(resolvedMessage, actionName)
+        const signer = await context.getResolvedSigner()
+        const signature = await signer.signMessage(payload)
+
+        if (action.name && !hasCustomOutput) {
+          context.setOutput(`${action.name}.signature`, signature)
+          context.setOutput(`${action.name}.message`, storedRepresentation)
+        }
+        break
+      }
+      case 'sign-typed-data': {
+        const signAction = action as SignTypedDataAction
+        const args = signAction.arguments
+        if (!args?.domain || !args.types || !args.message) {
+          throw new Error(`Action "${actionName}": domain, types, and message arguments are required for sign-typed-data.`)
+        }
+
+        const resolvedDomain = await this.resolveLiteralObject(args.domain, context, scope)
+        if (!resolvedDomain || typeof resolvedDomain !== 'object' || Array.isArray(resolvedDomain)) {
+          throw new Error(`Action "${actionName}": domain must resolve to an object.`)
+        }
+
+        const resolvedTypes = await this.resolveLiteralObject(args.types, context, scope)
+        if (!resolvedTypes || typeof resolvedTypes !== 'object' || Array.isArray(resolvedTypes)) {
+          throw new Error(`Action "${actionName}": types must resolve to an object map.`)
+        }
+        for (const [typeName, fields] of Object.entries(resolvedTypes as Record<string, any>)) {
+          if (!Array.isArray(fields)) {
+            throw new Error(`Action "${actionName}": type definition "${typeName}" must be an array of fields.`)
+          }
+          for (const field of fields) {
+            if (!field || typeof field !== 'object' || typeof field.name !== 'string' || typeof field.type !== 'string') {
+              throw new Error(`Action "${actionName}": type definition "${typeName}" contains invalid field entries.`)
+            }
+          }
+        }
+
+        const resolvedMessage = await this.resolveLiteralObject(args.message, context, scope)
+        if (!resolvedMessage || typeof resolvedMessage !== 'object' || Array.isArray(resolvedMessage)) {
+          throw new Error(`Action "${actionName}": message must resolve to an object.`)
+        }
+
+        const primaryTypeOverride = args.primaryType ? await this.resolver.resolve(args.primaryType, context, scope) : undefined
+        if (primaryTypeOverride !== undefined && typeof primaryTypeOverride !== 'string') {
+          throw new Error(`Action "${actionName}": primaryType must resolve to a string when provided.`)
+        }
+
+        const resolvedPrimaryType =
+          primaryTypeOverride ??
+          this.inferPrimaryType(resolvedTypes as Record<string, TypedDataField[]>, actionName)
+
+        const normalizedTypes = this.normalizeTypedDataTypes(
+          resolvedTypes as Record<string, TypedDataField[]>,
+          resolvedPrimaryType
+        )
+
+        const signer = await context.getResolvedSigner()
+        const signature = await signer.signTypedData(
+          resolvedDomain as Record<string, any>,
+          normalizedTypes,
+          resolvedMessage as Record<string, any>
+        )
+
+        if (action.name && !hasCustomOutput) {
+          context.setOutput(`${action.name}.signature`, signature)
+          context.setOutput(`${action.name}.domain`, resolvedDomain)
+          context.setOutput(`${action.name}.types`, resolvedTypes)
+          context.setOutput(`${action.name}.message`, resolvedMessage)
+          context.setOutput(`${action.name}.primaryType`, resolvedPrimaryType)
+        }
+        break
+      }
       default:
         throw new Error(`Unknown or unimplemented primitive action type: ${(action as any).type}`)
     }
+  }
+
+  private inferPrimaryType(types: Record<string, TypedDataField[]>, actionName: string): string {
+    const candidates = Object.keys(types).filter(name => name !== 'EIP712Domain')
+    if (candidates.length === 1) {
+      return candidates[0]
+    }
+    if (candidates.length === 0) {
+      throw new Error(`Action "${actionName}": primaryType could not be inferred; please provide arguments.primaryType.`)
+    }
+    throw new Error(
+      `Action "${actionName}": primaryType is ambiguous (${candidates.join(
+        ', '
+      )}); please provide arguments.primaryType.`
+    )
+  }
+
+  private normalizeTypedDataTypes(
+    types: Record<string, TypedDataField[]>,
+    primaryType: string
+  ): Record<string, TypedDataField[]> {
+    const normalized: Record<string, TypedDataField[]> = {}
+    if (!types[primaryType]) {
+      throw new Error(`Primary type "${primaryType}" is not defined in supplied types.`)
+    }
+    normalized[primaryType] = types[primaryType]
+    for (const [key, value] of Object.entries(types)) {
+      if (key === primaryType || key === 'EIP712Domain') continue
+      normalized[key] = value
+    }
+    return normalized
+  }
+
+  private normalizeSignMessagePayload(
+    message: any,
+    actionName: string
+  ): { payload: string | Uint8Array; storedRepresentation: string } {
+    if (typeof message === 'string') {
+      return { payload: message, storedRepresentation: message }
+    }
+    try {
+      const bytes = ethers.getBytes(message)
+      return { payload: bytes, storedRepresentation: ethers.hexlify(bytes) }
+    } catch {
+      throw new Error(`Action "${actionName}": message must resolve to a string or bytes-like value.`)
+    }
+  }
+
+  private async resolveLiteralObject(
+    value: any,
+    context: ExecutionContext,
+    scope: ResolutionScope
+  ): Promise<any> {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || value === null) {
+      return this.resolver.resolve(value as any, context, scope)
+    }
+
+    if (Array.isArray(value)) {
+      return Promise.all(value.map(item => this.resolveLiteralObject(item, context, scope)))
+    }
+
+    if (value && typeof value === 'object') {
+      if ('type' in value) {
+        try {
+          return await this.resolver.resolve(value as any, context, scope)
+        } catch (error) {
+          if (!(error instanceof Error) || !/Unknown value resolver type/.test(error.message)) {
+            throw error
+          }
+          // fall through to literal handling when resolver type is unknown
+        }
+      }
+
+      const entries = await Promise.all(
+        Object.entries(value).map(async ([key, nested]) => {
+          const resolvedNested = await this.resolveLiteralObject(nested, context, scope)
+          return [key, resolvedNested]
+        })
+      )
+      return Object.fromEntries(entries)
+    }
+
+    return value
   }
 
   /**
