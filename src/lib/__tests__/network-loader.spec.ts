@@ -97,4 +97,44 @@ describe('network-loader rpcUrl token replacement', () => {
     const networks = await loadNetworks(projectRoot)
     expect(networks[0].rpcUrl).toBe('https://node.example.com/')
   })
+
+  test('loads optional custom metadata', async () => {
+    const projectRoot = path.join(tmpDir, 'case6')
+    const yaml = `
+- name: "TestNet"
+  chainId: 123
+  rpcUrl: "https://node.example.com"
+  custom:
+    dataSource:
+      endpoint: "https://api.example.com/data"
+      domain:
+        name: "Example"
+        version: "1"
+`
+    await writeNetworksYaml(projectRoot, yaml)
+
+    const [network] = await loadNetworks(projectRoot)
+    expect(network.custom).toEqual({
+      dataSource: {
+        endpoint: 'https://api.example.com/data',
+        domain: {
+          name: 'Example',
+          version: '1',
+        },
+      },
+    })
+  })
+
+  test('rejects invalid custom metadata types', async () => {
+    const projectRoot = path.join(tmpDir, 'case7')
+    const yaml = `
+- name: "TestNet"
+  chainId: 123
+  rpcUrl: "https://node.example.com"
+  custom: "should-be-an-object"
+`
+    await writeNetworksYaml(projectRoot, yaml)
+
+    await expect(loadNetworks(projectRoot)).rejects.toThrow(/Invalid network configuration/)
+  })
 })

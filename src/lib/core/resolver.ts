@@ -118,17 +118,31 @@ export class ValueResolver {
     }
 
     // Check for Network(...) property access
-    const networkMatch = expression.match(/^Network\(\)\.(\w+)$/)
+    const networkMatch = expression.match(/^Network\(\)\.([A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*)$/)
     if (networkMatch) {
-      const [, property] = networkMatch
+      const [, propertyPath] = networkMatch
       const network = context.getNetwork()
-      if (property === 'testnet') {
+      const segments = propertyPath.split('.')
+      const [firstSegment, ...rest] = segments
+
+      if (firstSegment === 'testnet' && rest.length === 0) {
         // Special case for testnet property. Default to false if not set.
         return !!network.testnet
       }
-      const value = (network as any)[property]
-      if (value === undefined) {
-        throw new Error(`Property "${property}" does not exist on network`)
+
+      let value: any = (network as any)[firstSegment]
+      if (typeof value === 'undefined') {
+        throw new Error(`Property "${firstSegment}" does not exist on network`)
+      }
+
+      for (const segment of rest) {
+        if (value === null || typeof value !== 'object') {
+          throw new Error(`Property "${propertyPath}" does not exist on network`)
+        }
+        value = (value as any)[segment]
+        if (typeof value === 'undefined') {
+          throw new Error(`Property "${propertyPath}" does not exist on network`)
+        }
       }
       return value
     }
