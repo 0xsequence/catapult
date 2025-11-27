@@ -117,7 +117,7 @@ export class ExecutionContext {
   public async dispose(): Promise<void> {
     try {
       // Destroy the provider to close any open connections
-      if ((this.provider as any).destroy) {
+      if (this.provider && typeof (this.provider as any).destroy === 'function') {
         await (this.provider as any).destroy()
       }
     } catch (error) {

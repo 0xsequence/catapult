@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import {
   Value,
-  ValueResolver as ValueResolverObject,
+  ValueResolverSpec,
   AbiEncodeValue,
   AbiPackValue,
   ConstructorEncodeValue,
@@ -36,7 +36,7 @@ export class ValueResolver {
    * This is the main entry point for the resolver.
    *
    * @param value The value to resolve. It can be a literal, a `{{...}}` reference string,
-   *              or a `ValueResolver` object (e.g., `{ type: 'abi-encode', ... }`).
+   *              or a `ValueResolverSpec` (e.g., `{ type: 'abi-encode', ... }`).
    * @param context The execution context, providing access to the provider, signer, and outputs.
    * @param scope The local resolution scope, used for template arguments.
    * @returns A promise that resolves to the final concrete value.
@@ -64,9 +64,9 @@ export class ValueResolver {
       return Promise.all(value.map(item => this.resolve(item, context, scope))) as Promise<T>
     }
 
-    // 4. Handle ValueResolver objects
+    // 4. Handle ValueResolver specifications
     if (typeof value === 'object' && 'type' in value) {
-      return this.resolveValueResolverObject(value as ValueResolverObject, context, scope)
+      return this.resolveValueResolverSpec(value as ValueResolverSpec, context, scope)
     }
 
     // 5. Handle plain objects as literals (for JSON data)
@@ -154,11 +154,11 @@ export class ValueResolver {
   }
 
   /**
-   * Dispatches a `ValueResolver` object to its specific handler.
+   * Dispatches a `ValueResolverSpec` to its specific handler.
    * @private
    */
-  private async resolveValueResolverObject(
-    obj: ValueResolverObject,
+  private async resolveValueResolverSpec(
+    obj: ValueResolverSpec,
     context: ExecutionContext,
     scope: ResolutionScope,
   ): Promise<any> {

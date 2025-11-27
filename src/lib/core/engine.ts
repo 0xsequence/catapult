@@ -7,6 +7,7 @@ import { DeploymentEventEmitter, deploymentEvents } from '../events'
 import { createDefaultVerificationRegistry, VerificationPlatformRegistry } from '../verification/etherscan'
 import { BuildInfo } from '../types/buildinfo'
 import { ethers } from 'ethers'
+import { PluginRegistry } from '../plugins/registry'
 
 export type EngineOptions = {
   eventEmitter?: DeploymentEventEmitter
@@ -14,6 +15,7 @@ export type EngineOptions = {
   noPostCheckConditions?: boolean
   allowMultipleNicksMethodTests?: boolean
   ignoreVerifyErrors?: boolean
+  pluginRegistry?: PluginRegistry
 }
 
 /**
@@ -29,6 +31,7 @@ export class ExecutionEngine {
   private readonly noPostCheckConditions: boolean
   private readonly allowMultipleNicksMethodTests: boolean
   private readonly ignoreVerifyErrors: boolean
+  private readonly pluginRegistry?: PluginRegistry
   private nicksMethodResult: boolean | undefined
   private verificationWarnings: Array<{
     actionName: string
@@ -48,6 +51,7 @@ export class ExecutionEngine {
     this.noPostCheckConditions = options?.noPostCheckConditions ?? false
     this.allowMultipleNicksMethodTests = options?.allowMultipleNicksMethodTests ?? false
     this.ignoreVerifyErrors = options?.ignoreVerifyErrors ?? false
+    this.pluginRegistry = options?.pluginRegistry
   }
 
   /**
@@ -206,16 +210,19 @@ export class ExecutionEngine {
       return
     }
 
-    // 2. Differentiate between a primitive action and a template call.
-    if (isPrimitiveActionType(templateName)) {
+    // 2. Differentiate between a primitive action, plugin action, and template call.
+    const isPrimitive = isPrimitiveActionType(templateName)
+    const isPlugin = this.pluginRegistry?.hasActionHandler(templateName)
+
+    if (isPrimitive || isPlugin) {
       // Check if custom outputs are specified
       const hasCustomOutput = 'name' in action && action.name &&
         (action as any).output &&
         typeof (action as any).output === 'object' &&
         !Array.isArray((action as any).output)
       
-      // Convert JobAction to Action for primitive execution
-      const primitiveAction: Action = 'template' in action
+      // Convert JobAction to Action for execution
+      const actionToExecute: Action = 'template' in action
         ? {
             type: (action.type || action.template) as any,
             name: action.name,
@@ -225,10 +232,14 @@ export class ExecutionEngine {
           }
         : action as Action
       
-      // Execute primitive with information about custom outputs
-      await this.executePrimitive(primitiveAction, context, scope, hasCustomOutput)
+      // Execute primitive or plugin action
+      if (isPrimitive) {
+        await this.executePrimitive(actionToExecute, context, scope, hasCustomOutput)
+      } else {
+        await this.executePluginAction(actionToExecute, context, scope, hasCustomOutput)
+      }
       
-      // Handle custom outputs for primitive actions (similar to template logic)
+      // Handle custom outputs
       if (hasCustomOutput) {
         const customOutput = (action as any).output
         // Custom output map provided by job action: resolve each mapping within the current scope
@@ -990,6 +1001,72 @@ export class ExecutionEngine {
       default:
         throw new Error(`Unknown or unimplemented primitive action type: ${(action as any).type}`)
     }
+  }
+
+  /**
+   * Executes a plugin-provided action.
+   * @param action The plugin action to execute.
+   * @param context The global execution context.
+   * @param scope The local resolution scope.
+   * @param hasCustomOutput Whether custom outputs are specified for this action.
+   */
+  private async executePluginAction(
+    action: Action,
+    context: ExecutionContext,
+    scope: ResolutionScope,
+    hasCustomOutput: boolean = false,
+  ): Promise<void> {
+    if (!this.pluginRegistry) {
+      throw new Error(`Plugin action "${action.type}" cannot be executed: no plugin registry available`)
+    }
+
+    const handler = this.pluginRegistry.getActionHandler(action.type)
+    if (!handler) {
+      throw new Error(`Plugin action handler for type "${action.type}" not found`)
+    }
+
+    const actionName = action.name || action.type
+    this.events.emitEvent({
+      type: 'plugin_action',
+      level: 'debug',
+      data: {
+        actionType: action.type,
+        pluginName: this.findPluginNameByActionType(action.type)
+      }
+    })
+
+    try {
+      // Execute the plugin handler - it manages its own outputs via context.setOutput()
+      await handler.execute(action, context, this.resolver, this.events, hasCustomOutput, scope)
+    } catch (error) {
+      this.events.emitEvent({
+        type: 'plugin_action_failed',
+        level: 'error',
+        data: {
+          actionName,
+          actionType: action.type,
+          error: error instanceof Error ? error.message : String(error)
+        }
+      })
+      throw new Error(`Plugin action "${actionName}" (type: ${action.type}) failed: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * Find the plugin name that registered a given action type.
+   * @private
+   */
+  private findPluginNameByActionType(actionType: string): string | undefined {
+    if (!this.pluginRegistry) {
+      return undefined
+    }
+    const plugins = this.pluginRegistry.getPlugins()
+    for (const [name, loadedPlugin] of plugins) {
+      if (loadedPlugin.plugin.actions?.some(h => h.type === actionType)) {
+        return name
+      }
+    }
+    return undefined
   }
 
   /**

@@ -44,7 +44,7 @@ export function isJobCompletedCondition(obj: any): obj is JobCompletedCondition 
 
 /**
  * A condition is something that resolves to a boolean. It can be a specific
- * check type like 'contract-exists', or any ValueResolver that produces a
+ * check type like 'contract-exists', or any ValueResolverSpec that produces a
  * boolean result (e.g., `basic-arithmetic` with an 'eq' operation).
  */
 export type Condition = BooleanValue | ContractExistsCondition | JobCompletedCondition;

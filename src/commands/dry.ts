@@ -3,7 +3,7 @@ import chalk from 'chalk'
 import { loadProject } from './common'
 import { loadNetworks } from '../lib/network-loader'
 import { DependencyGraph } from '../lib/core/graph'
-import { projectOption, noStdOption, verbosityOption } from './common'
+import { projectOption, noStdOption, verbosityOption, configOption } from './common'
 import { validateContractReferences, extractUsedContractReferences } from '../lib/validation/contract-references'
 import { setVerbosity } from '../index'
 import { resolveSelectedChainIds } from '../lib/network-selection'
@@ -13,6 +13,7 @@ interface DryRunOptions {
   project: string
   std: boolean
   network?: string
+  config?: string
   verbose: number
 }
 
@@ -53,6 +54,7 @@ export function makeDryRunCommand(): Command {
     .option('-n, --network <selectors>', 'Comma-separated network selectors (by chain ID or name).')
   
   projectOption(dryRun)
+  configOption(dryRun)
   noStdOption(dryRun)
   verbosityOption(dryRun)
   

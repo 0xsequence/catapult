@@ -111,9 +111,12 @@ export interface SliceBytesValue {
 }
 
 /**
- * A union of all possible value-resolver objects.
+ * A union of all possible value-resolver specifications.
+ * These are declarative objects that describe how to compute a value at runtime.
+ * They appear in YAML files like `{ type: 'abi-encode', arguments: { ... } }`.
+ * The ValueResolver class processes these specifications to produce actual values.
  */
-export type ValueResolver =
+export type ValueResolverSpec =
   | AbiEncodeValue
   | AbiPackValue
   | ConstructorEncodeValue
@@ -130,10 +133,10 @@ export type ValueResolver =
 
 /**
  * A generic value type that can be a primitive literal (string, number, boolean),
- * a reference to another value, or a value-resolver object.
+ * a reference to another value, or a value-resolver specification.
  * This accurately models the flexibility of your YAML arguments.
  */
-export type Value<T = string | number | boolean> = T | Reference | ValueResolver;
+export type Value<T = string | number | boolean> = T | Reference | ValueResolverSpec;
 
 // --- Specific Value Types for clarity and type-safety ---
 export type BytesValue = Value<string>;
