@@ -4,7 +4,7 @@ import { loadNetworks } from '../lib/network-loader'
 import { detectNetworkFromRpc, isValidRpcUrl } from '../lib/network-utils'
 import { deploymentEvents } from '../lib/events'
 import { Network } from '../lib/types'
-import { projectOption, dotenvOption, noStdOption, verbosityOption, loadDotenv } from './common'
+import { projectOption, dotenvOption, noStdOption, verbosityOption, configOption, loadDotenv } from './common'
 import { resolveSelectedChainIds } from '../lib/network-selection'
 import { setVerbosity } from '../index'
 
@@ -14,6 +14,7 @@ interface RunOptions {
   network?: string
   rpcUrl?: string
   dotenv?: string
+  config?: string
   std: boolean
   etherscanApiKey?: string
   verbose: number
@@ -41,6 +42,7 @@ export function makeRunCommand(): Command {
 
   projectOption(run)
   dotenvOption(run)
+  configOption(run)
   noStdOption(run)
   verbosityOption(run)
 
@@ -116,7 +118,8 @@ export function makeRunCommand(): Command {
         },
         flatOutput: options.flatOutput === true,
         runDeprecated: (options as { runDeprecated?: boolean }).runDeprecated === true,
-        ignoreVerifyErrors: options.ignoreVerifyErrors === true
+        ignoreVerifyErrors: options.ignoreVerifyErrors === true,
+        configPath: options.config,
       } as DeployerOptions
 
       const deployer = new Deployer(deployerOptions)

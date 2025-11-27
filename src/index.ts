@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { program } from 'commander'
-import chalk from 'chalk'
 import { setupCommands } from './cli'
 import packageJson from '../package.json'
 

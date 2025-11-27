@@ -20,6 +20,7 @@ Catapult addresses the challenge of managing complex contract deployment scenari
 - **🔍 Validation & Dry Run**: Validate configurations and preview deployment plans without execution
 - **📊 Event System**: Rich event system for monitoring deployment progress and debugging
 - **🧾 Multi-platform Verification**: Verify on Etherscan v2 and Sourcify (tries all configured platforms by default)
+- **🔌 Plugin Architecture**: Extend Catapult with custom actions via plugins
 
 ## Installation
 
@@ -73,6 +74,7 @@ A Catapult project follows this structure:
 ```
 my-deployment-project/
 ├── networks.yaml              # Network configurations
+├── catapult.config.yaml       # Catapult configuration
 ├── jobs/                      # Deployment job definitions
 │   ├── core-contracts.yaml
 │   ├── factory-setup.yaml
@@ -115,7 +117,29 @@ The `supports` field is optional and specifies which verification platforms are 
 - `etherscan_v2`: Etherscan v2 verification API (supports Ethereum, Polygon, Arbitrum, BSC, etc.)
 - `sourcify`: Sourcify verification (no API key required)
 
-If `supports` is omitted, all built-in platforms are allowed for that network. Etherscan requires an API key to be considered “configured”; Sourcify requires no configuration. The `gasLimit` field is optional and specifies a fixed gas limit to use for all transactions on this network. If not specified, the system will use ethers.js default gas estimation.
+If `supports` is omitted, all built-in platforms are allowed for that network. Etherscan requires an API key to be considered "configured"; Sourcify requires no configuration. The `gasLimit` field is optional and specifies a fixed gas limit to use for all transactions on this network. If not specified, the system will use ethers.js default gas estimation.
+
+### Catapult Configuration
+
+Create a `catapult.config.yaml` (or `.json`, `.js`, `.ts`, `.yml`) file in your project root to configure plugins and extend Catapult's functionality:
+
+```yaml
+plugins:
+  - "@0xsequence/catapult-create4"
+  - "./local-plugin"
+```
+
+The configuration file supports multiple formats:
+- **YAML**: `catapult.config.yaml` or `catapult.config.yml`
+- **JSON**: `catapult.config.json`
+- **JavaScript**: `catapult.config.js`
+- **TypeScript**: `catapult.config.ts`
+
+The `plugins` field is an array of plugin identifiers. Plugins can be:
+- **npm packages**: Installed via `npm install` and referenced by package name (e.g., `@horizon/catapult-create4`)
+- **Local paths**: Relative paths (e.g., `./plugins/my-plugin`) or absolute paths
+
+If the configuration file is omitted, Catapult will run without any plugins. You can override the config file path using the `--config` flag when running commands.
 
 ### Constants
 
@@ -391,6 +415,7 @@ Common options (run):
 - `--rpc-url <url>`: Run against a single custom RPC; chain ID is auto-detected (no networks.yaml required)
 - `-k, --private-key <key>`: EOA private key (or set `PRIVATE_KEY`)
 - `--etherscan-api-key <key>`: Etherscan API key (or set `ETHERSCAN_API_KEY`)
+- `--config <path>`: Override plugin configuration file path (defaults to `catapult.config.{js|ts|json|yml|yaml}`)
 - `--fail-early`: Stop as soon as any job fails
 - `--ignore-verify-errors`: Convert verification errors to warnings and show complete report at end (instead of exiting with error code)
 - `--no-post-check-conditions`: Skip post-execution evaluation of skip conditions
@@ -850,6 +875,97 @@ Output layout and selection:
   - `output: true` to include all outputs for that action
   - `output: false` to exclude outputs for that action
   - `output: { key1: true, key2: true }` to include only specific keys from that action (e.g., `txHash`, `address`)
+
+## Plugins
+
+Catapult supports a plugin architecture that allows you to extend the framework with custom functionality. Plugins can register custom action handlers that integrate seamlessly with the deployment system.
+
+### Plugin Configuration
+
+Create a `catapult.config.json` (or `.js`, `.ts`, `.yml`, `.yaml`) file in your project root:
+
+```json
+{
+  "plugins": [
+    "@horizon/catapult-create4",
+    "./local-plugin"
+  ]
+}
+```
+
+Plugins can be:
+- **npm packages**: Installed via `npm install` and referenced by package name
+- **Local paths**: Relative paths (e.g., `./plugins/my-plugin`) or absolute paths
+- **Multiple formats**: JSON, YAML, JavaScript, or TypeScript config files
+
+### Using Plugin Actions
+
+Once a plugin is loaded, you can use its custom actions in your YAML files:
+
+```yaml
+actions:
+  - name: "my-plugin-action"
+    type: "my-plugin/action"  # Action type registered by the plugin
+    arguments:
+      param1: "value1"
+      param2: "{{some.output}}"
+    output: true
+```
+
+### Plugin Development
+
+Plugins are Node.js modules that export a `CatapultPlugin` object:
+
+```typescript
+import { CatapultPlugin, PluginActionHandler } from '@0xsequence/catapult'
+
+const handler: PluginActionHandler = {
+  type: 'my-plugin/action',
+  async execute(action, context, resolver, eventEmitter, hasCustomOutput, scope) {
+    // Resolve arguments
+    const param1 = await resolver.resolve(action.arguments.param1, context, scope)
+    
+    // Perform custom logic
+    const result = await doSomething(param1)
+    
+    // Emit events for visibility
+    eventEmitter.emitEvent({
+      type: 'plugin_action_completed',
+      level: 'info',
+      data: { result }
+    })
+    
+    // Store outputs (use action.name prefix to avoid conflicts)
+    if (action.name && !hasCustomOutput) {
+      context.setOutput(`${action.name}.result`, result)
+    }
+  }
+}
+
+const plugin: CatapultPlugin = {
+  name: 'my-plugin',
+  version: '1.0.0',
+  actions: [handler]
+}
+
+export default plugin
+```
+
+**Key Points:**
+- Use namespaced action types (e.g., `plugin-name/action-name`) to avoid conflicts
+- Plugins receive full access to `ExecutionContext`, `ValueResolver`, and `DeploymentEventEmitter`
+- Outputs should use the `${action.name}.${key}` pattern
+- The `hasCustomOutput` flag indicates if custom outputs are specified in YAML
+- Plugins can emit events for visibility and debugging
+
+### Plugin Priority
+
+Plugin actions are checked **before** template lookup, meaning:
+1. Primitive actions (built-in)
+2. **Plugin actions** (custom)
+3. Templates (YAML-defined)
+
+This allows plugins to override or extend template functionality.
 
 ## Environment Variables
 
