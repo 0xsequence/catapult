@@ -1,3 +1,4 @@
+import { ethers } from 'ethers'
 import { ContractRepository } from '../../contracts/repository'
 import { ExecutionContext } from '../../core/context'
 import { ExecutionEngine } from '../../core/engine'
@@ -15,12 +16,37 @@ describe('Plugin Integration with ExecutionEngine', () => {
   let mockRegistry: ContractRepository
   let mockEventEmitter: DeploymentEventEmitter
   let capturedEvents: any[]
+  let anvilProvider: ethers.JsonRpcProvider
 
-  beforeEach(() => {
-    mockNetwork = { name: 'testnet', chainId: 1, rpcUrl: 'http://localhost:8545' }
+  beforeAll(async () => {
+    // Allow configuring RPC URL via environment variable for CI
+    const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545'
+    mockNetwork = { name: 'testnet', chainId: 999, rpcUrl }
+
+    // Try to connect to the node, fail immediately if not available
+    anvilProvider = new ethers.JsonRpcProvider(rpcUrl)
+    await anvilProvider.getNetwork()
+  })
+
+  afterAll(async () => {
+    if (anvilProvider) {
+      await anvilProvider.destroy()
+    }
+  })
+
+  const randomWallet = async (provider: ethers.JsonRpcProvider) => {
+    const wallet = ethers.Wallet.createRandom(provider)
+    // Give ETH and allow sending txs
+    await provider.send('anvil_setBalance', [wallet.address, ethers.parseEther('100').toString()])
+    await provider.send('anvil_impersonateAccount', [wallet.address])
+    return wallet
+  }
+
+  beforeEach(async () => {
     mockRegistry = new ContractRepository()
-    context = new ExecutionContext(mockNetwork, undefined, mockRegistry)
-    
+    const wallet = await randomWallet(anvilProvider)
+    context = new ExecutionContext(mockNetwork, wallet.privateKey, mockRegistry)
+
     capturedEvents = []
     mockEventEmitter = {
       emitEvent: jest.fn((event) => {
@@ -39,8 +65,14 @@ describe('Plugin Integration with ExecutionEngine', () => {
   afterEach(async () => {
     registry.clear()
     capturedEvents = []
-    // Note: context disposal is handled by provider lifecycle
-    // We don't dispose here to avoid issues with provider state
+
+    if (context) {
+      try {
+        await context.dispose()
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
   })
 
   describe('executeAction with plugin handlers', () => {
