@@ -68,8 +68,42 @@ export interface JsonRequestAction {
   };
 }
 
+export interface SignDigestAction {
+  type: 'sign-digest';
+  arguments: {
+    digest: BytesValue;
+  };
+}
+
+export interface SignMessageAction {
+  type: 'sign-message';
+  arguments: {
+    message: Value<string | Uint8Array | number[]>;
+  };
+}
+
+export interface SignTypedDataAction {
+  type: 'sign-typed-data';
+  arguments: {
+    domain: Value<Record<string, any>>;
+    types: Value<Record<string, { name: string; type: string }[]>>;
+    message: Value<Record<string, any>>;
+    primaryType?: Value<string>;
+  };
+}
+
 // A union of all primitive action types.
-export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | CreateContractAction | TestNicksMethodAction | JsonRequestAction;
+export type PrimitiveAction =
+  | SendTransactionAction
+  | SendSignedTransactionAction
+  | VerifyContractAction
+  | StaticAction
+  | CreateContractAction
+  | TestNicksMethodAction
+  | JsonRequestAction
+  | SignDigestAction
+  | SignMessageAction
+  | SignTypedDataAction;
 
 const primitiveActionTypes = [
   'send-transaction',
@@ -79,6 +113,9 @@ const primitiveActionTypes = [
   'create-contract',
   'test-nicks-method',
   'json-request',
+  'sign-digest',
+  'sign-message',
+  'sign-typed-data',
 ] as const;
 
 /**

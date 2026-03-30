@@ -1,16 +1,17 @@
 import { ethers } from 'ethers'
 import { Network } from '../types'
 import { ContractRepository } from '../contracts/repository'
+import { DigestSigner, toDigestSigner } from './signer'
 
 export class ExecutionContext {
  public readonly provider: ethers.JsonRpcProvider
- public readonly signer: ethers.Signer | Promise<ethers.Signer> // Allow Promise for implicit signer
+ public readonly signer: DigestSigner | Promise<DigestSigner> // Allow Promise for implicit signer
  public readonly contractRepository: ContractRepository
  private outputs: Map<string, any> = new Map()
  private network: Network
  private etherscanApiKey?: string
  private currentContextPath?: string
- private resolvedSigner?: ethers.Signer // Cache for resolved signer
+ private resolvedSigner?: DigestSigner // Cache for resolved signer
 
   // Constants registries
   private topLevelConstants: Map<string, any> = new Map()
@@ -33,11 +34,11 @@ export class ExecutionContext {
 
    // Determine the signer
    if (privateKey) {
-     this.signer = new ethers.Wallet(privateKey, this.provider)
+     this.signer = toDigestSigner(new ethers.Wallet(privateKey, this.provider))
    } else if (network.rpcUrl) {
      // If no private key, but RPC URL is provided, get a signer from the provider.
      // This returns a Promise that we need to resolve on first use.
-     this.signer = this.provider.getSigner() // Keep as Promise
+     this.signer = this.provider.getSigner().then(toDigestSigner)
    } else {
      throw new Error('A private key must be provided or an RPC URL must be configured to obtain a signer for the network.')
    }
@@ -46,7 +47,7 @@ export class ExecutionContext {
  /**
   * Get the resolved signer, handling both direct signers and promised signers
   */
- public async getResolvedSigner(): Promise<ethers.Signer> {
+ public async getResolvedSigner(): Promise<DigestSigner> {
    if (this.resolvedSigner) {
      return this.resolvedSigner
    }

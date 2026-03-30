@@ -25,4 +25,10 @@ export interface Network {
    * "paris", "shanghai", "cancun". Used to filter jobs that require a minimum EVM version.
    */
   evmVersion?: string
+
+  /**
+   * Arbitrary per-network metadata for custom workflows.
+   * Keys should be descriptive strings; values are JSON-serializable blobs.
+   */
+  custom?: Record<string, any>
 }

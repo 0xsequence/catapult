@@ -22,6 +22,16 @@ describe('ValueResolver', () => {
       supports: ["sourcify", "etherscan_v2"],
       gasLimit: 10000000,
       evmVersion: 'cancun',
+      custom: {
+        dataSource: {
+          endpoint: 'https://api.example.com/data',
+          domain: {
+            name: 'Example',
+            version: '1',
+          },
+        },
+        blockMode: 'small',
+      },
     }
     // A dummy private key is fine as these tests don't send transactions
     const mockPrivateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
@@ -1549,6 +1559,16 @@ describe('ValueResolver', () => {
         const result = await resolver.resolve('{{Network().evmVersion}}', context)
         expect(result).toBe(mockNetwork.evmVersion)
       })
+
+      it('should return custom metadata object for valid network', async () => {
+        const result = await resolver.resolve('{{Network().custom}}', context)
+        expect(result).toEqual(mockNetwork.custom)
+      })
+
+      it('should resolve nested custom metadata path', async () => {
+        const result = await resolver.resolve('{{Network().custom.dataSource.endpoint}}', context)
+        expect(result).toBe('https://api.example.com/data')
+      })
     })
 
     describe('invalid Network expressions', () => {
@@ -1560,6 +1580,11 @@ describe('ValueResolver', () => {
       it('should fail for undefined property', async () => {
         await expect(resolver.resolve('{{Network().undefined}}', context))
           .rejects.toThrow('Property "undefined" does not exist on network')
+      })
+
+      it('should fail for missing nested property', async () => {
+        await expect(resolver.resolve('{{Network().custom.missing}}', context))
+          .rejects.toThrow('Property "custom.missing" does not exist on network')
       })
 
       it('should fail for network with reference', async () => {
