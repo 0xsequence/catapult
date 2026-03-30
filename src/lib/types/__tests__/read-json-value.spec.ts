@@ -94,6 +94,20 @@ describe('ReadJsonValue', () => {
       expect(value.arguments.path).toBe('{{fieldPath}}')
     })
 
+    it('should support numeric keys in path', () => {
+      const value: ReadJsonValue = {
+        type: 'read-json',
+        arguments: {
+          json: {
+            137: { calldata: '0xdeadbeef' }
+          },
+          path: 137
+        }
+      }
+
+      expect(value.arguments.path).toBe(137)
+    })
+
     it('should support both json and path as template variables', () => {
       const value: ReadJsonValue = {
         type: 'read-json',

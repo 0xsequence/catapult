@@ -482,18 +482,20 @@ export class ValueResolver {
       throw new Error('read-json: json argument is required')
     }
     
-    if (typeof path !== 'string') {
-      throw new Error('read-json: path must be a string')
+    if (typeof path !== 'string' && typeof path !== 'number') {
+      throw new Error('read-json: path must be a string or number')
     }
+
+    const normalizedPath = String(path)
     
     // If path is empty, return the entire JSON object
-    if (path === '') {
+    if (normalizedPath === '') {
       return json
     }
     
     try {
       // Split the path by dots to handle nested access
-      const pathParts = path.split('.')
+      const pathParts = normalizedPath.split('.')
       let current = json
       
       for (const part of pathParts) {
@@ -514,7 +516,7 @@ export class ValueResolver {
       
       return current
     } catch (error) {
-      throw new Error(`read-json: Failed to access path "${path}": ${error instanceof Error ? error.message : String(error)}`)
+      throw new Error(`read-json: Failed to access path "${normalizedPath}": ${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

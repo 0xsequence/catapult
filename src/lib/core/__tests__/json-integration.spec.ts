@@ -211,6 +211,23 @@ describe('JSON Integration Tests', () => {
       const result = await resolver.resolve(value, context)
       expect(result).toBe('0xabcdef')
     })
+
+    it('should allow numeric network chain IDs to index top-level maps', async () => {
+      const value: ReadJsonValue = {
+        type: 'read-json',
+        arguments: {
+          json: {
+            999: {
+              executeCalldata: '0xfeedface'
+            }
+          },
+          path: '{{Network().chainId}}'
+        }
+      }
+
+      const result = await resolver.resolve(value, context)
+      expect(result).toEqual({ executeCalldata: '0xfeedface' })
+    })
   })
 
   describe('JsonRequestAction integration', () => {

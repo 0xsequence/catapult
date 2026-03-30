@@ -91,7 +91,7 @@ export interface ReadJsonValue {
     type: 'read-json';
     arguments: {
         json: Value<any>; // The JSON object to read from
-        path: Value<string>; // The path to the value (e.g., "txs.data" or "user.profile.name")
+        path: Value<string | number>; // The path to the value (e.g., "txs.data", 1, or "user.profile.name")
     };
 }
 
