@@ -1207,6 +1207,29 @@ describe('ExecutionEngine', () => {
       const result = await (engine as any).evaluateSkipConditions(conditions, context, new Map())
       expect(result).toBe(false)
     })
+
+    it('should return true when a value-empty condition resolves to true', async () => {
+      context.setOutput('payloadMap', { 10: '0xdeadbeef' })
+      const scope = new Map<string, any>([['missingChainId', 999]])
+
+      const conditions = [
+        {
+          type: 'value-empty',
+          arguments: {
+            value: {
+              type: 'read-json',
+              arguments: {
+                json: '{{payloadMap}}',
+                path: '{{missingChainId}}'
+              }
+            }
+          }
+        }
+      ]
+
+      const result = await (engine as any).evaluateSkipConditions(conditions, context, scope)
+      expect(result).toBe(true)
+    })
   })
 
   describe('topologicalSortActions', () => {

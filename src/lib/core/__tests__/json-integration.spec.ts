@@ -228,6 +228,29 @@ describe('JSON Integration Tests', () => {
       const result = await resolver.resolve(value, context)
       expect(result).toEqual({ executeCalldata: '0xfeedface' })
     })
+
+    it('should let value-empty detect missing top-level map entries', async () => {
+      const value = {
+        type: 'value-empty',
+        arguments: {
+          value: {
+            type: 'read-json',
+            arguments: {
+              json: {
+                999: {
+                  executeCalldata: '0xfeedface'
+                }
+              },
+              path: '{{missingChainId}}'
+            }
+          }
+        }
+      } as const
+
+      const scope = new Map<string, any>([['missingChainId', 10]])
+      const result = await resolver.resolve(value, context, scope)
+      expect(result).toBe(true)
+    })
   })
 
   describe('JsonRequestAction integration', () => {

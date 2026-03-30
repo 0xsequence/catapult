@@ -13,6 +13,7 @@ import {
   ContractExistsValue,
   JobCompletedValue,
   ReadJsonValue,
+  ValueEmptyValue,
   SliceBytesValue,
 } from '../types'
 import { ExecutionContext } from './context'
@@ -190,6 +191,8 @@ export class ValueResolver {
         return this.resolveReadJson(resolvedArgs as ReadJsonValue['arguments'])
       case 'resolve-json':
         return this.resolveJsonValue(resolvedArgs, context)
+      case 'value-empty':
+        return this.resolveValueEmpty(resolvedArgs as ValueEmptyValue['arguments'])
       case 'slice-bytes':
         return this.resolveSliceBytes(resolvedArgs as SliceBytesValue['arguments'])
       default:
@@ -533,6 +536,28 @@ export class ValueResolver {
       // For primitive values, resolve them using the main resolve method
       return this.resolve(args, context)
     }
+  }
+
+  private resolveValueEmpty(args: ValueEmptyValue['arguments']): boolean {
+    const { value } = args
+
+    if (value === undefined || value === null) {
+      return true
+    }
+
+    if (typeof value === 'string') {
+      return value === '' || value === '0x'
+    }
+
+    if (Array.isArray(value)) {
+      return value.length === 0
+    }
+
+    if (typeof value === 'object') {
+      return Object.keys(value).length === 0
+    }
+
+    return false
   }
 
   private resolveSliceBytes(args: SliceBytesValue['arguments']): string {

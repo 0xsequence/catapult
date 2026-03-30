@@ -100,6 +100,13 @@ export interface ResolveJsonValue {
   arguments: Value<any>;
 }
 
+export interface ValueEmptyValue {
+  type: 'value-empty';
+  arguments: {
+    value: Value<any>;
+  };
+}
+
 export interface SliceBytesValue {
   type: 'slice-bytes';
   arguments: {
@@ -126,6 +133,7 @@ export type ValueResolver =
   | JobCompletedValue
   | ReadJsonValue
   | ResolveJsonValue
+  | ValueEmptyValue
   | SliceBytesValue;
 
 /**

@@ -18,6 +18,10 @@ function isCondition(item: any): item is Condition {
     return true
   }
 
+  if (item.type === 'value-empty') {
+    return !!(item.arguments && typeof item.arguments === 'object' && 'value' in item.arguments)
+  }
+
   // The 'basic-arithmetic' ValueResolver can also act as a Condition
   // if it performs a boolean comparison operation.
   if (item.type === 'basic-arithmetic') {

@@ -1,4 +1,4 @@
-import { AddressValue, BooleanValue } from './values'
+import { AddressValue, BooleanValue, ValueEmptyValue } from './values'
 
 /**
  * A condition that checks if a contract has code at a given address.
@@ -47,4 +47,4 @@ export function isJobCompletedCondition(obj: any): obj is JobCompletedCondition 
  * check type like 'contract-exists', or any ValueResolver that produces a
  * boolean result (e.g., `basic-arithmetic` with an 'eq' operation).
  */
-export type Condition = BooleanValue | ContractExistsCondition | JobCompletedCondition;
+export type Condition = BooleanValue | ContractExistsCondition | JobCompletedCondition | ValueEmptyValue;
