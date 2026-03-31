@@ -362,19 +362,42 @@ export class ValueResolver {
       throw new Error(`basic-arithmetic requires at least 2 values, got ${args.values?.length ?? 0}`)
     }
 
+    switch (args.operation) {
+      // Equality (return boolean, tolerate nullish / non-numeric values)
+      case 'eq': {
+        const [a, b] = args.values
+        return this.valuesEqual(a, b)
+      }
+      case 'neq': {
+        const [a, b] = args.values
+        return !this.valuesEqual(a, b)
+      }
+
+      // Arithmetic (return string)
+      case 'add':
+      case 'sub':
+      case 'mul':
+      case 'div':
+      case 'gt':
+      case 'lt':
+      case 'gte':
+      case 'lte':
+        break
+
+      default:
+        throw new Error(`Unsupported basic-arithmetic operation: ${args.operation}`)
+    }
+
     const numbers = args.values.map(v => ethers.toBigInt(v))
     const [a, b] = numbers
 
     switch (args.operation) {
-      // Arithmetic (return string)
       case 'add': return numbers.reduce((sum, current) => sum + current).toString()
       case 'sub': return (a - b).toString()
       case 'mul': return (a * b).toString()
       case 'div': return (a / b).toString()
 
       // Comparison (return boolean)
-      case 'eq':  return a === b
-      case 'neq': return a !== b
       case 'gt':  return a > b
       case 'lt':  return a < b
       case 'gte': return a >= b
@@ -383,6 +406,30 @@ export class ValueResolver {
       default:
         throw new Error(`Unsupported basic-arithmetic operation: ${args.operation}`)
     }
+  }
+
+  private valuesEqual(a: any, b: any): boolean {
+    if (a == null || b == null) {
+      return a == null && b == null
+    }
+
+    if (isBigNumberish(a) && isBigNumberish(b)) {
+      return ethers.toBigInt(a) === ethers.toBigInt(b)
+    }
+
+    if (typeof a === 'string' && typeof b === 'string') {
+      return a === b
+    }
+
+    if (typeof a === 'boolean' && typeof b === 'boolean') {
+      return a === b
+    }
+
+    if ((typeof a === 'object' && a !== null) || (typeof b === 'object' && b !== null)) {
+      return JSON.stringify(a) === JSON.stringify(b)
+    }
+
+    return a === b
   }
 
   private async resolveCall(args: CallValue['arguments'], context: ExecutionContext): Promise<any> {

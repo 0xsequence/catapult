@@ -102,6 +102,28 @@ describe('ValueResolver', () => {
       expect(await resolver.resolve(valueFalse, context)).toBe(false)
     })
 
+    it('should treat nullish nested values as non-equal without throwing', async () => {
+      const value: BasicArithmeticValue = {
+        type: 'basic-arithmetic',
+        arguments: {
+          operation: 'eq',
+          values: [
+            {
+              type: 'call',
+              arguments: {
+                to: '0x1234567890123456789012345678901234567890',
+                signature: 'imageHash() returns (bytes32)',
+                values: [],
+              },
+            },
+            '0xfd72d46fd0d0a98780315f81790f051356f2f3101af4b5c3fb1c6da3237fb765',
+          ],
+        },
+      }
+
+      await expect(resolver.resolve(value, context)).resolves.toBe(false)
+    })
+
     it('should correctly evaluate "gt" (greater than)', async () => {
       const valueTrue: BasicArithmeticValue = { type: 'basic-arithmetic', arguments: { operation: 'gt', values: [10, 5] } }
       const valueFalse: BasicArithmeticValue = { type: 'basic-arithmetic', arguments: { operation: 'gt', values: [10, 10] } }
