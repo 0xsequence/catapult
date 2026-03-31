@@ -644,7 +644,8 @@ class Deployer {
                 includeAllForAction(actionName);
             }
         }
-        if (result.size > 0) {
+        const hasExplicitOutputSelection = actionsWithCustomMap.length > 0 || actionsWithTrue.length > 0;
+        if (hasExplicitOutputSelection) {
             for (const falseActionName of actionsWithFalse) {
                 for (const key of Array.from(result.keys())) {
                     if (key.startsWith(`${falseActionName}.`)) {

@@ -879,8 +879,10 @@ export class Deployer {
 
     // 3) Exclude any actions explicitly marked false (they won't be included by rules above anyway)
 
-    // If we have any inclusions (custom maps or trues), return them
-    if (result.size > 0) {
+    const hasExplicitOutputSelection = actionsWithCustomMap.length > 0 || actionsWithTrue.length > 0
+
+    // If the job has any explicit output selection, return the selected outputs even when empty.
+    if (hasExplicitOutputSelection) {
       // Additionally, filter out any accidentally included outputs from actions marked false
       for (const falseActionName of actionsWithFalse) {
         for (const key of Array.from(result.keys())) {

@@ -460,6 +460,34 @@ describe('Deployer', () => {
           'deploy2.address': '0xdeploy2'
         })
       })
+
+      it('should keep outputs empty when only skipped opt-in actions produce no keys', async () => {
+        const jobWithSkippedOptIn: Job = {
+          name: 'job-skipped-opt-in',
+          version: '1.0.0',
+          description: 'Job where the only opted-in action produced no outputs',
+          actions: [
+            { name: 'deploy-action', template: 'template1', arguments: {}, output: false },
+            { name: 'skipped-action', template: 'template1', arguments: {}, output: true }
+          ]
+        }
+
+        mockLoader.jobs.clear()
+        mockLoader.jobs.set('job-skipped-opt-in', jobWithSkippedOptIn)
+        mockGraph.getExecutionOrder.mockReturnValue(['job-skipped-opt-in'])
+
+        mockContext.getOutputs.mockReturnValue(new Map<string, any>([
+          ['deploy-action.address', '0xdeployaddress']
+        ]))
+
+        const deployer = new Deployer(deployerOptions)
+        await deployer.run()
+
+        const outputCall = mockFs.writeFile.mock.calls[0]
+        const outputContent = JSON.parse(outputCall[1] as string)
+
+        expect(outputContent.networks[0].outputs).toEqual({})
+      })
     })
 
     describe('error handling', () => {
