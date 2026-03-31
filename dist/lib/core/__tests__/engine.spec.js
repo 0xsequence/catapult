@@ -1,0 +1,1526 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const ethers_1 = require("ethers");
+const engine_1 = require("../engine");
+const context_1 = require("../context");
+const repository_1 = require("../../contracts/repository");
+const etherscan_1 = require("../../verification/etherscan");
+const TEST_ADDRESSES = {
+    DEPLOYER: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
+    RECIPIENT_1: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+    RECIPIENT_2: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
+    RECIPIENT_3: '0x90F79bf6EB2c4f870365E785982E1f101E93b906',
+    RECIPIENT_4: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
+    RECIPIENT_5: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
+    CONTRACT_ADDRESS: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+    DUMMY_ADDRESS: '0x1234567890123456789012345678901234567890'
+};
+const TEST_BYTECODES = {
+    SIMPLE_CONTRACT: '0x6080604052348015600e575f5ffd5b5060c180601a5f395ff3fe6080604052348015600e575f5ffd5b50600436106030575f3560e01c806390c52443146034578063d09de08a14604d575b5f5ffd5b603b5f5481565b60405190815260200160405180910390f35b60536055565b005b5f805490806061836068565b9190505550565b5f60018201608457634e487b7160e01b5f52601160045260245ffd5b506001019056fea264697066735822122061c8cc43c72d6b23b16f7a7337dd15b93d71eb94a9d5247911e39f486e1f94f964736f6c634300081e0033',
+    SIMPLE_RETURN_42: '0x6080604052348015600f57600080fd5b5060b68061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063a87d942c14602d575b600080fd5b60336035565b005b6000602a9050909156fea2646970667358221220d1b0e2d6c9f3e8a6f5b8d2e3a4c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c556',
+    MINI_CONTRACT: '0x608060405234801561000f575f5ffd5b5060043610610034575f3560e01c80636df5b97a14610038578063f8a8fd6d14610068575b5f5ffd5b610052600480360381019061004d91906100da565b610086565b60405161005f9190610127565b60405180910390f35b61007061009b565b60405161007d9190610127565b60405180910390f35b5f8183610093919061016d565b905092915050565b5f602a905090565b5f5ffd5b5f819050919050565b6100b9816100a7565b81146100c3575f5ffd5b50565b5f813590506100d4816100b0565b92915050565b5f5f604083850312156100f0576100ef6100a3565b5b5f6100fd858286016100c6565b925050602061010e858286016100c6565b9150509250929050565b610121816100a7565b82525050565b5f60208201905061013a5f830184610118565b92915050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5f610177826100a7565b9150610182836100a7565b9250828202610190816100a7565b915082820484148315176101a7576101a6610140565b5b509291505056fea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033',
+    MINIMAL_DEPLOY: '0x608060405234801561000f575f5ffd5b50603e80601c5f395ff3fe60806040525f80fdfea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033',
+    BROKEN_BYTECODE: '0xff',
+};
+const TEST_VALUES = {
+    ONE_ETH: '1000000000000000000',
+    HALF_ETH: '500000000000000000',
+    TWO_ETH: '2000000000000000000',
+    SMALL_AMOUNT: '1000000000000000000'
+};
+const TEST_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
+describe('ExecutionEngine', () => {
+    let engine;
+    let context;
+    let mockNetwork;
+    let mockRegistry;
+    let templates;
+    let anvilProvider;
+    beforeAll(async () => {
+        const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545';
+        mockNetwork = { name: 'testnet', chainId: 999, rpcUrl };
+        const provider = new ethers_1.ethers.JsonRpcProvider(rpcUrl);
+        await provider.getNetwork();
+    });
+    beforeEach(async () => {
+        const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545';
+        anvilProvider = new ethers_1.ethers.JsonRpcProvider(rpcUrl);
+        mockRegistry = new repository_1.ContractRepository();
+        context = new context_1.ExecutionContext(mockNetwork, TEST_PRIVATE_KEY, mockRegistry);
+        templates = new Map();
+        const verificationRegistry = new etherscan_1.VerificationPlatformRegistry();
+        engine = new engine_1.ExecutionEngine(templates, { verificationRegistry });
+    });
+    afterEach(async () => {
+        if (anvilProvider) {
+            try {
+                if (anvilProvider.destroy) {
+                    await anvilProvider.destroy();
+                }
+            }
+            catch (error) {
+            }
+        }
+        if (context) {
+            try {
+                await context.dispose();
+            }
+            catch (error) {
+            }
+        }
+    });
+    describe('executeJob', () => {
+        it('should execute a simple job with no dependencies', async () => {
+            const job = {
+                name: 'simple-job',
+                version: '1.0.0',
+                actions: [
+                    {
+                        name: 'send-eth',
+                        template: 'send-transaction',
+                        arguments: {
+                            to: TEST_ADDRESSES.RECIPIENT_1,
+                            value: TEST_VALUES.ONE_ETH,
+                            data: '0x'
+                        }
+                    }
+                ]
+            };
+            await expect(engine.executeJob(job, context)).resolves.not.toThrow();
+            expect(context.getOutput('send-eth.hash')).toBeDefined();
+            expect(context.getOutput('send-eth.receipt')).toBeDefined();
+        });
+        it('should execute actions in dependency order', async () => {
+            const executionOrder = [];
+            const originalExecuteAction = engine.executeAction;
+            engine.executeAction = async function (action, ctx, scope) {
+                const actionName = 'name' in action ? action.name : action.type;
+                if (actionName) {
+                    executionOrder.push(actionName);
+                }
+            };
+            const job = {
+                name: 'dependency-job',
+                version: '1.0.0',
+                actions: [
+                    {
+                        name: 'action-c',
+                        template: 'send-transaction',
+                        arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
+                        depends_on: ['action-a', 'action-b']
+                    },
+                    {
+                        name: 'action-a',
+                        template: 'send-transaction',
+                        arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' }
+                    },
+                    {
+                        name: 'action-b',
+                        template: 'send-transaction',
+                        arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
+                        depends_on: ['action-a']
+                    }
+                ]
+            };
+            await engine.executeJob(job, context);
+            engine.executeAction = originalExecuteAction;
+            expect(executionOrder).toEqual(['action-a', 'action-b', 'action-c']);
+        });
+        it('should throw on circular dependencies within a job', async () => {
+            const job = {
+                name: 'circular-job',
+                version: '1.0.0',
+                actions: [
+                    {
+                        name: 'action-a',
+                        template: 'send-transaction',
+                        arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
+                        depends_on: ['action-b']
+                    },
+                    {
+                        name: 'action-b',
+                        template: 'send-transaction',
+                        arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
+                        depends_on: ['action-a']
+                    }
+                ]
+            };
+            await expect(engine.executeJob(job, context)).rejects.toThrow('Circular dependency detected among actions in job "circular-job".');
+        });
+        it('should throw on invalid dependencies within a job', async () => {
+            const job = {
+                name: 'invalid-dep-job',
+                version: '1.0.0',
+                actions: [
+                    {
+                        name: 'action-a',
+                        template: 'send-transaction',
+                        arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
+                        depends_on: ['non-existent-action']
+                    }
+                ]
+            };
+            await expect(engine.executeJob(job, context)).rejects.toThrow('Action "action-a" in job "invalid-dep-job" has an invalid dependency on "non-existent-action", which does not exist.');
+        });
+    });
+    describe('executeAction', () => {
+        it('should skip action when skip condition is met', async () => {
+            context.setOutput('should_skip', 1);
+            const action = {
+                name: 'skipped-action',
+                template: 'send-transaction',
+                arguments: { to: TEST_ADDRESSES.DUMMY_ADDRESS, data: '0x' },
+                skip_condition: [{ type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }]
+            };
+            await engine.executeAction(action, context, new Map());
+            expect(() => context.getOutput('skipped-action.hash')).toThrow();
+        });
+        it('should execute action when skip condition is not met', async () => {
+            context.setOutput('should_skip', 0);
+            const action = {
+                name: 'executed-action',
+                template: 'send-transaction',
+                arguments: {
+                    to: TEST_ADDRESSES.RECIPIENT_1,
+                    value: TEST_VALUES.ONE_ETH,
+                    data: '0x'
+                },
+                skip_condition: [{ type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }]
+            };
+            await engine.executeAction(action, context, new Map());
+            expect(context.getOutput('executed-action.hash')).toBeDefined();
+        });
+        it('should call executeTemplate for template actions', async () => {
+            const template = {
+                name: 'test-template',
+                actions: [
+                    {
+                        type: 'send-transaction',
+                        name: 'param-action',
+                        arguments: {
+                            to: TEST_ADDRESSES.RECIPIENT_1,
+                            value: TEST_VALUES.ONE_ETH,
+                            data: '0x'
+                        }
+                    }
+                ]
+            };
+            templates.set('test-template', template);
+            const action = {
+                name: 'template-action',
+                template: 'test-template',
+                arguments: {}
+            };
+            await engine.executeAction(action, context, new Map());
+        });
+        it('should call executePrimitive for primitive actions', async () => {
+            const action = {
+                type: 'send-transaction',
+                name: 'primitive-action',
+                arguments: {
+                    to: TEST_ADDRESSES.RECIPIENT_1,
+                    value: TEST_VALUES.ONE_ETH,
+                    data: '0x'
+                }
+            };
+            await engine.executeAction(action, context, new Map());
+            expect(context.getOutput('primitive-action.hash')).toBeDefined();
+        });
+    });
+    describe('executeTemplate', () => {
+        it('should execute template with setup block', async () => {
+            const executedActions = [];
+            const originalExecuteAction = engine.executeAction;
+            engine.executeAction = async function (action, ctx, scope) {
+                const actionName = 'name' in action ? action.name : action.type;
+                if (actionName) {
+                    executedActions.push(actionName);
+                    if (actionName === 'setup-action') {
+                        ctx.setOutput('setup-action.hash', 'mock-setup-hash');
+                        ctx.setOutput('setup-action.receipt', { status: 1, blockNumber: 100 });
+                    }
+                    else if (actionName === 'main-action') {
+                        ctx.setOutput('main-action.hash', 'mock-main-hash');
+                        ctx.setOutput('main-action.receipt', { status: 1, blockNumber: 101 });
+                    }
+                }
+            };
+            const template = {
+                name: 'template-with-setup',
+                setup: {
+                    actions: [
+                        {
+                            type: 'send-transaction',
+                            name: 'setup-action',
+                            arguments: {
+                                to: TEST_ADDRESSES.RECIPIENT_2,
+                                value: TEST_VALUES.HALF_ETH,
+                                data: '0x'
+                            }
+                        }
+                    ]
+                },
+                actions: [
+                    {
+                        type: 'send-transaction',
+                        name: 'main-action',
+                        arguments: {
+                            to: TEST_ADDRESSES.RECIPIENT_3,
+                            value: TEST_VALUES.ONE_ETH,
+                            data: '0x'
+                        }
+                    }
+                ]
+            };
+            templates.set('template-with-setup', template);
+            const callingAction = {
+                name: 'test-call',
+                template: 'template-with-setup',
+                arguments: {}
+            };
+            await engine.executeTemplate(callingAction, 'template-with-setup', context);
+            engine.executeAction = originalExecuteAction;
+            expect(executedActions).toEqual(['setup-action', 'main-action']);
+            expect(context.getOutput('setup-action.hash')).toBeDefined();
+            expect(context.getOutput('main-action.hash')).toBeDefined();
+        });
+        it('should skip template actions when template skip condition is met', async () => {
+            context.setOutput('skip_template', 1);
+            const template = {
+                name: 'skippable-template',
+                skip_condition: [{ type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{skip_template}}', 1] } }],
+                actions: [
+                    {
+                        type: 'send-transaction',
+                        name: 'skipped-main-action',
+                        arguments: {
+                            to: TEST_ADDRESSES.RECIPIENT_1,
+                            value: TEST_VALUES.ONE_ETH,
+                            data: '0x'
+                        }
+                    }
+                ]
+            };
+            templates.set('skippable-template', template);
+            const callingAction = {
+                name: 'test-call',
+                template: 'skippable-template',
+                arguments: {}
+            };
+            await engine.executeTemplate(callingAction, 'skippable-template', context);
+            expect(() => context.getOutput('skipped-main-action.hash')).toThrow();
+        });
+        it('should skip template actions when setup skip condition is met', async () => {
+            context.setOutput('skip_setup', 1);
+            const template = {
+                name: 'skippable-setup-template',
+                setup: {
+                    skip_condition: [{ type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{skip_setup}}', 1] } }],
+                    actions: [
+                        {
+                            type: 'send-transaction',
+                            name: 'setup-action',
+                            arguments: {
+                                to: TEST_ADDRESSES.RECIPIENT_4,
+                                value: TEST_VALUES.ONE_ETH,
+                                data: '0x'
+                            }
+                        }
+                    ]
+                },
+                actions: [
+                    {
+                        type: 'send-transaction',
+                        name: 'main-action-after-skipped-setup',
+                        arguments: {
+                            to: TEST_ADDRESSES.RECIPIENT_1,
+                            value: TEST_VALUES.ONE_ETH,
+                            data: '0x'
+                        }
+                    }
+                ]
+            };
+            templates.set('skippable-setup-template', template);
+            const callingAction = {
+                name: 'test-call',
+                template: 'skippable-setup-template',
+                arguments: {}
+            };
+            await engine.executeTemplate(callingAction, 'skippable-setup-template', context);
+            expect(() => context.getOutput('setup-action.hash')).toThrow();
+            expect(context.getOutput('main-action-after-skipped-setup.hash')).toBeDefined();
+        });
+        it('should pass arguments to template and resolve outputs', async () => {
+            const template = {
+                name: 'parameterized-template',
+                actions: [
+                    {
+                        type: 'send-transaction',
+                        name: 'param-action',
+                        arguments: {
+                            to: '{{target_address}}',
+                            value: '{{amount}}',
+                            data: '0x'
+                        }
+                    }
+                ],
+                outputs: {
+                    transaction_hash: '{{param-action.hash}}',
+                    doubled_amount: { type: 'basic-arithmetic', arguments: { operation: 'mul', values: ['{{amount}}', 2] } }
+                }
+            };
+            templates.set('parameterized-template', template);
+            const callingAction = {
+                name: 'test-param-call',
+                template: 'parameterized-template',
+                arguments: {
+                    target_address: TEST_ADDRESSES.RECIPIENT_1,
+                    amount: TEST_VALUES.ONE_ETH
+                }
+            };
+            await engine.executeTemplate(callingAction, 'parameterized-template', context);
+            expect(context.getOutput('test-param-call.transaction_hash')).toBeDefined();
+            expect(context.getOutput('test-param-call.doubled_amount')).toBe('2000000000000000000');
+        });
+        it('should allow job action custom output map to override template outputs', async () => {
+            const originalExecuteAction = engine.executeAction;
+            engine.executeAction = async function (action, ctx, scope) {
+                const actionName = 'name' in action ? action.name : action.type;
+                if (actionName === 'param-action') {
+                    ctx.setOutput('param-action.hash', '0xhash123');
+                    ctx.setOutput('param-action.receipt', { status: 1, blockNumber: 111 });
+                }
+            };
+            const template = {
+                name: 'tpl-custom-output',
+                actions: [
+                    {
+                        type: 'send-transaction',
+                        name: 'param-action',
+                        arguments: {
+                            to: TEST_ADDRESSES.RECIPIENT_1,
+                            value: TEST_VALUES.ONE_ETH,
+                            data: '0x'
+                        }
+                    }
+                ],
+                outputs: {
+                    transaction_hash: '{{param-action.hash}}',
+                    receipt_block: '{{param-action.receipt.blockNumber}}'
+                }
+            };
+            templates.set('tpl-custom-output', template);
+            const callingAction = {
+                name: 'custom-call',
+                template: 'tpl-custom-output',
+                arguments: {},
+                output: {
+                    myHash: '{{param-action.hash}}',
+                    staticValue: '42'
+                }
+            };
+            await engine.executeTemplate(callingAction, 'tpl-custom-output', context);
+            engine.executeAction = originalExecuteAction;
+            expect(context.getOutput('custom-call.myHash')).toBe('0xhash123');
+            expect(context.getOutput('custom-call.staticValue')).toBe('42');
+            expect(() => context.getOutput('custom-call.transaction_hash')).toThrow();
+            expect(() => context.getOutput('custom-call.receipt_block')).toThrow();
+        });
+        it('should throw when template is not found', async () => {
+            const callingAction = {
+                name: 'test-call',
+                template: 'non-existent-template',
+                arguments: {}
+            };
+            await expect(engine.executeTemplate(callingAction, 'non-existent-template', context))
+                .rejects.toThrow('Template "non-existent-template" not found');
+        });
+    });
+    describe('executePrimitive', () => {
+        describe('send-transaction', () => {
+            it('should send a transaction successfully', async () => {
+                const action = {
+                    type: 'send-transaction',
+                    name: 'test-tx',
+                    arguments: {
+                        to: TEST_ADDRESSES.RECIPIENT_1,
+                        value: TEST_VALUES.ONE_ETH,
+                        data: '0x'
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                const hash = context.getOutput('test-tx.hash');
+                const receipt = context.getOutput('test-tx.receipt');
+                expect(hash).toBeDefined();
+                expect(receipt).toBeDefined();
+                expect(receipt.status).toBe(1);
+            });
+            it('should send transaction with resolved arguments', async () => {
+                context.setOutput('recipient', TEST_ADDRESSES.RECIPIENT_1);
+                context.setOutput('amount', TEST_VALUES.ONE_ETH);
+                const action = {
+                    type: 'send-transaction',
+                    name: 'resolved-tx',
+                    arguments: {
+                        to: '{{recipient}}',
+                        value: '{{amount}}',
+                        data: '0x1234'
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('resolved-tx.hash')).toBeDefined();
+            });
+            it('should handle transaction without value and data', async () => {
+                const action = {
+                    type: 'send-transaction',
+                    name: 'minimal-tx',
+                    arguments: {
+                        to: TEST_ADDRESSES.RECIPIENT_1
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('minimal-tx.hash')).toBeDefined();
+            });
+            it('should not store outputs when action has no name', async () => {
+                const action = {
+                    type: 'send-transaction',
+                    arguments: {
+                        to: TEST_ADDRESSES.RECIPIENT_1,
+                        value: TEST_VALUES.ONE_ETH,
+                        data: '0x'
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                const outputs = context.outputs;
+                expect(outputs.size).toBe(0);
+            });
+            it('should throw on invalid address', async () => {
+                const action = {
+                    type: 'send-transaction',
+                    arguments: {
+                        to: 'invalid-address',
+                        value: '1000000000000000000',
+                        data: '0x'
+                    }
+                };
+                await expect(engine.executePrimitive(action, context, new Map()))
+                    .rejects.toThrow();
+            });
+            it('should apply gas multiplier when network gasLimit is set', async () => {
+                const mockNetwork = { gasLimit: 100000 };
+                jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork);
+                const action = {
+                    type: 'send-transaction',
+                    name: 'gas-multiplier-tx',
+                    arguments: {
+                        to: TEST_ADDRESSES.RECIPIENT_1,
+                        value: TEST_VALUES.ONE_ETH,
+                        gasMultiplier: 1.5
+                    }
+                };
+                const mockSendTransaction = jest.fn().mockResolvedValue({
+                    hash: '0x123',
+                    wait: jest.fn().mockResolvedValue({ status: 1, blockNumber: 123 })
+                });
+                const resolvedSigner = await context.getResolvedSigner();
+                jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction);
+                await engine.executePrimitive(action, context, new Map());
+                expect(mockSendTransaction).toHaveBeenCalledWith(expect.objectContaining({
+                    gasLimit: 150000
+                }));
+            });
+            it('should estimate gas and apply multiplier when no network gasLimit is set', async () => {
+                const mockNetwork = {};
+                jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork);
+                const resolvedSigner = await context.getResolvedSigner();
+                const mockEstimateGas = jest.fn().mockResolvedValue(BigInt(80000));
+                jest.spyOn(resolvedSigner, 'estimateGas').mockImplementation(mockEstimateGas);
+                const mockSendTransaction = jest.fn().mockResolvedValue({
+                    hash: '0x123',
+                    wait: jest.fn().mockResolvedValue({ status: 1, blockNumber: 123 })
+                });
+                jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction);
+                const action = {
+                    type: 'send-transaction',
+                    name: 'gas-estimate-tx',
+                    arguments: {
+                        to: TEST_ADDRESSES.RECIPIENT_1,
+                        gasMultiplier: 2.0
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(mockEstimateGas).toHaveBeenCalledWith(expect.objectContaining({
+                    to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+                }));
+                expect(mockSendTransaction).toHaveBeenCalledWith(expect.objectContaining({
+                    gasLimit: 160000
+                }));
+            });
+            it('should work with resolved gasMultiplier value', async () => {
+                context.setOutput('multiplier', 1.25);
+                const mockNetwork = { gasLimit: 100000 };
+                jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork);
+                const mockSendTransaction = jest.fn().mockResolvedValue({
+                    hash: '0x123',
+                    wait: jest.fn().mockResolvedValue({ status: 1, blockNumber: 123 })
+                });
+                const resolvedSigner = await context.getResolvedSigner();
+                jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction);
+                const action = {
+                    type: 'send-transaction',
+                    name: 'resolved-multiplier-tx',
+                    arguments: {
+                        to: TEST_ADDRESSES.RECIPIENT_1,
+                        gasMultiplier: '{{multiplier}}'
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(mockSendTransaction).toHaveBeenCalledWith(expect.objectContaining({
+                    gasLimit: 125000
+                }));
+            });
+            it('should throw error for invalid gasMultiplier', async () => {
+                const action = {
+                    type: 'send-transaction',
+                    arguments: {
+                        to: TEST_ADDRESSES.RECIPIENT_1,
+                        gasMultiplier: -1.0
+                    }
+                };
+                await expect(engine.executePrimitive(action, context, new Map()))
+                    .rejects.toThrow('gasMultiplier must be a positive number');
+            });
+            it('should throw error for zero gasMultiplier', async () => {
+                const action = {
+                    type: 'send-transaction',
+                    arguments: {
+                        to: TEST_ADDRESSES.RECIPIENT_1,
+                        gasMultiplier: 0
+                    }
+                };
+                await expect(engine.executePrimitive(action, context, new Map()))
+                    .rejects.toThrow('gasMultiplier must be a positive number');
+            });
+        });
+        describe('create-contract', () => {
+            it('should create a contract successfully', async () => {
+                const action = {
+                    type: 'create-contract',
+                    name: 'test-contract',
+                    arguments: {
+                        data: TEST_BYTECODES.SIMPLE_CONTRACT
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                const hash = context.getOutput('test-contract.hash');
+                const receipt = context.getOutput('test-contract.receipt');
+                const address = context.getOutput('test-contract.address');
+                expect(hash).toBeDefined();
+                expect(receipt).toBeDefined();
+                expect(address).toBeDefined();
+                expect(receipt.status).toBe(1);
+                expect(receipt.contractAddress).toBe(address);
+            });
+            it('should create contract with resolved arguments', async () => {
+                context.setOutput('contract_bytecode', TEST_BYTECODES.SIMPLE_CONTRACT);
+                const action = {
+                    type: 'create-contract',
+                    name: 'resolved-contract',
+                    arguments: {
+                        data: '{{contract_bytecode}}'
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('resolved-contract.address')).toBeDefined();
+            });
+            it('should apply gas multiplier when network gasLimit is set', async () => {
+                const mockNetwork = { gasLimit: 200000 };
+                jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork);
+                const action = {
+                    type: 'create-contract',
+                    name: 'gas-multiplier-contract',
+                    arguments: {
+                        data: TEST_BYTECODES.SIMPLE_CONTRACT,
+                        gasMultiplier: 1.5
+                    }
+                };
+                const mockSendTransaction = jest.fn().mockResolvedValue({
+                    hash: '0x123',
+                    wait: jest.fn().mockResolvedValue({
+                        status: 1,
+                        blockNumber: 123,
+                        contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+                    })
+                });
+                const resolvedSigner = await context.getResolvedSigner();
+                jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction);
+                await engine.executePrimitive(action, context, new Map());
+                expect(mockSendTransaction).toHaveBeenCalledWith(expect.objectContaining({
+                    to: null,
+                    gasLimit: 300000
+                }));
+            });
+            it('should estimate gas and apply multiplier when no network gasLimit is set', async () => {
+                const mockNetwork = {};
+                jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork);
+                const resolvedSigner = await context.getResolvedSigner();
+                const mockEstimateGas = jest.fn().mockResolvedValue(BigInt(150000));
+                jest.spyOn(resolvedSigner, 'estimateGas').mockImplementation(mockEstimateGas);
+                const mockSendTransaction = jest.fn().mockResolvedValue({
+                    hash: '0x123',
+                    wait: jest.fn().mockResolvedValue({
+                        status: 1,
+                        blockNumber: 123,
+                        contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+                    })
+                });
+                jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction);
+                const action = {
+                    type: 'create-contract',
+                    name: 'gas-estimate-contract',
+                    arguments: {
+                        data: TEST_BYTECODES.SIMPLE_CONTRACT,
+                        gasMultiplier: 2.0
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(mockEstimateGas).toHaveBeenCalledWith(expect.objectContaining({
+                    to: null,
+                    data: TEST_BYTECODES.SIMPLE_CONTRACT
+                }));
+                expect(mockSendTransaction).toHaveBeenCalledWith(expect.objectContaining({
+                    gasLimit: 300000
+                }));
+            });
+            it('should work with resolved gasMultiplier value', async () => {
+                context.setOutput('multiplier', 1.25);
+                const mockNetwork = { gasLimit: 200000 };
+                jest.spyOn(context, 'getNetwork').mockReturnValue(mockNetwork);
+                const mockSendTransaction = jest.fn().mockResolvedValue({
+                    hash: '0x123',
+                    wait: jest.fn().mockResolvedValue({
+                        status: 1,
+                        blockNumber: 123,
+                        contractAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3'
+                    })
+                });
+                const resolvedSigner = await context.getResolvedSigner();
+                jest.spyOn(resolvedSigner, 'sendTransaction').mockImplementation(mockSendTransaction);
+                const action = {
+                    type: 'create-contract',
+                    name: 'resolved-multiplier-contract',
+                    arguments: {
+                        data: TEST_BYTECODES.SIMPLE_CONTRACT,
+                        gasMultiplier: '{{multiplier}}'
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(mockSendTransaction).toHaveBeenCalledWith(expect.objectContaining({
+                    gasLimit: 250000
+                }));
+            });
+            it('should throw error for invalid gasMultiplier', async () => {
+                const action = {
+                    type: 'create-contract',
+                    arguments: {
+                        data: TEST_BYTECODES.SIMPLE_CONTRACT,
+                        gasMultiplier: -1.0
+                    }
+                };
+                await expect(engine.executePrimitive(action, context, new Map()))
+                    .rejects.toThrow('gasMultiplier must be a positive number');
+            });
+            it('should throw error for zero gasMultiplier', async () => {
+                const action = {
+                    type: 'create-contract',
+                    arguments: {
+                        data: TEST_BYTECODES.SIMPLE_CONTRACT,
+                        gasMultiplier: 0
+                    }
+                };
+                await expect(engine.executePrimitive(action, context, new Map()))
+                    .rejects.toThrow('gasMultiplier must be a positive number');
+            });
+            it('should handle contract creation without value and gasMultiplier', async () => {
+                const action = {
+                    type: 'create-contract',
+                    name: 'minimal-contract',
+                    arguments: {
+                        data: TEST_BYTECODES.SIMPLE_CONTRACT
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('minimal-contract.address')).toBeDefined();
+            });
+            it('should not store outputs when action has no name', async () => {
+                const action = {
+                    type: 'create-contract',
+                    arguments: {
+                        data: TEST_BYTECODES.SIMPLE_CONTRACT
+                    }
+                };
+                const outputsBefore = context.outputs.size;
+                await engine.executePrimitive(action, context, new Map());
+                const outputsAfter = context.outputs.size;
+                expect(outputsAfter).toBe(outputsBefore);
+            });
+            it('should throw on invalid bytecode', async () => {
+                const action = {
+                    type: 'create-contract',
+                    arguments: {
+                        data: 'invalid-bytecode'
+                    }
+                };
+                await expect(engine.executePrimitive(action, context, new Map()))
+                    .rejects.toThrow();
+            });
+        });
+        describe('send-signed-transaction', () => {
+            it('should broadcast a signed transaction', async () => {
+                const wallet = new ethers_1.ethers.Wallet(TEST_PRIVATE_KEY, anvilProvider);
+                const tx = await wallet.populateTransaction({
+                    to: TEST_ADDRESSES.RECIPIENT_1,
+                    value: ethers_1.ethers.parseEther('1'),
+                    gasLimit: 21000
+                });
+                const signedTx = await wallet.signTransaction(tx);
+                const action = {
+                    type: 'send-signed-transaction',
+                    name: 'signed-tx',
+                    arguments: {
+                        transaction: signedTx
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('signed-tx.hash')).toBeDefined();
+                expect(context.getOutput('signed-tx.receipt')).toBeDefined();
+            });
+            it('should resolve transaction from context', async () => {
+                const wallet = new ethers_1.ethers.Wallet(TEST_PRIVATE_KEY, anvilProvider);
+                const tx = await wallet.populateTransaction({
+                    to: TEST_ADDRESSES.RECIPIENT_1,
+                    value: ethers_1.ethers.parseEther('1'),
+                    gasLimit: 21000
+                });
+                const signedTx = await wallet.signTransaction(tx);
+                context.setOutput('prepared_tx', signedTx);
+                const action = {
+                    type: 'send-signed-transaction',
+                    name: 'resolved-signed-tx',
+                    arguments: {
+                        transaction: '{{prepared_tx}}'
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('resolved-signed-tx.hash')).toBeDefined();
+            });
+        });
+        describe('static', () => {
+            it('should return the provided value unchanged', async () => {
+                const action = {
+                    type: 'static',
+                    name: 'test-static',
+                    arguments: {
+                        value: 'hello world'
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('test-static.value')).toBe('hello world');
+            });
+            it('should resolve and return complex values', async () => {
+                context.setOutput('input_value', { foo: 'bar', number: 42 });
+                const action = {
+                    type: 'static',
+                    name: 'complex-static',
+                    arguments: {
+                        value: '{{input_value}}'
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('complex-static.value')).toEqual({ foo: 'bar', number: 42 });
+            });
+            it('should work with numeric values', async () => {
+                const action = {
+                    type: 'static',
+                    name: 'numeric-static',
+                    arguments: {
+                        value: 12345
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('numeric-static.value')).toBe(12345);
+            });
+            it('should work with boolean values', async () => {
+                const action = {
+                    type: 'static',
+                    name: 'boolean-static',
+                    arguments: {
+                        value: true
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('boolean-static.value')).toBe(true);
+            });
+            it('should work with array values', async () => {
+                const testArray = [1, 2, 3, 'test'];
+                const action = {
+                    type: 'static',
+                    name: 'array-static',
+                    arguments: {
+                        value: testArray
+                    }
+                };
+                await engine.executePrimitive(action, context, new Map());
+                expect(context.getOutput('array-static.value')).toEqual(testArray);
+            });
+            it('should not store outputs when action has no name', async () => {
+                const action = {
+                    type: 'static',
+                    arguments: {
+                        value: 'test value'
+                    }
+                };
+                const outputsBefore = Object.keys(context.outputs || {}).length;
+                await engine.executePrimitive(action, context, new Map());
+                const outputsAfter = Object.keys(context.outputs || {}).length;
+                expect(outputsAfter).toBe(outputsBefore);
+            });
+            it('should resolve template variables in scope', async () => {
+                const scope = new Map();
+                scope.set('template_var', 'resolved from scope');
+                const action = {
+                    type: 'static',
+                    name: 'scope-static',
+                    arguments: {
+                        value: '{{template_var}}'
+                    }
+                };
+                await engine.executePrimitive(action, context, scope);
+                expect(context.getOutput('scope-static.value')).toBe('resolved from scope');
+            });
+        });
+        it('should throw on unknown primitive action type', async () => {
+            const action = {
+                type: 'unknown-action',
+                name: 'unknown',
+                arguments: {}
+            };
+            await expect(engine.executePrimitive(action, context, new Map()))
+                .rejects.toThrow('Unknown or unimplemented primitive action type: unknown-action');
+        });
+        it('should handle custom outputs for primitive actions', async () => {
+            const action = {
+                name: 'custom-primitive',
+                type: 'send-transaction',
+                arguments: {
+                    to: TEST_ADDRESSES.RECIPIENT_1,
+                    value: TEST_VALUES.ONE_ETH,
+                    data: '0x'
+                },
+                output: {
+                    value: '0xDE280948Af8A9762B6984995C8c3c7F5AEB921Bf'
+                }
+            };
+            await engine.executeAction(action, context, new Map());
+            expect(context.getOutput('custom-primitive.value')).toBe('0xDE280948Af8A9762B6984995C8c3c7F5AEB921Bf');
+            expect(() => context.getOutput('custom-primitive.hash')).toThrow();
+            expect(() => context.getOutput('custom-primitive.receipt')).toThrow();
+        });
+    });
+    describe('evaluateSkipConditions', () => {
+        it('should return false for undefined conditions', async () => {
+            const result = await engine.evaluateSkipConditions(undefined, context, new Map());
+            expect(result).toBe(false);
+        });
+        it('should return false for empty conditions array', async () => {
+            const result = await engine.evaluateSkipConditions([], context, new Map());
+            expect(result).toBe(false);
+        });
+        it('should return true if any condition is met', async () => {
+            context.setOutput('flag1', 0);
+            context.setOutput('flag2', 1);
+            const conditions = [
+                { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{flag1}}', 1] } },
+                { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{flag2}}', 1] } }
+            ];
+            const result = await engine.evaluateSkipConditions(conditions, context, new Map());
+            expect(result).toBe(true);
+        });
+        it('should return false if no conditions are met', async () => {
+            context.setOutput('flag1', 0);
+            context.setOutput('flag2', 0);
+            const conditions = [
+                { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{flag1}}', 1] } },
+                { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{flag2}}', 1] } }
+            ];
+            const result = await engine.evaluateSkipConditions(conditions, context, new Map());
+            expect(result).toBe(false);
+        });
+        it('should return true when a value-empty condition resolves to true', async () => {
+            context.setOutput('payloadMap', { 10: '0xdeadbeef' });
+            const scope = new Map([['missingChainId', 999]]);
+            const conditions = [
+                {
+                    type: 'value-empty',
+                    arguments: {
+                        value: {
+                            type: 'read-json',
+                            arguments: {
+                                json: '{{payloadMap}}',
+                                path: '{{missingChainId}}'
+                            }
+                        }
+                    }
+                }
+            ];
+            const result = await engine.evaluateSkipConditions(conditions, context, scope);
+            expect(result).toBe(true);
+        });
+    });
+    describe('topologicalSortActions', () => {
+        it('should sort actions with no dependencies', async () => {
+            const job = {
+                name: 'no-deps-job',
+                version: '1.0.0',
+                actions: [
+                    { name: 'action-c', template: 'send-transaction', arguments: {} },
+                    { name: 'action-a', template: 'send-transaction', arguments: {} },
+                    { name: 'action-b', template: 'send-transaction', arguments: {} }
+                ]
+            };
+            const result = engine.topologicalSortActions(job);
+            expect(result).toEqual(['action-c', 'action-a', 'action-b']);
+        });
+        it('should sort actions with dependencies correctly', async () => {
+            const job = {
+                name: 'deps-job',
+                version: '1.0.0',
+                actions: [
+                    { name: 'action-c', template: 'send-transaction', arguments: {}, depends_on: ['action-a', 'action-b'] },
+                    { name: 'action-b', template: 'send-transaction', arguments: {}, depends_on: ['action-a'] },
+                    { name: 'action-a', template: 'send-transaction', arguments: {} }
+                ]
+            };
+            const result = engine.topologicalSortActions(job);
+            expect(result).toEqual(['action-a', 'action-b', 'action-c']);
+        });
+        it('should throw on circular dependencies', async () => {
+            const job = {
+                name: 'circular-job',
+                version: '1.0.0',
+                actions: [
+                    { name: 'action-a', template: 'send-transaction', arguments: {}, depends_on: ['action-b'] },
+                    { name: 'action-b', template: 'send-transaction', arguments: {}, depends_on: ['action-a'] }
+                ]
+            };
+            expect(() => engine.topologicalSortActions(job))
+                .toThrow('Circular dependency detected among actions in job "circular-job".');
+        });
+        it('should throw on invalid dependency', async () => {
+            const job = {
+                name: 'invalid-dep-job',
+                version: '1.0.0',
+                actions: [
+                    { name: 'action-a', template: 'send-transaction', arguments: {}, depends_on: ['non-existent'] }
+                ]
+            };
+            expect(() => engine.topologicalSortActions(job))
+                .toThrow('Action "action-a" in job "invalid-dep-job" has an invalid dependency on "non-existent", which does not exist.');
+        });
+    });
+    describe('integration tests', () => {
+        it('should execute a complex job with templates, dependencies, and skip conditions', async () => {
+            const executedActions = [];
+            const originalExecuteAction = engine.executeAction;
+            engine.executeAction = async function (action, ctx, scope) {
+                const actionName = 'name' in action ? action.name : action.type;
+                if (actionName) {
+                    executedActions.push(actionName);
+                    if (actionName === 'setup-step') {
+                        ctx.setOutput('fund-contract.hash', 'mock-fund-hash');
+                        ctx.setOutput('fund-contract.receipt', { status: 1, blockNumber: 200 });
+                        ctx.setOutput('setup-step.funded_address', '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC');
+                        ctx.setOutput('setup-step.fund_amount', '2000000000000000000');
+                    }
+                    else if (actionName === 'deploy-step') {
+                        ctx.setOutput('deploy-contract.hash', 'mock-deploy-hash');
+                        ctx.setOutput('deploy-contract.receipt', { status: 1, blockNumber: 201 });
+                        ctx.setOutput('deploy-step.deployment_hash', 'mock-deploy-hash');
+                    }
+                    else if (actionName === 'final-check') {
+                        ctx.setOutput('final-check.hash', 'mock-final-hash');
+                        ctx.setOutput('final-check.receipt', { status: 1, blockNumber: 202 });
+                    }
+                }
+            };
+            const setupTemplate = {
+                name: 'setup-template',
+                actions: [
+                    {
+                        type: 'send-transaction',
+                        name: 'fund-contract',
+                        arguments: {
+                            to: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
+                            value: '2000000000000000000',
+                            data: '0x'
+                        }
+                    }
+                ],
+                outputs: {
+                    funded_address: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
+                    fund_amount: '2000000000000000000'
+                }
+            };
+            const deployTemplate = {
+                name: 'deploy-template',
+                actions: [
+                    {
+                        type: 'send-transaction',
+                        name: 'deploy-contract',
+                        arguments: {
+                            to: '0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65',
+                            value: '1000000000000000000',
+                            data: '0x608060405234801561000f575f5ffd5b50603e80601c5f395ff3fe60806040525f80fdfea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033'
+                        }
+                    }
+                ],
+                outputs: {
+                    deployment_hash: '{{deploy-contract.hash}}'
+                }
+            };
+            templates.set('setup-template', setupTemplate);
+            templates.set('deploy-template', deployTemplate);
+            const complexJob = {
+                name: 'complex-job',
+                version: '1.0.0',
+                actions: [
+                    {
+                        name: 'deploy-step',
+                        template: 'deploy-template',
+                        arguments: {
+                            funded_address: '{{setup-step.funded_address}}',
+                            fund_amount: '{{setup-step.fund_amount}}'
+                        },
+                        depends_on: ['setup-step']
+                    },
+                    {
+                        name: 'setup-step',
+                        template: 'setup-template',
+                        arguments: {}
+                    },
+                    {
+                        name: 'final-check',
+                        template: 'send-transaction',
+                        arguments: {
+                            to: '0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc',
+                            value: '1000000000000000000',
+                            data: '0x'
+                        },
+                        depends_on: ['deploy-step']
+                    }
+                ]
+            };
+            await engine.executeJob(complexJob, context);
+            engine.executeAction = originalExecuteAction;
+            expect(executedActions).toEqual(['setup-step', 'deploy-step', 'final-check']);
+            expect(context.getOutput('setup-step.funded_address')).toBe('0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC');
+            expect(context.getOutput('setup-step.fund_amount')).toBe('2000000000000000000');
+            expect(context.getOutput('deploy-step.deployment_hash')).toBe('mock-deploy-hash');
+            expect(context.getOutput('final-check.hash')).toBe('mock-final-hash');
+        });
+        it('should handle failed transactions appropriately', async () => {
+            const job = {
+                name: 'failing-job',
+                version: '1.0.0',
+                actions: [
+                    {
+                        name: 'failing-tx',
+                        template: 'send-transaction',
+                        arguments: {
+                            to: 'not-an-address',
+                            value: '1000000000000000000',
+                            data: '0x'
+                        }
+                    }
+                ]
+            };
+            await expect(engine.executeJob(job, context)).rejects.toThrow();
+        });
+    });
+    describe('setup skip conditions', () => {
+        it('should skip setup actions when contract-exists condition is met', async () => {
+            const contractAddress = '0x5FbDB2315678afecb367f032d93F642f64180aa3';
+            const miniContractBytecode = '0x608060405234801561000f575f5ffd5b5060043610610034575f3560e01c80636df5b97a14610038578063f8a8fd6d14610068575b5f5ffd5b610052600480360381019061004d91906100da565b610086565b60405161005f9190610127565b60405180910390f35b61007061009b565b60405161007d9190610127565b60405180910390f35b5f8183610093919061016d565b905092915050565b5f602a905090565b5f5ffd5b5f819050919050565b6100b9816100a7565b81146100c3575f5ffd5b50565b5f813590506100d4816100b0565b92915050565b5f5f604083850312156100f0576100ef6100a3565b5b5f6100fd858286016100c6565b925050602061010e858286016100c6565b9150509250929050565b610121816100a7565b82525050565b5f60208201905061013a5f830184610118565b92915050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5f610177826100a7565b9150610182836100a7565b9250828202610190816100a7565b915082820484148315176101a7576101a6610140565b5b509291505056fea264697066735822122071d40daa3d2beacd91f29d29ccf1c0b6f312e805f50b37166267c0a2a55e6e6164736f6c634300081c0033';
+            await anvilProvider.send('anvil_setCode', [contractAddress, miniContractBytecode]);
+            const template = {
+                name: 'test-contract-exists-skip',
+                setup: {
+                    skip_condition: [
+                        { type: 'contract-exists', arguments: { address: contractAddress } }
+                    ],
+                    actions: [
+                        {
+                            type: 'send-transaction',
+                            name: 'setup-action',
+                            arguments: {
+                                to: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8',
+                                value: '1000000000000000000',
+                                data: '0x'
+                            }
+                        }
+                    ]
+                },
+                actions: [
+                    {
+                        type: 'send-transaction',
+                        name: 'main-action',
+                        arguments: {
+                            to: '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC',
+                            value: '500000000000000000',
+                            data: '0x'
+                        }
+                    }
+                ]
+            };
+            templates.set('test-contract-exists-skip', template);
+            const action = {
+                name: 'test-skip',
+                template: 'test-contract-exists-skip',
+                arguments: {}
+            };
+            await engine.executeAction(action, context, new Map());
+            expect(() => context.getOutput('setup-action.hash')).toThrow();
+            expect(context.getOutput('main-action.hash')).toBeDefined();
+        });
+    });
+    describe('test-nicks-method action', () => {
+        it('should successfully test Nick\'s method with a simple contract', async () => {
+            const action = {
+                type: 'test-nicks-method',
+                name: 'nick-test',
+                arguments: {
+                    bytecode: TEST_BYTECODES.SIMPLE_RETURN_42,
+                    gasPrice: ethers_1.ethers.parseUnits('10', 'gwei'),
+                    gasLimit: 100000n,
+                    fundingAmount: ethers_1.ethers.parseEther('0.001')
+                }
+            };
+            await engine.executeAction(action, context, new Map());
+            expect(context.getOutput('nick-test.success')).toBe(true);
+        });
+        it('should prevent failing Nick\'s method from being tested twice', async () => {
+            const action = {
+                type: 'test-nicks-method',
+                name: 'nick-test-fail-twice',
+                arguments: {
+                    bytecode: TEST_BYTECODES.BROKEN_BYTECODE,
+                }
+            };
+            await expect(engine.executeAction(action, context, new Map())).rejects.toThrow(new Error(`Nick's method test failed for action "nick-test-fail-twice"`));
+            await expect(engine.executeAction(action, context, new Map())).rejects.toThrow(new Error('Nick\'s method test already failed this run'));
+        });
+        it('should prevent passing Nick\'s method from being tested twice', async () => {
+            const action = {
+                type: 'test-nicks-method',
+                name: 'nick-test-pass-twice',
+                arguments: {
+                    bytecode: TEST_BYTECODES.SIMPLE_RETURN_42,
+                }
+            };
+            await engine.executeAction(action, context, new Map());
+            await engine.executeAction(action, context, new Map());
+            expect(context.getOutput('nick-test-pass-twice.success')).toBe(true);
+        });
+        it('should handle missing optional parameters', async () => {
+            const action = {
+                type: 'test-nicks-method',
+                name: 'nick-test-defaults',
+                arguments: {
+                    bytecode: TEST_BYTECODES.SIMPLE_RETURN_42
+                }
+            };
+            await engine.executeAction(action, context, new Map());
+            expect(context.getOutput('nick-test-defaults.success')).toBe(true);
+        });
+        it('should use default bytecode when none provided', async () => {
+            const action = {
+                type: 'test-nicks-method',
+                name: 'nick-test-default-bytecode',
+                arguments: {}
+            };
+            await engine.executeAction(action, context, new Map());
+            expect(context.getOutput('nick-test-default-bytecode.success')).toBe(true);
+        });
+    });
+    describe('ignore verify errors feature', () => {
+        beforeEach(() => {
+            jest.doMock('fs/promises', () => ({
+                readFile: jest.fn().mockResolvedValue(JSON.stringify({
+                    _format: 'hh-sol-build-info-1',
+                    id: 'test-id',
+                    solcVersion: '0.8.0',
+                    input: {
+                        language: 'Solidity',
+                        sources: {
+                            'TestContract.sol': {
+                                content: 'contract TestContract { }'
+                            }
+                        },
+                        settings: {
+                            optimizer: { enabled: true, runs: 200 },
+                            outputSelection: { '*': { '*': ['*'] } }
+                        }
+                    },
+                    output: {
+                        contracts: {},
+                        sources: {}
+                    }
+                }))
+            }));
+            const mockVerificationRegistry = new etherscan_1.VerificationPlatformRegistry();
+            const mockPlatform = {
+                name: 'mock-platform',
+                supportsNetwork: jest.fn().mockReturnValue(true),
+                isConfigured: jest.fn().mockReturnValue(true),
+                getConfigurationRequirements: jest.fn().mockReturnValue(''),
+                isContractAlreadyVerified: jest.fn().mockResolvedValue(false),
+                verifyContract: jest.fn().mockRejectedValue(new Error('Verification failed'))
+            };
+            mockVerificationRegistry.register(mockPlatform);
+            engine = new engine_1.ExecutionEngine(templates, {
+                verificationRegistry: mockVerificationRegistry,
+                ignoreVerifyErrors: true
+            });
+        });
+        it('should collect verification warnings when ignoreVerifyErrors is enabled', async () => {
+            const mockContract = {
+                sourceName: 'TestContract.sol',
+                contractName: 'TestContract',
+                compiler: { version: '0.8.0' },
+                buildInfoId: 'test-build-id',
+                source: 'contract TestContract { }',
+                creationCode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+                abi: [],
+                _sources: new Set(['TestContract.sol', '/path/to/build-info/test.json'])
+            };
+            context.contractRepository.addForTesting({
+                contractName: mockContract.contractName,
+                abi: mockContract.abi,
+                bytecode: mockContract.creationCode,
+                sourceName: mockContract.sourceName,
+                source: mockContract.source,
+                compiler: mockContract.compiler,
+                buildInfoId: mockContract.buildInfoId,
+                _path: '/test/path',
+                _hash: 'test-hash'
+            });
+            const action = {
+                type: 'verify-contract',
+                name: 'test-verify',
+                arguments: {
+                    address: TEST_ADDRESSES.RECIPIENT_1,
+                    contract: '{{Contract(TestContract)}}',
+                    platform: 'mock-platform'
+                }
+            };
+            await expect(engine.executePrimitive(action, context, new Map()))
+                .resolves.not.toThrow();
+            const warnings = engine.getVerificationWarnings();
+            expect(warnings).toHaveLength(1);
+            expect(warnings[0]).toMatchObject({
+                actionName: 'test-verify',
+                address: TEST_ADDRESSES.RECIPIENT_1,
+                contractName: 'TestContract.sol:TestContract',
+                platform: 'mock-platform',
+                error: 'Action "test-verify": No build-info file found in contract sources'
+            });
+        });
+        it('should throw verification errors when ignoreVerifyErrors is disabled', async () => {
+            const mockVerificationRegistry = new etherscan_1.VerificationPlatformRegistry();
+            const mockPlatform = {
+                name: 'mock-platform',
+                supportsNetwork: jest.fn().mockReturnValue(true),
+                isConfigured: jest.fn().mockReturnValue(true),
+                getConfigurationRequirements: jest.fn().mockReturnValue(''),
+                isContractAlreadyVerified: jest.fn().mockResolvedValue(false),
+                verifyContract: jest.fn().mockRejectedValue(new Error('Verification failed'))
+            };
+            mockVerificationRegistry.register(mockPlatform);
+            const engineWithoutIgnore = new engine_1.ExecutionEngine(templates, {
+                verificationRegistry: mockVerificationRegistry,
+                ignoreVerifyErrors: false
+            });
+            const mockContract = {
+                sourceName: 'TestContract.sol',
+                contractName: 'TestContract',
+                compiler: { version: '0.8.0' },
+                buildInfoId: 'test-build-id',
+                source: 'contract TestContract { }',
+                creationCode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+                abi: [],
+                _sources: new Set(['TestContract.sol', '/path/to/build-info/test.json'])
+            };
+            context.contractRepository.addForTesting({
+                contractName: mockContract.contractName,
+                abi: mockContract.abi,
+                bytecode: mockContract.creationCode,
+                sourceName: mockContract.sourceName,
+                source: mockContract.source,
+                compiler: mockContract.compiler,
+                buildInfoId: mockContract.buildInfoId,
+                _path: '/test/path',
+                _hash: 'test-hash'
+            });
+            const action = {
+                type: 'verify-contract',
+                name: 'test-verify',
+                arguments: {
+                    address: TEST_ADDRESSES.RECIPIENT_1,
+                    contract: '{{Contract(TestContract)}}',
+                    platform: 'mock-platform'
+                }
+            };
+            await expect(engineWithoutIgnore.executePrimitive(action, context, new Map()))
+                .rejects.toThrow('Action "test-verify": No build-info file found in contract sources');
+        });
+        it('should handle multiple platform verification failures with ignoreVerifyErrors', async () => {
+            const mockVerificationRegistry = new etherscan_1.VerificationPlatformRegistry();
+            const platforms = ['platform1', 'platform2', 'platform3'];
+            platforms.forEach(name => {
+                const mockPlatform = {
+                    name,
+                    supportsNetwork: jest.fn().mockReturnValue(true),
+                    isConfigured: jest.fn().mockReturnValue(true),
+                    getConfigurationRequirements: jest.fn().mockReturnValue(''),
+                    isContractAlreadyVerified: jest.fn().mockResolvedValue(false),
+                    verifyContract: jest.fn().mockRejectedValue(new Error(`${name} verification failed`))
+                };
+                mockVerificationRegistry.register(mockPlatform);
+            });
+            engine = new engine_1.ExecutionEngine(templates, {
+                verificationRegistry: mockVerificationRegistry,
+                ignoreVerifyErrors: true
+            });
+            const mockContract = {
+                sourceName: 'TestContract.sol',
+                contractName: 'TestContract',
+                compiler: { version: '0.8.0' },
+                buildInfoId: 'test-build-id',
+                source: 'contract TestContract { }',
+                creationCode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+                abi: [],
+                _sources: new Set(['TestContract.sol', '/path/to/build-info/test.json'])
+            };
+            context.contractRepository.addForTesting({
+                contractName: mockContract.contractName,
+                abi: mockContract.abi,
+                bytecode: mockContract.creationCode,
+                sourceName: mockContract.sourceName,
+                source: mockContract.source,
+                compiler: mockContract.compiler,
+                buildInfoId: mockContract.buildInfoId,
+                _path: '/test/path',
+                _hash: 'test-hash'
+            });
+            const action = {
+                type: 'verify-contract',
+                name: 'test-verify',
+                arguments: {
+                    address: TEST_ADDRESSES.RECIPIENT_1,
+                    contract: '{{Contract(TestContract)}}',
+                    platform: platforms
+                }
+            };
+            await expect(engine.executePrimitive(action, context, new Map()))
+                .resolves.not.toThrow();
+            const warnings = engine.getVerificationWarnings();
+            expect(warnings).toHaveLength(3);
+            platforms.forEach((platform, index) => {
+                expect(warnings[index]).toMatchObject({
+                    actionName: 'test-verify',
+                    platform,
+                    error: 'Action "test-verify": No build-info file found in contract sources'
+                });
+            });
+        });
+        it('should provide methods to get and clear verification warnings', () => {
+            expect(engine.getVerificationWarnings()).toEqual([]);
+            engine.verificationWarnings.push({
+                actionName: 'test',
+                address: '0x123',
+                contractName: 'Test',
+                platform: 'test-platform',
+                error: 'test error'
+            });
+            const warnings = engine.getVerificationWarnings();
+            expect(warnings).toHaveLength(1);
+            expect(warnings[0]).toMatchObject({
+                actionName: 'test',
+                error: 'test error'
+            });
+            engine.clearVerificationWarnings();
+            expect(engine.getVerificationWarnings()).toEqual([]);
+        });
+        it('should emit verification_skipped events when all platforms fail and ignoreVerifyErrors is enabled', async () => {
+            const mockVerificationRegistry = new etherscan_1.VerificationPlatformRegistry();
+            const mockPlatform = {
+                name: 'mock-platform',
+                supportsNetwork: jest.fn().mockReturnValue(true),
+                isConfigured: jest.fn().mockReturnValue(true),
+                getConfigurationRequirements: jest.fn().mockReturnValue(''),
+                isContractAlreadyVerified: jest.fn().mockResolvedValue(false),
+                verifyContract: jest.fn().mockRejectedValue(new Error('Verification failed'))
+            };
+            mockVerificationRegistry.register(mockPlatform);
+            mockVerificationRegistry.getConfiguredPlatforms = jest.fn().mockReturnValue([mockPlatform]);
+            const mockEventEmitter = {
+                emitEvent: jest.fn()
+            };
+            engine = new engine_1.ExecutionEngine(templates, {
+                verificationRegistry: mockVerificationRegistry,
+                ignoreVerifyErrors: true,
+                eventEmitter: mockEventEmitter
+            });
+            const mockContract = {
+                sourceName: 'TestContract.sol',
+                contractName: 'TestContract',
+                compiler: { version: '0.8.0' },
+                buildInfoId: 'test-build-id',
+                source: 'contract TestContract { }',
+                creationCode: '0x608060405234801561000f575f5ffd5b50602a5f526020601ff3',
+                abi: [],
+                _sources: new Set(['TestContract.sol', '/path/to/build-info/test.json'])
+            };
+            context.contractRepository.addForTesting({
+                contractName: mockContract.contractName,
+                abi: mockContract.abi,
+                bytecode: mockContract.creationCode,
+                sourceName: mockContract.sourceName,
+                source: mockContract.source,
+                compiler: mockContract.compiler,
+                buildInfoId: mockContract.buildInfoId,
+                _path: '/test/path',
+                _hash: 'test-hash'
+            });
+            const action = {
+                type: 'verify-contract',
+                name: 'test-verify',
+                arguments: {
+                    address: TEST_ADDRESSES.RECIPIENT_1,
+                    contract: '{{Contract(TestContract)}}',
+                    platform: 'all'
+                }
+            };
+            await engine.executePrimitive(action, context, new Map());
+            expect(mockEventEmitter.emitEvent).toHaveBeenCalledWith(expect.objectContaining({
+                type: 'verification_skipped',
+                level: 'warn',
+                data: expect.objectContaining({
+                    actionName: 'test-verify',
+                    reason: expect.stringContaining('continuing due to --ignore-verify-errors')
+                })
+            }));
+        });
+    });
+});
+//# sourceMappingURL=engine.spec.js.map

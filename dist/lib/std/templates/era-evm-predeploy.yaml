@@ -1,0 +1,35 @@
+# Calls the EVM predeploy manager to deploy preapproved contracts to ZK Era chains.
+# The ZKSync Era predeploy manager is 0x0000000000000000000000000000000000008014.
+# https://github.com/matter-labs/era-contracts/blob/540762151e3b030cac8ea274284b249f549e2c2a/system-contracts/contracts/EvmPredeploysManager.sol
+name: "era-evm-predeploy"
+type: "template"
+description: "Deploy an approved predeployed contract to the EVM"
+
+arguments:
+  evmPredeployManager:
+    type: "address"
+    description: "The address of the EVM predeploy manager"
+  address:
+    type: "address"
+    description: "The address of the predeployed contract to deploy"
+  bytecode:
+    type: "bytes"
+    description: "The deployment bytecode of the predeployed contract to deploy"
+
+skip_condition:
+  - type: "contract-exists"
+    arguments:
+      address: "{{address}}"
+
+actions:
+  - name: "deploy"
+    type: "send-transaction"
+    arguments:
+      to: "{{evmPredeployManager}}"
+      data:
+        type: "abi-encode"
+        arguments:
+          signature: "deployPredeployedContract(address,bytes)"
+          values:
+            - "{{address}}"
+            - "{{bytecode}}"

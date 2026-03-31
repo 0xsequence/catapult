@@ -1,0 +1,288 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+const fs = __importStar(require("fs/promises"));
+const path = __importStar(require("path"));
+const crypto_1 = require("crypto");
+const loader_1 = require("../loader");
+describe('ProjectLoader', () => {
+    let tempDir;
+    let testRunId;
+    let baseTestDir;
+    beforeAll(() => {
+        testRunId = `test_${Date.now()}_${(0, crypto_1.randomBytes)(4).toString('hex')}`;
+        baseTestDir = `/tmp/catapult_testing/${testRunId}`;
+    });
+    beforeEach(async () => {
+        const testId = (0, crypto_1.randomBytes)(4).toString('hex');
+        tempDir = path.join(baseTestDir, testId);
+        await fs.mkdir(tempDir, { recursive: true });
+    });
+    afterEach(async () => {
+        try {
+            await fs.rm(tempDir, { recursive: true, force: true });
+        }
+        catch (error) {
+        }
+    });
+    afterAll(async () => {
+        try {
+            await fs.rm(baseTestDir, { recursive: true, force: true });
+        }
+        catch (error) {
+        }
+    });
+    describe('job loading', () => {
+        it('should load jobs from the root jobs directory', async () => {
+            const jobsDir = path.join(tempDir, 'jobs');
+            await fs.mkdir(jobsDir, { recursive: true });
+            const jobYaml = `name: "test-job"
+version: "1"
+description: "A test job"
+depends_on: []
+actions:
+  - name: "test-action"
+    template: "test-template"
+    arguments: {}`;
+            await fs.writeFile(path.join(jobsDir, 'test-job.yaml'), jobYaml);
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.jobs.size).toBe(1);
+            expect(loader.jobs.has('test-job')).toBe(true);
+            const job = loader.jobs.get('test-job');
+            expect(job.name).toBe('test-job');
+            expect(job.version).toBe('1');
+            expect(job.description).toBe('A test job');
+        });
+        it('should recursively load jobs from nested directories', async () => {
+            const jobsDir = path.join(tempDir, 'jobs');
+            const nestedDir = path.join(jobsDir, 'nested', 'deeper');
+            await fs.mkdir(nestedDir, { recursive: true });
+            const rootJobYaml = `name: "root-job"
+version: "1"
+description: "Root level job"
+depends_on: []
+actions: []`;
+            const nestedJobYaml = `name: "nested-job"
+version: "1"
+description: "Nested job"
+depends_on: []
+actions: []`;
+            const deepJobYaml = `name: "deep-job"
+version: "1"
+description: "Deep nested job"
+depends_on: []
+actions: []`;
+            await fs.writeFile(path.join(jobsDir, 'root-job.yaml'), rootJobYaml);
+            await fs.writeFile(path.join(jobsDir, 'nested', 'nested-job.yml'), nestedJobYaml);
+            await fs.writeFile(path.join(nestedDir, 'deep-job.yaml'), deepJobYaml);
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.jobs.size).toBe(3);
+            expect(loader.jobs.has('root-job')).toBe(true);
+            expect(loader.jobs.has('nested-job')).toBe(true);
+            expect(loader.jobs.has('deep-job')).toBe(true);
+        });
+        it('should ignore jobs in node_modules and other ignored directories', async () => {
+            const jobsDir = path.join(tempDir, 'jobs');
+            const nodeModulesDir = path.join(jobsDir, 'node_modules');
+            const distDir = path.join(jobsDir, 'dist');
+            await fs.mkdir(nodeModulesDir, { recursive: true });
+            await fs.mkdir(distDir, { recursive: true });
+            const validJobYaml = `name: "valid-job"
+version: "1"
+actions: []`;
+            const ignoredJobYaml = `name: "ignored-job"
+version: "1"
+actions: []`;
+            await fs.writeFile(path.join(jobsDir, 'valid-job.yaml'), validJobYaml);
+            await fs.writeFile(path.join(nodeModulesDir, 'ignored-job.yaml'), ignoredJobYaml);
+            await fs.writeFile(path.join(distDir, 'ignored-job2.yaml'), ignoredJobYaml);
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.jobs.size).toBe(1);
+            expect(loader.jobs.has('valid-job')).toBe(true);
+            expect(loader.jobs.has('ignored-job')).toBe(false);
+        });
+        it('should handle malformed job files gracefully', async () => {
+            const jobsDir = path.join(tempDir, 'jobs');
+            await fs.mkdir(jobsDir, { recursive: true });
+            const validJobYaml = `name: "valid-job"
+version: "1"
+actions: []`;
+            const invalidJobYaml = `invalid: yaml: content: [[[`;
+            await fs.writeFile(path.join(jobsDir, 'valid-job.yaml'), validJobYaml);
+            await fs.writeFile(path.join(jobsDir, 'invalid-job.yaml'), invalidJobYaml);
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.jobs.size).toBe(1);
+            expect(loader.jobs.has('valid-job')).toBe(true);
+        });
+    });
+    describe('template loading', () => {
+        it('should load templates from the root templates directory', async () => {
+            const templatesDir = path.join(tempDir, 'templates');
+            await fs.mkdir(templatesDir, { recursive: true });
+            const templateYaml = `name: "test-template"
+description: "A test template"
+actions:
+  - name: "test-action"
+    arguments: {}`;
+            await fs.writeFile(path.join(templatesDir, 'test-template.yaml'), templateYaml);
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.templates.size).toBeGreaterThan(0);
+            expect(loader.templates.has('test-template')).toBe(true);
+            const template = loader.templates.get('test-template');
+            expect(template.name).toBe('test-template');
+            expect(template.description).toBe('A test template');
+        });
+        it('should recursively load templates from nested directories', async () => {
+            const templatesDir = path.join(tempDir, 'templates');
+            const nestedDir = path.join(templatesDir, 'nested');
+            await fs.mkdir(nestedDir, { recursive: true });
+            const rootTemplateYaml = `name: "root-template"
+actions: []`;
+            const nestedTemplateYaml = `name: "nested-template"
+actions: []`;
+            await fs.writeFile(path.join(templatesDir, 'root-template.yaml'), rootTemplateYaml);
+            await fs.writeFile(path.join(nestedDir, 'nested-template.yml'), nestedTemplateYaml);
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.templates.has('root-template')).toBe(true);
+            expect(loader.templates.has('nested-template')).toBe(true);
+        });
+    });
+    describe('artifact loading', () => {
+        it('should load artifacts from nested directories', async () => {
+            const artifactsDir = path.join(tempDir, 'artifacts', 'contracts');
+            await fs.mkdir(artifactsDir, { recursive: true });
+            const artifactJson = {
+                contractName: "TestContract",
+                abi: [],
+                bytecode: "0x608060405234801561001057600080fd5b50",
+                deployedBytecode: "0x608060405234801561001057600080fd5b50"
+            };
+            await fs.writeFile(path.join(artifactsDir, 'TestContract.json'), JSON.stringify(artifactJson));
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.contractRepository.lookup('TestContract')).toBeDefined();
+        });
+    });
+    describe('edge cases', () => {
+        it('should handle missing jobs directory gracefully', async () => {
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.jobs.size).toBe(0);
+        });
+        it('should handle missing templates directory gracefully', async () => {
+            const loader = new loader_1.ProjectLoader(tempDir, { loadStdTemplates: false });
+            await loader.load();
+            expect(loader.templates.size).toBe(0);
+        });
+        it('should load standard templates by default', async () => {
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.templates.size).toBeGreaterThan(0);
+        });
+        it('should skip standard templates when disabled', async () => {
+            const loader = new loader_1.ProjectLoader(tempDir, { loadStdTemplates: false });
+            await loader.load();
+            expect(loader.templates.size).toBe(0);
+        });
+    });
+    describe('real project structure', () => {
+        it('should load the examples project structure', async () => {
+            const examplesRoot = path.resolve(__dirname, '../../../../examples');
+            const loader = new loader_1.ProjectLoader(examplesRoot);
+            await loader.load();
+            expect(loader.jobs.size).toBeGreaterThan(0);
+            expect(loader.templates.size).toBeGreaterThan(0);
+            expect(loader.jobs.has('sequence-v1')).toBe(true);
+            expect(loader.jobs.has('guards-v1')).toBe(true);
+        });
+        it('should load nested jobs from subdirectories', async () => {
+            const jobsDir = path.join(tempDir, 'jobs');
+            const testContractDir = path.join(jobsDir, 'test_contract');
+            const artifactsDir = path.join(testContractDir, 'artifacts');
+            await fs.mkdir(artifactsDir, { recursive: true });
+            const jobYaml = `name: "test-contract-deployment"
+version: "1"
+description: "Deploy a test contract"
+depends_on: []
+
+actions:
+  - name: "deploy-test-contract"
+    template: "sequence-universal-deployer-2"
+    arguments:
+      salt: "0x0000000000000000000000000000000000000000000000000000000000000003"
+      creationCode: "{{creationCode(./artifacts/counter.json)}}"`;
+            const artifactJson = {
+                abi: [
+                    {
+                        type: "function",
+                        name: "increment",
+                        inputs: [],
+                        outputs: [],
+                        stateMutability: "nonpayable"
+                    },
+                    {
+                        type: "function",
+                        name: "number",
+                        inputs: [],
+                        outputs: [{ name: "", type: "uint256", internalType: "uint256" }],
+                        stateMutability: "view"
+                    }
+                ],
+                bytecode: {
+                    object: "0x6080604052348015600e575f5ffd5b5060c180601a5f395ff3fe6080604052348015600e575f5ffd5b50600436106030575f3560e01c80638381f58a146034578063d09de08a14604d575b5f5ffd5b603b5f5481565b60405190815260200160405180910390f35b60536055565b005b5f805490806061836068565b9190505550565b5f60018201608457634e487b7160e01b5f52601160045260245ffd5b506001019056fea264697066735822122074300f82bc4b1d0eec22668b0edf09603d979df755b8315a9a2493d4f5c293c364736f6c634300081e0033"
+                },
+                deployedBytecode: {
+                    object: "0x6080604052348015600e575f5ffd5b50600436106030575f3560e01c80638381f58a146034578063d09de08a14604d575b5f5ffd5b603b5f5481565b60405190815260200160405180910390f35b60536055565b005b5f805490806061836068565b9190505550565b5f60018201608457634e487b7160e01b5f52601160045260245ffd5b506001019056fea264697066735822122074300f82bc4b1d0eec22668b0edf09603d979df755b8315a9a2493d4f5c293c364736f6c634300081e0033"
+                }
+            };
+            await fs.writeFile(path.join(testContractDir, 'demo_contract.yaml'), jobYaml);
+            await fs.writeFile(path.join(artifactsDir, 'counter.json'), JSON.stringify(artifactJson));
+            const loader = new loader_1.ProjectLoader(tempDir);
+            await loader.load();
+            expect(loader.jobs.size).toBeGreaterThan(0);
+            expect(loader.jobs.has('test-contract-deployment')).toBe(true);
+            const job = loader.jobs.get('test-contract-deployment');
+            expect(job.name).toBe('test-contract-deployment');
+            expect(job.description).toBe('Deploy a test contract');
+        });
+    });
+});
+//# sourceMappingURL=loader.spec.js.map

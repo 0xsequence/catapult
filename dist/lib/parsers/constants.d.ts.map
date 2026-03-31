@@ -1,0 +1,1 @@
+{"version":3,"file":"constants.d.ts","sourceRoot":"","sources":["../../../src/lib/parsers/constants.ts"],"names":[],"mappings":"AACA,OAAO,EAAE,iBAAiB,EAAE,MAAM,UAAU,CAAA;AAO5C,wBAAgB,cAAc,CAAC,WAAW,EAAE,MAAM,GAAG,iBAAiB,GAAG,IAAI,CAmC5E;AAMD,wBAAgB,mBAAmB,CAAC,MAAM,EAAE,GAAG,EAAE,gBAAgB,EAAE,MAAM,GAAG,MAAM,CAAC,MAAM,EAAE,GAAG,CAAC,GAAG,SAAS,CAM1G"}

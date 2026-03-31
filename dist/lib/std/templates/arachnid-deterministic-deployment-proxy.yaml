@@ -1,0 +1,68 @@
+# Similar to "nano-universal-deployer" but targets Arachnid's Deterministic Deployment Proxy
+# (a CREATE2 deployer available at 0x4e59… on every chain). The proxy call reverts when the
+# inner CREATE2 fails, so no additional assurance wrapper is needed.
+name: "arachnid-deterministic-deployment-proxy"
+type: "template"
+description: "Deploy contracts through Arachnid's Deterministic Deployment Proxy"
+
+arguments:
+  creationCode:
+    type: "bytes"
+    description: "Creation code of the contract to deploy"
+  salt:
+    type: "bytes32"
+    description: "Salt supplied to the proxy for CREATE2"
+
+returns:
+  address:
+    type: "address"
+    description: "Address of the deployed contract"
+
+setup:
+  skip_condition:
+    - type: "contract-exists"
+      arguments:
+        address: "0x4e59b44847b379578588920ca78fbf26c0b4956c"
+  actions:
+    - type: "test-nicks-method"
+    - type: "min-balance"
+      arguments:
+        address: "0x3fab184622dc19b6109349b94811493bf2a45362"
+        balance: "10000000000000000"
+    - type: "send-signed-transaction"
+      arguments:
+        transaction: |
+          0xf8a58085174876e800830186a08080b853604580600e600039806000f350fe7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffe03601600081602082378035828234f58015156039578182fd5b8082525050506014600cf31ba02222222222222222222222222222222222222222222222222222222222222222a02222222222222222222222222222222222222222222222222222222222222222
+
+actions:
+  - type: "send-transaction"
+    arguments:
+      to: "0x4e59b44847b379578588920ca78fbf26c0b4956c"
+      data:
+        type: "abi-pack"
+        arguments:
+          types:
+            - "bytes32"
+            - "bytes"
+          values:
+            - "{{salt}}"
+            - "{{creationCode}}"
+      gasMultiplier: 1.6
+
+skip_condition:
+  - type: "contract-exists"
+    arguments:
+      address:
+        type: "compute-create2"
+        arguments:
+          deployerAddress: "0x4e59b44847b379578588920ca78fbf26c0b4956c"
+          salt: "{{salt}}"
+          initCode: "{{creationCode}}"
+
+outputs:
+  address:
+    type: "compute-create2"
+    arguments:
+      deployerAddress: "0x4e59b44847b379578588920ca78fbf26c0b4956c"
+      salt: "{{salt}}"
+      initCode: "{{creationCode}}"

@@ -33,11 +33,11 @@ export class ExecutionContext {
 
    // Determine the signer
    if (privateKey) {
-     this.signer = new ethers.Wallet(privateKey, this.provider)
+     this.signer = new ethers.NonceManager(new ethers.Wallet(privateKey, this.provider))
    } else if (network.rpcUrl) {
      // If no private key, but RPC URL is provided, get a signer from the provider.
      // This returns a Promise that we need to resolve on first use.
-     this.signer = this.provider.getSigner() // Keep as Promise
+     this.signer = this.provider.getSigner().then(signer => new ethers.NonceManager(signer)) // Keep as Promise
    } else {
      throw new Error('A private key must be provided or an RPC URL must be configured to obtain a signer for the network.')
    }
