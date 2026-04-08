@@ -38,8 +38,6 @@ const TEST_VALUES = {
   SMALL_AMOUNT: '1000000000000000000' // 1 ETH for testing
 } as const
 
-const TEST_PRIVATE_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80' // First anvil account
-
 describe('ExecutionEngine', () => {
   let engine: ExecutionEngine
   let context: ExecutionContext
@@ -54,16 +52,28 @@ describe('ExecutionEngine', () => {
     mockNetwork = { name: 'testnet', chainId: 999, rpcUrl }
     
     // Try to connect to the node, fail immediately if not available
-    const provider = new ethers.JsonRpcProvider(rpcUrl)
-    await provider.getNetwork()
+    anvilProvider = new ethers.JsonRpcProvider(rpcUrl)
+    await anvilProvider.getNetwork()
   })
 
+  afterAll(async () => {
+    if (anvilProvider) {
+      await anvilProvider.destroy()
+    }
+  })
+
+  const randomWallet = async (provider: ethers.JsonRpcProvider) => {
+    const wallet = ethers.Wallet.createRandom(provider)
+    // Give ETH and allow sending txs
+    await provider.send('anvil_setBalance', [wallet.address, ethers.parseEther('100').toString()])
+    await provider.send('anvil_impersonateAccount', [wallet.address])
+    return wallet
+  }
+
   beforeEach(async () => {
-    const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545'
-    anvilProvider = new ethers.JsonRpcProvider(rpcUrl)
-    
     mockRegistry = new ContractRepository()
-    context = new ExecutionContext(mockNetwork, TEST_PRIVATE_KEY, mockRegistry)
+    const wallet = await randomWallet(anvilProvider)
+    context = new ExecutionContext(mockNetwork, wallet.privateKey, mockRegistry)
 
     // Initialize templates map
     templates = new Map()
@@ -74,17 +84,6 @@ describe('ExecutionEngine', () => {
   })
 
   afterEach(async () => {
-    // Clean up providers to prevent hanging connections
-    if (anvilProvider) {
-      try {
-        if (anvilProvider.destroy) {
-          await anvilProvider.destroy()
-        }
-      } catch (error) {
-        // Ignore cleanup errors
-      }
-    }
-    
     if (context) {
       try {
         await context.dispose()
@@ -977,7 +976,7 @@ describe('ExecutionEngine', () => {
     describe('send-signed-transaction', () => {
       it('should broadcast a signed transaction', async () => {
         // Create a signed transaction using the same private key
-        const wallet = new ethers.Wallet(TEST_PRIVATE_KEY, anvilProvider)
+        const wallet = await randomWallet(anvilProvider)
         
         const tx = await wallet.populateTransaction({
           to: TEST_ADDRESSES.RECIPIENT_1,
@@ -1002,7 +1001,7 @@ describe('ExecutionEngine', () => {
       })
 
       it('should resolve transaction from context', async () => {
-        const wallet = new ethers.Wallet(TEST_PRIVATE_KEY, anvilProvider)
+        const wallet = await randomWallet(anvilProvider)
         
         const tx = await wallet.populateTransaction({
           to: TEST_ADDRESSES.RECIPIENT_1,

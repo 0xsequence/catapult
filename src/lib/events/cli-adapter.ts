@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { DeploymentEvent } from './types'
+import { DeploymentEvent } from '../types/events'
 import { DeploymentEventEmitter } from './emitter'
 
 /**

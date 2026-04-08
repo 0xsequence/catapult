@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events'
-import { DeploymentEvent } from './types'
+import { DeploymentEvent } from '../types/events'
 
 /**
  * Type-safe event emitter for deployment events.

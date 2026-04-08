@@ -10,7 +10,7 @@ export interface BaseEvent {
 }
 
 // Deployment lifecycle events
-export interface DeploymentStartedEvent extends BaseEvent {
+export type DeploymentStartedEvent = BaseEvent & {
   type: 'deployment_started'
   level: 'info'
   data: {
@@ -18,12 +18,12 @@ export interface DeploymentStartedEvent extends BaseEvent {
   }
 }
 
-export interface DeploymentCompletedEvent extends BaseEvent {
+export type DeploymentCompletedEvent = BaseEvent & {
   type: 'deployment_completed'
   level: 'info'
 }
 
-export interface DeploymentFailedEvent extends BaseEvent {
+export type DeploymentFailedEvent = BaseEvent & {
   type: 'deployment_failed'
   level: 'error'
   data: {
@@ -39,7 +39,7 @@ export interface DeploymentFailedEvent extends BaseEvent {
 }
 
 // Project loading events
-export interface ProjectLoadingStartedEvent extends BaseEvent {
+export type ProjectLoadingStartedEvent = BaseEvent & {
   type: 'project_loading_started'
   level: 'info'
   data: {
@@ -47,7 +47,7 @@ export interface ProjectLoadingStartedEvent extends BaseEvent {
   }
 }
 
-export interface ProjectLoadedEvent extends BaseEvent {
+export type ProjectLoadedEvent = BaseEvent & {
   type: 'project_loaded'
   level: 'info'
   data: {
@@ -57,7 +57,7 @@ export interface ProjectLoadedEvent extends BaseEvent {
 }
 
 // Execution plan events
-export interface ExecutionPlanEvent extends BaseEvent {
+export type ExecutionPlanEvent = BaseEvent & {
   type: 'execution_plan'
   level: 'info'
   data: {
@@ -70,7 +70,7 @@ export interface ExecutionPlanEvent extends BaseEvent {
 }
 
 // Job execution events
-export interface JobStartedEvent extends BaseEvent {
+export type JobStartedEvent = BaseEvent & {
   type: 'job_started'
   level: 'info'
   data: {
@@ -81,7 +81,7 @@ export interface JobStartedEvent extends BaseEvent {
   }
 }
 
-export interface JobCompletedEvent extends BaseEvent {
+export type JobCompletedEvent = BaseEvent & {
   type: 'job_completed'
   level: 'info'
   data: {
@@ -91,7 +91,7 @@ export interface JobCompletedEvent extends BaseEvent {
   }
 }
 
-export interface JobSkippedEvent extends BaseEvent {
+export type JobSkippedEvent = BaseEvent & {
   type: 'job_skipped'
   level: 'warn'
   data: {
@@ -102,7 +102,7 @@ export interface JobSkippedEvent extends BaseEvent {
 }
 
 // Action execution events
-export interface ActionStartedEvent extends BaseEvent {
+export type ActionStartedEvent = BaseEvent & {
   type: 'action_started'
   level: 'info'
   data: {
@@ -111,7 +111,7 @@ export interface ActionStartedEvent extends BaseEvent {
   }
 }
 
-export interface ActionSkippedEvent extends BaseEvent {
+export type ActionSkippedEvent = BaseEvent & {
   type: 'action_skipped'
   level: 'info'
   data: {
@@ -120,7 +120,7 @@ export interface ActionSkippedEvent extends BaseEvent {
   }
 }
 
-export interface ActionCompletedEvent extends BaseEvent {
+export type ActionCompletedEvent = BaseEvent & {
   type: 'action_completed'
   level: 'info'
   data: {
@@ -129,7 +129,7 @@ export interface ActionCompletedEvent extends BaseEvent {
   }
 }
 
-export interface ActionFailedEvent extends BaseEvent {
+export type ActionFailedEvent = BaseEvent & {
   type: 'action_failed'
   level: 'error'
   data: {
@@ -137,7 +137,7 @@ export interface ActionFailedEvent extends BaseEvent {
   }
 }
 
-export interface ActionInfoEvent extends BaseEvent {
+export type ActionInfoEvent = BaseEvent & {
   type: 'action_info'
   level: 'debug'
   data: {
@@ -145,7 +145,7 @@ export interface ActionInfoEvent extends BaseEvent {
   }
 }
 
-export interface DebugInfoEvent extends BaseEvent {
+export type DebugInfoEvent = BaseEvent & {
   type: 'debug_info'
   level: 'debug' | 'info' | 'warn'
   data: {
@@ -154,7 +154,7 @@ export interface DebugInfoEvent extends BaseEvent {
 }
 
 // Template execution events
-export interface TemplateEnteredEvent extends BaseEvent {
+export type TemplateEnteredEvent = BaseEvent & {
   type: 'template_entered'
   level: 'debug'
   data: {
@@ -162,7 +162,7 @@ export interface TemplateEnteredEvent extends BaseEvent {
   }
 }
 
-export interface TemplateExitedEvent extends BaseEvent {
+export type TemplateExitedEvent = BaseEvent & {
   type: 'template_exited'
   level: 'debug'
   data: {
@@ -170,7 +170,7 @@ export interface TemplateExitedEvent extends BaseEvent {
   }
 }
 
-export interface TemplateSetupStartedEvent extends BaseEvent {
+export type TemplateSetupStartedEvent = BaseEvent & {
   type: 'template_setup_started'
   level: 'debug'
   data: {
@@ -178,7 +178,7 @@ export interface TemplateSetupStartedEvent extends BaseEvent {
   }
 }
 
-export interface TemplateSetupCompletedEvent extends BaseEvent {
+export type TemplateSetupCompletedEvent = BaseEvent & {
   type: 'template_setup_completed'
   level: 'debug'
   data: {
@@ -186,7 +186,7 @@ export interface TemplateSetupCompletedEvent extends BaseEvent {
   }
 }
 
-export interface TemplateSetupSkippedEvent extends BaseEvent {
+export type TemplateSetupSkippedEvent = BaseEvent & {
   type: 'template_setup_skipped'
   level: 'info'
   data: {
@@ -195,7 +195,7 @@ export interface TemplateSetupSkippedEvent extends BaseEvent {
   }
 }
 
-export interface TemplateSkippedEvent extends BaseEvent {
+export type TemplateSkippedEvent = BaseEvent & {
   type: 'template_skipped'
   level: 'info'
   data: {
@@ -205,7 +205,7 @@ export interface TemplateSkippedEvent extends BaseEvent {
 }
 
 // Transaction events
-export interface PrimitiveActionEvent extends BaseEvent {
+export type PrimitiveActionEvent = BaseEvent & {
   type: 'primitive_action'
   level: 'debug'
   data: {
@@ -213,7 +213,7 @@ export interface PrimitiveActionEvent extends BaseEvent {
   }
 }
 
-export interface TransactionSentEvent extends BaseEvent {
+export type TransactionSentEvent = BaseEvent & {
   type: 'transaction_sent'
   level: 'info'
   data: {
@@ -224,7 +224,7 @@ export interface TransactionSentEvent extends BaseEvent {
   }
 }
 
-export interface TransactionConfirmedEvent extends BaseEvent {
+export type TransactionConfirmedEvent = BaseEvent & {
   type: 'transaction_confirmed'
   level: 'info'
   data: {
@@ -234,7 +234,7 @@ export interface TransactionConfirmedEvent extends BaseEvent {
 }
 
 // Contract lifecycle events
-export interface ContractCreatedEvent extends BaseEvent {
+export type ContractCreatedEvent = BaseEvent & {
   type: 'contract_created'
   level: 'info'
   data: {
@@ -245,7 +245,7 @@ export interface ContractCreatedEvent extends BaseEvent {
 }
 
 // Output events
-export interface OutputStoredEvent extends BaseEvent {
+export type OutputStoredEvent = BaseEvent & {
   type: 'output_stored'
   level: 'debug'
   data: {
@@ -254,7 +254,7 @@ export interface OutputStoredEvent extends BaseEvent {
   }
 }
 
-export interface OutputFileWrittenEvent extends BaseEvent {
+export type OutputFileWrittenEvent = BaseEvent & {
   type: 'output_file_written'
   level: 'info'
   data: {
@@ -262,18 +262,18 @@ export interface OutputFileWrittenEvent extends BaseEvent {
   }
 }
 
-export interface NoOutputsEvent extends BaseEvent {
+export type NoOutputsEvent = BaseEvent & {
   type: 'no_outputs'
   level: 'warn'
 }
 
-export interface OutputWritingStartedEvent extends BaseEvent {
+export type OutputWritingStartedEvent = BaseEvent & {
   type: 'output_writing_started'
   level: 'info'
 }
 
 // Warning events
-export interface DuplicateArtifactWarningEvent extends BaseEvent {
+export type DuplicateArtifactWarningEvent = BaseEvent & {
   type: 'duplicate_artifact_warning'
   level: 'warn'
   data: {
@@ -282,7 +282,7 @@ export interface DuplicateArtifactWarningEvent extends BaseEvent {
   }
 }
 
-export interface MissingNetworkConfigWarningEvent extends BaseEvent {
+export type MissingNetworkConfigWarningEvent = BaseEvent & {
   type: 'missing_network_config_warning'
   level: 'warn'
   data: {
@@ -290,7 +290,7 @@ export interface MissingNetworkConfigWarningEvent extends BaseEvent {
   }
 }
 
-export interface ContextDisposalWarningEvent extends BaseEvent {
+export type ContextDisposalWarningEvent = BaseEvent & {
   type: 'context_disposal_warning'
   level: 'warn'
   data: {
@@ -300,7 +300,7 @@ export interface ContextDisposalWarningEvent extends BaseEvent {
   }
 }
 
-export interface DeprecatedJobsSkippedEvent extends BaseEvent {
+export type DeprecatedJobsSkippedEvent = BaseEvent & {
   type: 'deprecated_jobs_skipped'
   level: 'warn'
   data: {
@@ -309,7 +309,7 @@ export interface DeprecatedJobsSkippedEvent extends BaseEvent {
 }
 
 // Network events
-export interface NetworkStartedEvent extends BaseEvent {
+export type NetworkStartedEvent = BaseEvent & {
   type: 'network_started'
   level: 'info'
   data: {
@@ -322,7 +322,7 @@ export interface NetworkStartedEvent extends BaseEvent {
  * Emitted right after a network run starts to inform which address will be used
  * to send transactions and its current balance.
  */
-export interface NetworkSignerInfoEvent extends BaseEvent {
+export type NetworkSignerInfoEvent = BaseEvent & {
   type: 'network_signer_info'
   level: 'info'
   data: {
@@ -335,7 +335,7 @@ export interface NetworkSignerInfoEvent extends BaseEvent {
 }
 
 // Process error events
-export interface UnhandledRejectionEvent extends BaseEvent {
+export type UnhandledRejectionEvent = BaseEvent & {
   type: 'unhandled_rejection'
   level: 'error'
   data: {
@@ -344,7 +344,7 @@ export interface UnhandledRejectionEvent extends BaseEvent {
   }
 }
 
-export interface UncaughtExceptionEvent extends BaseEvent {
+export type UncaughtExceptionEvent = BaseEvent & {
   type: 'uncaught_exception'
   level: 'error'
   data: {
@@ -352,7 +352,7 @@ export interface UncaughtExceptionEvent extends BaseEvent {
   }
 }
 
-export interface CLIErrorEvent extends BaseEvent {
+export type CLIErrorEvent = BaseEvent & {
   type: 'cli_error'
   level: 'error'
   data: {
@@ -360,7 +360,7 @@ export interface CLIErrorEvent extends BaseEvent {
   }
 }
 
-export interface JobExecutionFailedEvent extends BaseEvent {
+export type JobExecutionFailedEvent = BaseEvent & {
   type: 'job_execution_failed'
   level: 'error'
   data: {
@@ -371,7 +371,7 @@ export interface JobExecutionFailedEvent extends BaseEvent {
   }
 }
 
-export interface VerificationStartedEvent extends BaseEvent {
+export type VerificationStartedEvent = BaseEvent & {
   type: 'verification_started'
   level: 'info'
   data: {
@@ -383,7 +383,7 @@ export interface VerificationStartedEvent extends BaseEvent {
   }
 }
 
-export interface VerificationSubmittedEvent extends BaseEvent {
+export type VerificationSubmittedEvent = BaseEvent & {
   type: 'verification_submitted'
   level: 'info'
   data: {
@@ -394,7 +394,7 @@ export interface VerificationSubmittedEvent extends BaseEvent {
   }
 }
 
-export interface VerificationCompletedEvent extends BaseEvent {
+export type VerificationCompletedEvent = BaseEvent & {
   type: 'verification_completed'
   level: 'info'
   data: {
@@ -406,7 +406,7 @@ export interface VerificationCompletedEvent extends BaseEvent {
   }
 }
 
-export interface VerificationFailedEvent extends BaseEvent {
+export type VerificationFailedEvent = BaseEvent & {
   type: 'verification_failed'
   level: 'error'
   data: {
@@ -418,7 +418,7 @@ export interface VerificationFailedEvent extends BaseEvent {
   }
 }
 
-export interface VerificationRetryEvent extends BaseEvent {
+export type VerificationRetryEvent = BaseEvent & {
   type: 'verification_retry'
   level: 'info'
   data: {
@@ -429,7 +429,7 @@ export interface VerificationRetryEvent extends BaseEvent {
   }
 }
 
-export interface VerificationSkippedEvent extends BaseEvent {
+export type VerificationSkippedEvent = BaseEvent & {
   type: 'verification_skipped'
   level: 'warn'
   data: {
@@ -438,7 +438,7 @@ export interface VerificationSkippedEvent extends BaseEvent {
   }
 }
 
-export interface VerificationWarningsReportEvent extends BaseEvent {
+export type VerificationWarningsReportEvent = BaseEvent & {
   type: 'verification_warnings_report'
   level: 'warn'
   data: {
@@ -456,7 +456,7 @@ export interface VerificationWarningsReportEvent extends BaseEvent {
 }
 
 // End-of-run summary
-export interface RunSummaryEvent extends BaseEvent {
+export type RunSummaryEvent = BaseEvent & {
   type: 'run_summary'
   level: 'info' | 'warn'
   data: {
@@ -466,6 +466,45 @@ export interface RunSummaryEvent extends BaseEvent {
     failedCount: number
     skippedCount: number
     keyContracts: Array<{ job: string; action: string; address: string }>
+  }
+}
+
+// Plugin action events
+export type PluginActionEvent = BaseEvent & {
+  type: 'plugin_action'
+  level: 'info' | 'debug'
+  data: {
+    actionType: string
+    actionName?: string
+    pluginName?: string
+    message?: string
+    chainId?: string
+    txHash?: string
+    [key: string]: unknown
+  }
+}
+
+export type PluginActionFailedEvent = BaseEvent & {
+  type: 'plugin_action_failed'
+  level: 'error'
+  data: {
+    actionType: string
+    actionName?: string
+    error: string
+    [key: string]: unknown
+  }
+}
+
+export type PluginActionCompletedEvent = BaseEvent & {
+  type: 'plugin_action_completed'
+  level: 'info'
+  data: {
+    actionType: string
+    actionName?: string
+    message?: string
+    address?: string
+    txHash?: string
+    [key: string]: unknown
   }
 }
 
@@ -518,3 +557,7 @@ export type DeploymentEvent =
   | VerificationSkippedEvent
   | VerificationWarningsReportEvent
   | RunSummaryEvent
+  | PluginActionEvent
+  | PluginActionFailedEvent
+  | PluginActionCompletedEvent
+

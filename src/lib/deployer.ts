@@ -8,7 +8,9 @@ import { createDefaultVerificationRegistry } from './verification/etherscan'
 import { ExecutionContext } from './core/context'
 import { Network, Job } from './types'
 import { DeploymentEventEmitter, deploymentEvents } from './events'
-import type { RunSummaryEvent } from './events'
+import type { RunSummaryEvent } from './types/events'
+import { PluginRegistry } from './plugins/registry'
+import { PluginLoader } from './plugins/loader'
 
 /**
  * Options for configuring a Deployer instance.
@@ -55,6 +57,9 @@ export interface DeployerOptions {
 
   /** Optional: Convert verification errors to warnings instead of failing (default: false). */
   ignoreVerifyErrors?: boolean
+
+  /** Optional: Path to plugin configuration file. If not provided, will search for default config files. */
+  configPath?: string
 }
 
 /**
@@ -99,7 +104,7 @@ export class Deployer {
     })
 
     try {
-      // 1. Load all project artifacts, templates, and jobs.
+      // Load all project artifacts, templates, and jobs.
       this.events.emitEvent({
         type: 'project_loading_started',
         level: 'info',
@@ -119,12 +124,12 @@ export class Deployer {
         }
       })
 
-      // 2. Build the dependency graph and determine execution order.
+      // Build the dependency graph and determine execution order.
       const graph = new DependencyGraph(this.loader.jobs, this.loader.templates)
       this.graph = graph
       const jobOrder = graph.getExecutionOrder()
 
-      // 3. Filter jobs and networks based on user options.
+      // Filter jobs and networks based on user options.
       const jobsToRun = this.getJobExecutionPlan(jobOrder)
 
       // Inform about skipped deprecated jobs (when applicable)
@@ -155,19 +160,54 @@ export class Deployer {
         }
       })
 
-      // 4. Execute the plan.
+      // Load plugins.
+      const pluginRegistry = new PluginRegistry()
+      try {
+        await PluginLoader.loadPlugins(
+          this.options.configPath,
+          this.options.projectRoot,
+          pluginRegistry
+        )
+        const loadedPlugins = pluginRegistry.getPlugins()
+        if (loadedPlugins.size > 0) {
+          this.events.emitEvent({
+            type: 'plugins_loaded',
+            level: 'info',
+            data: {
+              pluginCount: loadedPlugins.size,
+              pluginNames: Array.from(loadedPlugins.keys()),
+              actionTypes: pluginRegistry.getActionTypes()
+            }
+          })
+        }
+      } catch (error) {
+        this.events.emitEvent({
+          type: 'plugin_load_error',
+          level: 'error',
+          data: {
+            error: error instanceof Error ? error.message : String(error)
+          }
+        })
+        throw error
+      }
+
+      // Create the execution engine.
+
       const verificationRegistry = createDefaultVerificationRegistry(this.options.etherscanApiKey)
       const engine = new ExecutionEngine(this.loader.templates, {
         eventEmitter: this.events,
         verificationRegistry,
         noPostCheckConditions: this.noPostCheckConditions,
-        ignoreVerifyErrors: this.options.ignoreVerifyErrors ?? false
+        ignoreVerifyErrors: this.options.ignoreVerifyErrors ?? false,
+        pluginRegistry,
       })
 
       // Track if any jobs have failed
       let hasFailures = false
       // Emit signer info once per network (chainId)
       const signerInfoPrintedForChain = new Set<number>()
+
+      // Execute the plan.
 
       for (const network of targetNetworks) {
         this.events.emitEvent({
@@ -344,7 +384,7 @@ export class Deployer {
         }
       }
 
-      // 5. Write results to output files.
+      // Write results to output files.
       await this.writeOutputFiles()
 
       // Show verification warnings report if ignoreVerifyErrors is enabled

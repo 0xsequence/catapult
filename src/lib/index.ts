@@ -1,14 +1,32 @@
-// Export all types
+// Types
 export * from './types'
 
-// Export core classes
+// Core execution engine
+export * from './core/context'
+export * from './core/engine'
+export * from './core/graph'
+export * from './core/loader'
+export * from './core/resolver'
+
+// Contracts
 export * from './contracts/repository'
 
-// Export all parsers
-export * as parsers from './parsers'
-
-// Export the deployer
+// Deployer
 export * from './deployer'
 
-// This will be the main entry point for the lib
-// Additional functionality will be added here as the lib grows
+// Events
+export * from './events'
+
+// Network utilities
+export * from './network-loader'
+export * from './network-selection'
+export * from './network-utils'
+
+// Parsers
+export * as parsers from './parsers'
+
+// Plugins
+export * from './plugins'
+
+// Verification
+export * from './verification/etherscan'

@@ -1,5 +1,4 @@
-import { DeploymentEventEmitter, CLIEventAdapter } from '../index'
-import { DeploymentEvent } from '../types'
+import { CLIEventAdapter, DeploymentEventEmitter } from '../index'
 
 describe('Event System', () => {
   let eventEmitter: DeploymentEventEmitter

@@ -9,6 +9,36 @@ describe('ValueResolver', () => {
   let context: ExecutionContext
   let mockNetwork: Network
   let mockRegistry: ContractRepository
+  let testProvider: ethers.JsonRpcProvider | undefined
+
+  beforeAll(async () => {
+    // Allow configuring RPC URL via environment variable for CI
+    const rpcUrl = process.env.RPC_URL || 'http://127.0.0.1:8545'
+    // Try to connect to the node, fail immediately if not available
+    testProvider = new ethers.JsonRpcProvider(rpcUrl)
+    try {
+      await testProvider.getNetwork()
+    } catch (error) {
+      // If connection fails, that's okay - tests will handle it
+      if (testProvider.destroy) {
+        await testProvider.destroy()
+      }
+      testProvider = undefined
+    }
+  })
+
+  afterAll(async () => {
+    // Clean up test provider
+    if (testProvider) {
+      try {
+        if (testProvider.destroy) {
+          await testProvider.destroy()
+        }
+      } catch (error) {
+        // Ignore cleanup errors
+      }
+    }
+  })
 
   beforeEach(async () => {
     resolver = new ValueResolver()
@@ -26,9 +56,6 @@ describe('ValueResolver', () => {
     // A dummy private key is fine as these tests don't send transactions
     const mockPrivateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
     context = new ExecutionContext(mockNetwork, mockPrivateKey, mockRegistry)
-    
-    // Try to connect to the node, fail immediately if not available
-    await (context.provider as ethers.JsonRpcProvider).getNetwork()
   })
 
   afterEach(async () => {
