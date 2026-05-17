@@ -25,4 +25,9 @@ export interface Network {
    * "paris", "shanghai", "cancun". Used to filter jobs that require a minimum EVM version.
    */
   evmVersion?: string
+
+  /**
+   * Integrator-owned metadata bag. Keys are not validated by Catapult.
+   */
+  params?: Record<string, unknown>
 }
