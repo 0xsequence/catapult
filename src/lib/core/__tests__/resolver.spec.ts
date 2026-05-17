@@ -1573,6 +1573,48 @@ describe('ValueResolver', () => {
       })
     })
 
+    describe('Network().params dotted paths', () => {
+      const mockPrivateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
+
+      it('should default params.myParam to false when params is absent', async () => {
+        const result = await resolver.resolve('{{Network().params.myParam}}', context)
+        expect(result).toBe(false)
+      })
+
+      it('should default params.myParam to false when myParam is absent', async () => {
+        const networkWithParams: Network = { ...mockNetwork, params: {} }
+        const paramsContext = new ExecutionContext(networkWithParams, mockPrivateKey, mockRegistry)
+        try {
+          const result = await resolver.resolve('{{Network().params.myParam}}', paramsContext)
+          expect(result).toBe(false)
+        } finally {
+          await paramsContext.dispose()
+        }
+      })
+
+      it('should return params.myParam when set to true', async () => {
+        const networkWithParams: Network = { ...mockNetwork, params: { myParam: true } }
+        const paramsContext = new ExecutionContext(networkWithParams, mockPrivateKey, mockRegistry)
+        try {
+          const result = await resolver.resolve('{{Network().params.myParam}}', paramsContext)
+          expect(result).toBe(true)
+        } finally {
+          await paramsContext.dispose()
+        }
+      })
+
+      it('should return params.myParam when set to false', async () => {
+        const networkWithParams: Network = { ...mockNetwork, params: { myParam: false } }
+        const paramsContext = new ExecutionContext(networkWithParams, mockPrivateKey, mockRegistry)
+        try {
+          const result = await resolver.resolve('{{Network().params.myParam}}', paramsContext)
+          expect(result).toBe(false)
+        } finally {
+          await paramsContext.dispose()
+        }
+      })
+    })
+
     describe('invalid Network expressions', () => {
       it('should fail for invalid property', async () => {
         await expect(resolver.resolve('{{Network().invalid}}', context))

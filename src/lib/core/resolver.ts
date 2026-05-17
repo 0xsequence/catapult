@@ -118,20 +118,38 @@ export class ValueResolver {
       return value
     }
 
-    // Check for Network(...) property access
-    const networkMatch = expression.match(/^Network\(\)\.(\w+)$/)
+    // Check for Network() property access (single segment or dotted path)
+    const networkMatch = expression.match(/^Network\(\)\.(.+)$/)
     if (networkMatch) {
-      const [, property] = networkMatch
+      const path = networkMatch[1]
+      const segments = path.split('.')
       const network = context.getNetwork()
-      if (property === 'testnet') {
-        // Special case for testnet property. Default to false if not set.
-        return !!network.testnet
+
+      if (segments.length === 1) {
+        const property = segments[0]
+        if (property === 'testnet') {
+          // Default to false if not set.
+          return !!network.testnet
+        }
+        const value = (network as unknown as Record<string, unknown>)[property]
+        if (value === undefined) {
+          throw new Error(`Property "${property}" does not exist on network`)
+        }
+        return value
       }
-      const value = (network as any)[property]
-      if (value === undefined) {
-        throw new Error(`Property "${property}" does not exist on network`)
+
+      // Dotted paths (e.g. params.myParam): missing keys default to false.
+      let current: unknown = network
+      for (const segment of segments) {
+        if (current === null || current === undefined || typeof current !== 'object') {
+          return false
+        }
+        current = (current as Record<string, unknown>)[segment]
+        if (current === undefined) {
+          return false
+        }
       }
-      return value
+      return current
     }
 
     // Check scope for local variables (template arguments) first

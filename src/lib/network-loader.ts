@@ -22,7 +22,13 @@ function isValidNetwork(obj: unknown): obj is Network {
     // testnet field is optional and should be a boolean if present
     (!('testnet' in obj) || typeof (obj as Record<string, unknown>).testnet === 'boolean') &&
     // evmVersion field is optional and should be a string if present
-    (!('evmVersion' in obj) || typeof (obj as Record<string, unknown>).evmVersion === 'string')
+    (!('evmVersion' in obj) || typeof (obj as Record<string, unknown>).evmVersion === 'string') &&
+    // params field is optional and must be a plain object if present
+    (!('params' in obj) || (
+      typeof (obj as Record<string, unknown>).params === 'object' &&
+      (obj as Record<string, unknown>).params !== null &&
+      !Array.isArray((obj as Record<string, unknown>).params)
+    ))
   )
 }
 
