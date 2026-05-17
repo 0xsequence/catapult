@@ -44,13 +44,16 @@ function makeRunCommand() {
                 }
                 try {
                     const detectedNetwork = await (0, network_utils_1.detectNetworkFromRpc)(options.rpcUrl);
+                    const knownNetwork = networks.find(n => n.chainId === detectedNetwork.chainId);
                     const customNetwork = {
-                        name: detectedNetwork.name || `custom-${detectedNetwork.chainId}`,
+                        name: detectedNetwork.name || knownNetwork?.name || `custom-${detectedNetwork.chainId}`,
                         chainId: detectedNetwork.chainId,
                         rpcUrl: options.rpcUrl,
-                        supports: detectedNetwork.supports || [],
-                        gasLimit: detectedNetwork.gasLimit,
-                        testnet: detectedNetwork.testnet
+                        supports: detectedNetwork.supports || knownNetwork?.supports || [],
+                        gasLimit: detectedNetwork.gasLimit || knownNetwork?.gasLimit,
+                        testnet: detectedNetwork.testnet !== undefined ? detectedNetwork.testnet : knownNetwork?.testnet,
+                        evmVersion: detectedNetwork.evmVersion || knownNetwork?.evmVersion,
+                        params: detectedNetwork.params || knownNetwork?.params,
                     };
                     networks = [customNetwork];
                 }
