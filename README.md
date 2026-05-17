@@ -388,7 +388,7 @@ Common options (run):
 - `-p, --project <path>`: Project root directory (defaults to current directory)
 - `--dotenv <path>`: Load environment variables from a custom .env file (run command only)
 - `-n, --network <selectors>`: Comma-separated selectors by chain ID or network name
-- `--rpc-url <url>`: Run against a single custom RPC; chain ID is auto-detected (no networks.yaml required)
+- `--rpc-url <url>`: Run against a single custom RPC; chain ID is auto-detected. If `networks.yaml` defines that chain, Catapult merges yaml settings (name, `supports`, `gasLimit`, `testnet`, `evmVersion`, `params`) while using your RPC URL.
 - `-k, --private-key <key>`: EOA private key (or set `PRIVATE_KEY`)
 - `--etherscan-api-key <key>`: Etherscan API key (or set `ETHERSCAN_API_KEY`)
 - `--fail-early`: Stop as soon as any job fails

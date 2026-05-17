@@ -108,16 +108,15 @@ describe('Network Utils', () => {
   describe('Integration with Run Command', () => {
     it('should create a complete Network object from detected information', async () => {
       const { ethers } = require('ethers')
-      
-      // Mock successful network detection
+
       const mockNetwork = {
         name: 'sepolia',
-        chainId: 11155111
+        chainId: 11155111,
       }
-      
+
       const getNetworkMock = jest.fn().mockResolvedValue(mockNetwork)
       ethers.JsonRpcProvider.mockImplementation(() => ({
-        getNetwork: getNetworkMock
+        getNetwork: getNetworkMock,
       }))
 
       const detectedInfo = await detectNetworkFromRpc('https://sepolia.infura.io/v3/abc123')
@@ -129,7 +128,9 @@ describe('Network Utils', () => {
         rpcUrl: 'https://sepolia.infura.io/v3/abc123',
         supports: detectedInfo.supports || [],
         gasLimit: detectedInfo.gasLimit,
-        testnet: detectedInfo.testnet
+        testnet: detectedInfo.testnet,
+        evmVersion: detectedInfo.evmVersion,
+        params: detectedInfo.params,
       }
 
       expect(customNetwork).toEqual({
@@ -138,22 +139,66 @@ describe('Network Utils', () => {
         rpcUrl: 'https://sepolia.infura.io/v3/abc123',
         supports: [],
         gasLimit: undefined,
-        testnet: undefined
+        testnet: undefined,
+        evmVersion: undefined,
+        params: undefined,
+      })
+    })
+
+    it('should merge params and other yaml fields when chainId matches networks.yaml', async () => {
+      const { ethers } = require('ethers')
+
+      const getNetworkMock = jest.fn().mockResolvedValue({ name: 'unknown', chainId: 137 })
+      ethers.JsonRpcProvider.mockImplementation(() => ({
+        getNetwork: getNetworkMock,
+      }))
+
+      const detectedInfo = await detectNetworkFromRpc('http://127.0.0.1:8545')
+      const knownNetwork: Network = {
+        name: 'Polygon',
+        chainId: 137,
+        rpcUrl: 'https://nodes.sequence.app/polygon/token',
+        supports: ['etherscan_v2', 'sourcify'],
+        testnet: false,
+        evmVersion: 'paris',
+        params: { trailsOnly: false },
+      }
+
+      // Simulate what the run command does
+      const customNetwork: Network = {
+        name: detectedInfo.name || knownNetwork.name || `custom-${detectedInfo.chainId}`,
+        chainId: detectedInfo.chainId!,
+        rpcUrl: 'http://127.0.0.1:8545',
+        supports: detectedInfo.supports || knownNetwork.supports || [],
+        gasLimit: detectedInfo.gasLimit || knownNetwork.gasLimit,
+        testnet: detectedInfo.testnet !== undefined ? detectedInfo.testnet : knownNetwork.testnet,
+        evmVersion: detectedInfo.evmVersion || knownNetwork.evmVersion,
+        params: detectedInfo.params || knownNetwork.params,
+      }
+
+      expect(customNetwork).toEqual({
+        name: 'unknown',
+        chainId: 137,
+        rpcUrl: 'http://127.0.0.1:8545',
+        supports: ['etherscan_v2', 'sourcify'],
+        gasLimit: undefined,
+        testnet: false,
+        evmVersion: 'paris',
+        params: { trailsOnly: false },
       })
     })
 
     it('should handle partial network information gracefully', async () => {
       const { ethers } = require('ethers')
-      
-      // Mock network with minimal information
+
       const mockNetwork = {
         name: 'unknown',
-        chainId: 42
+        chainId: 42,
       }
-      
+
       const getNetworkMock = jest.fn().mockResolvedValue(mockNetwork)
       ethers.JsonRpcProvider.mockImplementation(() => ({
-        getNetwork: getNetworkMock
+        getNetwork: getNetworkMock,
       }))
 
       const detectedInfo = await detectNetworkFromRpc('http://custom-network:8545')
@@ -165,7 +210,9 @@ describe('Network Utils', () => {
         rpcUrl: 'http://custom-network:8545',
         supports: detectedInfo.supports || [],
         gasLimit: detectedInfo.gasLimit,
-        testnet: detectedInfo.testnet
+        testnet: detectedInfo.testnet,
+        evmVersion: detectedInfo.evmVersion,
+        params: detectedInfo.params,
       }
 
       expect(customNetwork).toEqual({
@@ -174,7 +221,9 @@ describe('Network Utils', () => {
         rpcUrl: 'http://custom-network:8545',
         supports: [],
         gasLimit: undefined,
-        testnet: undefined
+        testnet: undefined,
+        evmVersion: undefined,
+        params: undefined,
       })
     })
   })
