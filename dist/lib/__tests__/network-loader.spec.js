@@ -118,4 +118,48 @@ describe('network-loader rpcUrl token replacement', () => {
         expect(networks[0].rpcUrl).toBe('https://node.example.com/');
     });
 });
+describe('network-loader params', () => {
+    afterAll(async () => {
+        try {
+            await fs.rm(tmpDir, { recursive: true, force: true });
+        }
+        catch { }
+    });
+    test('passes through valid params object', async () => {
+        const projectRoot = path.join(tmpDir, 'params-valid');
+        const yaml = `
+- name: "MyNet"
+  chainId: 4217
+  rpcUrl: "http://127.0.0.1:8545"
+  params:
+    myParam: true
+`;
+        await writeNetworksYaml(projectRoot, yaml);
+        const networks = await (0, network_loader_1.loadNetworks)(projectRoot);
+        expect(networks).toHaveLength(1);
+        expect(networks[0].params).toEqual({ myParam: true });
+    });
+    test('rejects params when not a plain object', async () => {
+        const projectRoot = path.join(tmpDir, 'params-invalid-array');
+        const yaml = `
+- name: "BadNet"
+  chainId: 1
+  rpcUrl: "http://127.0.0.1:8545"
+  params: [1, 2, 3]
+`;
+        await writeNetworksYaml(projectRoot, yaml);
+        await expect((0, network_loader_1.loadNetworks)(projectRoot)).rejects.toThrow(/Failed to load or parse networks.yaml/);
+    });
+    test('rejects params when null', async () => {
+        const projectRoot = path.join(tmpDir, 'params-invalid-null');
+        const yaml = `
+- name: "BadNet"
+  chainId: 1
+  rpcUrl: "http://127.0.0.1:8545"
+  params: null
+`;
+        await writeNetworksYaml(projectRoot, yaml);
+        await expect((0, network_loader_1.loadNetworks)(projectRoot)).rejects.toThrow(/Failed to load or parse networks.yaml/);
+    });
+});
 //# sourceMappingURL=network-loader.spec.js.map

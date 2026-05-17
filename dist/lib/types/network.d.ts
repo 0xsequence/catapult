@@ -6,5 +6,6 @@ export interface Network {
     gasLimit?: number;
     testnet?: boolean;
     evmVersion?: string;
+    params?: Record<string, unknown>;
 }
 //# sourceMappingURL=network.d.ts.map

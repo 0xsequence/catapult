@@ -51,7 +51,10 @@ function isValidNetwork(obj) {
                 obj.supports.every((item) => typeof item === 'string'))) &&
         (!('gasLimit' in obj) || typeof obj.gasLimit === 'number') &&
         (!('testnet' in obj) || typeof obj.testnet === 'boolean') &&
-        (!('evmVersion' in obj) || typeof obj.evmVersion === 'string'));
+        (!('evmVersion' in obj) || typeof obj.evmVersion === 'string') &&
+        (!('params' in obj) || (typeof obj.params === 'object' &&
+            obj.params !== null &&
+            !Array.isArray(obj.params))));
 }
 function resolveRpcUrlTokens(rpcUrl) {
     const TOKEN_REGEX = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;

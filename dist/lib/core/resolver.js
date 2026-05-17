@@ -48,18 +48,33 @@ class ValueResolver {
             }
             return value;
         }
-        const networkMatch = expression.match(/^Network\(\)\.(\w+)$/);
+        const networkMatch = expression.match(/^Network\(\)\.(.+)$/);
         if (networkMatch) {
-            const [, property] = networkMatch;
+            const path = networkMatch[1];
+            const segments = path.split('.');
             const network = context.getNetwork();
-            if (property === 'testnet') {
-                return !!network.testnet;
+            if (segments.length === 1) {
+                const property = segments[0];
+                if (property === 'testnet') {
+                    return !!network.testnet;
+                }
+                const value = network[property];
+                if (value === undefined) {
+                    throw new Error(`Property "${property}" does not exist on network`);
+                }
+                return value;
             }
-            const value = network[property];
-            if (value === undefined) {
-                throw new Error(`Property "${property}" does not exist on network`);
+            let current = network;
+            for (const segment of segments) {
+                if (current === null || current === undefined || typeof current !== 'object') {
+                    return false;
+                }
+                current = current[segment];
+                if (current === undefined) {
+                    return false;
+                }
             }
-            return value;
+            return current;
         }
         if (scope.has(expression)) {
             return scope.get(expression);
