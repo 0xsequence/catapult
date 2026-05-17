@@ -2,8 +2,8 @@ import { Command } from 'commander'
 import { Deployer, DeployerOptions } from '../lib/deployer'
 import { loadNetworks } from '../lib/network-loader'
 import { detectNetworkFromRpc, isValidRpcUrl } from '../lib/network-utils'
-import { deploymentEvents } from '../lib/events'
 import { Network } from '../lib/types'
+import { deploymentEvents } from '../lib/events'
 import { projectOption, dotenvOption, noStdOption, verbosityOption, loadDotenv } from './common'
 import { resolveSelectedChainIds } from '../lib/network-selection'
 import { setVerbosity } from '../index'
@@ -76,15 +76,20 @@ export function makeRunCommand(): Command {
           // Detect network information from RPC URL
           const detectedNetwork = await detectNetworkFromRpc(options.rpcUrl)
           
-          // Create a complete network object
+          // Try to find a matching network in networks.yaml by chainId to merge verification platform support
+          const knownNetwork = networks.find(n => n.chainId === detectedNetwork.chainId)
+
+          // Create a complete network object, merging with known network config if found
           const customNetwork: Network = {
-            name: detectedNetwork.name || `custom-${detectedNetwork.chainId}`,
+            name: detectedNetwork.name || knownNetwork?.name || `custom-${detectedNetwork.chainId}`,
             chainId: detectedNetwork.chainId!,
             rpcUrl: options.rpcUrl,
             // Optional fields with defaults
-            supports: detectedNetwork.supports || [],
-            gasLimit: detectedNetwork.gasLimit,
-            testnet: detectedNetwork.testnet
+            supports: detectedNetwork.supports || knownNetwork?.supports || [],
+            gasLimit: detectedNetwork.gasLimit || knownNetwork?.gasLimit,
+            testnet: detectedNetwork.testnet !== undefined ? detectedNetwork.testnet : knownNetwork?.testnet,
+            evmVersion: detectedNetwork.evmVersion || knownNetwork?.evmVersion,
+            params: detectedNetwork.params || knownNetwork?.params,
           }
           
           // Custom network created from RPC detection
