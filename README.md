@@ -591,6 +591,40 @@ Make an HTTP JSON request and use the result downstream:
     method: "GET"
 ```
 
+### `assert`
+Assert an on-chain invariant or value comparison. Evaluates a condition and throws a clear error if it doesn't hold (no broadcast, ever).
+
+The action provides two ways to obtain the **ACTUAL** value:
+
+1. **`to` + `signature`** — performs an `eth_call` (like the `call` value resolver)
+2. **`actual`** — resolves any Value resolver (e.g. `read-balance`, `static`, etc.)
+
+Then provide **exactly one** comparator key (`eq`, `neq`, `gt`, `lt`, `gte`, `lte`) whose value is the **EXPECTED** result. If the comparison is `false`, the action throws an error that fails the run.
+
+Example — call a view function and compare:
+
+```yaml
+- type: assert
+  name: check-deposit-manager
+  arguments:
+    to: "{{some-proxy}}"
+    signature: "depositManager() returns (address)"
+    eq: "{{expected-deposit-manager}}"
+```
+
+Example — resolve a value and compare:
+
+```yaml
+- type: assert
+  name: check-balance
+  arguments:
+    actual: { type: read-balance, arguments: { address: "{{deployer}}" } }
+    gte: "1000000000000000000"
+    message: "deployer underfunded"
+```
+
+An optional `message` field is included in the error output for clarity.
+
 ## Value Resolvers
 
 Catapult includes powerful value resolvers for computing complex values:

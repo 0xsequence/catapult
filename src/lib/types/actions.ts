@@ -68,8 +68,28 @@ export interface JsonRequestAction {
   };
 }
 
+export interface AssertAction {
+  type: 'assert';
+  arguments: {
+    /** Source of the ACTUAL value: either `to`+`signature` (eth_call) or `actual` (a value). */
+    to?: AddressValue;
+    signature?: string;
+    values?: any[];
+    actual?: Value<any>;
+    /** Exactly one comparator key whose value is the EXPECTED value. */
+    eq?: Value<any>;
+    neq?: Value<any>;
+    gt?: Value<any>;
+    lt?: Value<any>;
+    gte?: Value<any>;
+    lte?: Value<any>;
+    /** Optional message for the error. */
+    message?: string;
+  };
+}
+
 // A union of all primitive action types.
-export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | CreateContractAction | TestNicksMethodAction | JsonRequestAction;
+export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | CreateContractAction | TestNicksMethodAction | JsonRequestAction | AssertAction;
 
 const primitiveActionTypes = [
   'send-transaction',
@@ -79,6 +99,7 @@ const primitiveActionTypes = [
   'create-contract',
   'test-nicks-method',
   'json-request',
+  'assert',
 ] as const;
 
 /**

@@ -10,6 +10,7 @@ const primitiveActionTypes = [
     'create-contract',
     'test-nicks-method',
     'json-request',
+    'assert',
 ];
 exports.PRIMITIVE_ACTION_TYPES = new Set(primitiveActionTypes);
 function isPrimitiveActionType(type) {
