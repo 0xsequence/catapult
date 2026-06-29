@@ -85,6 +85,16 @@ function parseJob(yamlContent) {
             }
         }
     }
+    if (rawObject.skip_if !== undefined) {
+        if (!Array.isArray(rawObject.skip_if)) {
+            throw new Error(`Invalid job "${rawObject.name}": "skip_if" must be an array if provided.`);
+        }
+        for (const condition of rawObject.skip_if) {
+            if (!isCondition(condition)) {
+                throw new Error(`Invalid job "${rawObject.name}": "skip_if" contains an invalid condition entry.`);
+            }
+        }
+    }
     if (rawObject.constants !== undefined) {
         if (typeof rawObject.constants !== 'object' || rawObject.constants === null || Array.isArray(rawObject.constants)) {
             throw new Error(`Invalid job "${rawObject.name}": "constants" field must be an object if provided.`);
@@ -101,6 +111,7 @@ function parseJob(yamlContent) {
         min_evm_version: rawObject.min_evm_version,
         deprecated: rawObject.deprecated === true,
         skip_condition: rawObject.skip_condition,
+        skip_if: rawObject.skip_if,
         constants: rawObject.constants,
     };
     return job;
