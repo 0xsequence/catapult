@@ -43,6 +43,12 @@ const path = __importStar(require("path"));
 const common_1 = require("./common");
 const network_loader_1 = require("../lib/network-loader");
 const index_1 = require("../index");
+function formatSourceProvenance(provenance) {
+    const ref = provenance.commit || provenance.ref;
+    const suffix = ref ? ` @ ${ref}` : '';
+    const build = provenance.build ? ` (${provenance.build})` : '';
+    return `${provenance.repo}${suffix}${build}`;
+}
 function makeListCommand() {
     const list = new commander_1.Command('list')
         .description('List project resources like jobs, contracts, and networks');
@@ -100,6 +106,12 @@ function makeListCommand() {
                     console.log(`  ${chalk_1.default.gray('Unique Hash:')} ${contract.uniqueHash}`);
                     if (contract.buildInfoId) {
                         console.log(`  ${chalk_1.default.gray('Build Info ID:')} ${contract.buildInfoId}`);
+                    }
+                    if (contract._sourceProvenance && contract._sourceProvenance.size > 0) {
+                        for (const [buildInfoPath, provenance] of contract._sourceProvenance.entries()) {
+                            const relativeBuildInfoPath = path.relative(options.project, buildInfoPath);
+                            console.log(`  ${chalk_1.default.gray('Provenance:')} ${formatSourceProvenance(provenance)} ${chalk_1.default.gray(`[${relativeBuildInfoPath}]`)}`);
+                        }
                     }
                     console.log(`  ${chalk_1.default.gray('Sources:')} ${Array.from(contract._sources).map(p => path.relative(options.project, p)).join(', ')}`);
                 }

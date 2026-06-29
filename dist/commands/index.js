@@ -19,4 +19,5 @@ __exportStar(require("./dry"), exports);
 __exportStar(require("./list"), exports);
 __exportStar(require("./utils"), exports);
 __exportStar(require("./etherscan"), exports);
+__exportStar(require("./provenance"), exports);
 //# sourceMappingURL=index.js.map

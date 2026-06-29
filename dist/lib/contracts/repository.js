@@ -39,15 +39,18 @@ const path = __importStar(require("path"));
 const crypto_1 = require("crypto");
 const artifact_1 = require("../parsers/artifact");
 const buildinfo_1 = require("../parsers/buildinfo");
+const source_1 = require("../parsers/source");
 class ContractRepository {
     constructor() {
         this.contracts = new Map();
         this.referenceMap = new Map();
         this.ambiguousReferences = new Set();
+        this.sourceProvenanceByBuildInfoPath = new Map();
     }
     async loadFrom(projectRoot) {
-        const files = await this.findContractFiles(projectRoot);
-        for (const filePath of files) {
+        const files = await this.findProjectFiles(projectRoot);
+        await this.loadSourceProvenanceFiles(files.sourceFiles);
+        for (const filePath of files.contractFiles) {
             try {
                 const content = await fs.readFile(filePath, 'utf-8');
                 await this.parseAndHydrateFromFile(content, filePath);
@@ -62,6 +65,7 @@ class ContractRepository {
             const extractedContracts = (0, buildinfo_1.parseBuildInfo)(content, filePath);
             if (extractedContracts) {
                 for (const extracted of extractedContracts) {
+                    const sourceProvenance = this.getSourceProvenance(filePath, extracted.fullyQualifiedName);
                     this.hydrateContract({
                         creationCode: extracted.bytecode,
                         runtimeBytecode: extracted.deployedBytecode,
@@ -71,6 +75,7 @@ class ContractRepository {
                         source: extracted.source,
                         compiler: extracted.compiler,
                         buildInfoId: extracted.buildInfoId,
+                        sourceProvenance,
                     }, filePath);
                 }
                 return;
@@ -99,7 +104,8 @@ class ContractRepository {
             contract = {
                 uniqueHash,
                 creationCode: data.creationCode,
-                _sources: new Set()
+                _sources: new Set(),
+                _sourceProvenance: new Map()
             };
             this.contracts.set(uniqueHash, contract);
         }
@@ -126,6 +132,24 @@ class ContractRepository {
         if (data.buildInfoId && !contract.buildInfoId) {
             contract.buildInfoId = data.buildInfoId;
         }
+        if (data.sourceProvenance) {
+            if (!contract._sourceProvenance) {
+                contract._sourceProvenance = new Map();
+            }
+            contract._sourceProvenance.set(sourceFilePath, data.sourceProvenance);
+            contract.sourceProvenance = this.selectPreferredSourceProvenance(contract._sourceProvenance);
+        }
+    }
+    getSourceProvenance(buildInfoPath, fullyQualifiedName) {
+        const provenance = this.sourceProvenanceByBuildInfoPath.get(buildInfoPath);
+        if (!provenance) {
+            return undefined;
+        }
+        return (0, source_1.mergeSourceProvenance)(provenance, provenance.contracts?.[fullyQualifiedName]);
+    }
+    selectPreferredSourceProvenance(sourceProvenance) {
+        const firstEntry = Array.from(sourceProvenance.entries()).sort(([a], [b]) => a.localeCompare(b))[0];
+        return firstEntry?.[1];
     }
     disambiguateReferences() {
         this.referenceMap.clear();
@@ -213,28 +237,90 @@ class ContractRepository {
             source: contractData.source,
             compiler: contractData.compiler,
             buildInfoId: contractData.buildInfoId,
+            sourceProvenance: contractData.sourceProvenance,
         }, contractData._path);
         this.disambiguateReferences();
     }
-    async findContractFiles(dir, ignoreDirs = new Set(['node_modules', 'dist', '.git', '.idea', '.vscode'])) {
-        let results = [];
+    async findProjectFiles(dir, ignoreDirs = new Set(['node_modules', 'dist', '.git', '.idea', '.vscode'])) {
+        const results = {
+            contractFiles: [],
+            sourceFiles: []
+        };
         try {
             const list = await fs.readdir(dir, { withFileTypes: true });
             for (const dirent of list) {
                 const fullPath = path.resolve(dir, dirent.name);
                 if (dirent.isDirectory()) {
                     if (!ignoreDirs.has(dirent.name)) {
-                        results = results.concat(await this.findContractFiles(fullPath, ignoreDirs));
+                        const childResults = await this.findProjectFiles(fullPath, ignoreDirs);
+                        results.contractFiles.push(...childResults.contractFiles);
+                        results.sourceFiles.push(...childResults.sourceFiles);
                     }
                 }
                 else if (dirent.isFile() && dirent.name.endsWith('.json')) {
-                    results.push(fullPath);
+                    results.contractFiles.push(fullPath);
+                }
+                else if (dirent.isFile() && (dirent.name === 'source.yaml' || dirent.name === 'source.yml')) {
+                    results.sourceFiles.push(fullPath);
                 }
             }
         }
         catch (err) {
         }
         return results;
+    }
+    async loadSourceProvenanceFiles(sourceFiles) {
+        this.sourceProvenanceByBuildInfoPath.clear();
+        for (const sourceFilePath of sourceFiles) {
+            let sourceDocument;
+            try {
+                const content = await fs.readFile(sourceFilePath, 'utf-8');
+                sourceDocument = (0, source_1.parseSourceDocument)(content);
+            }
+            catch (error) {
+                this.warnSourceProvenance(`Skipping source provenance file ${sourceFilePath}: ${error instanceof Error ? error.message : String(error)}`);
+                continue;
+            }
+            if (!sourceDocument) {
+                continue;
+            }
+            for (const warning of sourceDocument.warnings || []) {
+                this.warnSourceProvenance(`Skipping source provenance entry ${sourceFilePath}: ${warning}`);
+            }
+            const sourceDir = path.dirname(sourceFilePath);
+            for (const [buildInfoRef, provenance] of Object.entries(sourceDocument.build_info)) {
+                const buildInfoPath = path.resolve(sourceDir, buildInfoRef);
+                if (!(0, buildinfo_1.isBuildInfoFile)(buildInfoPath)) {
+                    this.warnSourceProvenance(`Skipping source provenance entry ${sourceFilePath}: "${buildInfoRef}" does not point to a build-info JSON file.`);
+                    continue;
+                }
+                if (!await this.pathExists(buildInfoPath)) {
+                    this.warnSourceProvenance(`Skipping source provenance entry ${sourceFilePath}: build-info file "${buildInfoRef}" does not exist.`);
+                    continue;
+                }
+                if (this.sourceProvenanceByBuildInfoPath.has(buildInfoPath)) {
+                    this.warnSourceProvenance(`Skipping source provenance entry ${sourceFilePath}: duplicate provenance for build-info file "${buildInfoRef}".`);
+                    continue;
+                }
+                this.sourceProvenanceByBuildInfoPath.set(buildInfoPath, {
+                    ...provenance,
+                    sourceDocumentPath: sourceFilePath,
+                    buildInfoPath
+                });
+            }
+        }
+    }
+    async pathExists(filePath) {
+        try {
+            await fs.access(filePath);
+            return true;
+        }
+        catch {
+            return false;
+        }
+    }
+    warnSourceProvenance(message) {
+        console.warn(message);
     }
 }
 exports.ContractRepository = ContractRepository;

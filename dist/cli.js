@@ -12,5 +12,6 @@ function setupCommands(program) {
     program.addCommand((0, commands_1.makeListCommand)());
     program.addCommand((0, commands_1.makeUtilsCommand)());
     program.addCommand((0, etherscan_1.makeEtherscanCommand)());
+    program.addCommand((0, commands_1.makeProvenanceCommand)());
 }
 //# sourceMappingURL=cli.js.map
