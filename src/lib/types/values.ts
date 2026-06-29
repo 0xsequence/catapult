@@ -64,6 +64,67 @@ export interface GetStorageAtValue {
   };
 }
 
+/**
+ * Computes EVM storage slots for common Solidity storage layouts.
+ *
+ * The result is always returned as a 32-byte, 0x-prefixed lowercase hex string,
+ * so it can be fed directly into `get-storage-at` or nested as the `slot` of
+ * another `compute-slot` (e.g. for nested mappings).
+ */
+export type ComputeSlotArguments =
+  | {
+      /** Value at `mapping[key]`: keccak256(h(key) . slot). */
+      kind: 'mapping';
+      /** Declaration slot of the mapping. */
+      slot: Value<string | number>;
+      /** The mapping key. */
+      key: Value<string | number | boolean>;
+      /**
+       * Solidity type of the key, used to encode it (default: "uint256").
+       * Value types (address, uint*, int*, bytes32, bool, ...) are ABI-encoded
+       * and left-padded; dynamic types ("string", "bytes") are packed.
+       */
+      keyType?: Value<string>;
+    }
+  | {
+      /** Element of a dynamic array: keccak256(slot) + index * elementSize. */
+      kind: 'dynamic-array';
+      /** Declaration slot of the array (also where its length lives). */
+      slot: Value<string | number>;
+      /** Element index (default: 0). */
+      index?: Value<string | number>;
+      /** Number of slots each element occupies (default: 1). */
+      elementSize?: Value<string | number>;
+    }
+  | {
+      /** Field of a struct or fixed-size array element: slot + offset. */
+      kind: 'struct-field';
+      /** Base slot of the struct / array element. */
+      slot: Value<string | number>;
+      /** Field offset in slots from the base. */
+      offset: Value<string | number>;
+    }
+  | {
+      /**
+       * ERC-7201 namespaced storage root:
+       * keccak256(abi.encode(uint256(keccak256(id)) - 1)) & ~bytes32(uint256(0xff)).
+       */
+      kind: 'erc7201';
+      /** The namespace id, e.g. "openzeppelin.storage.Ownable". */
+      id: Value<string>;
+    }
+  | {
+      /** Well-known EIP-1967 proxy slot: keccak256("eip1967.proxy.<name>") - 1. */
+      kind: 'eip1967';
+      /** Which proxy slot to compute. */
+      name: Value<'implementation' | 'admin' | 'beacon'>;
+    };
+
+export interface ComputeSlotValue {
+  type: 'compute-slot';
+  arguments: ComputeSlotArguments;
+}
+
 export interface BasicArithmeticValue {
   type: 'basic-arithmetic';
   arguments: {
@@ -136,6 +197,7 @@ export type ValueResolver =
   | ComputeCreate2Value
   | ReadBalanceValue
   | GetStorageAtValue
+  | ComputeSlotValue
   | BasicArithmeticValue
   | CallValue
   | ContractExistsValue

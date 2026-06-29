@@ -107,6 +107,8 @@ class ValueResolver {
                 return this.resolveReadBalance(resolvedArgs, context);
             case 'get-storage-at':
                 return this.resolveGetStorageAt(resolvedArgs, context);
+            case 'compute-slot':
+                return this.resolveComputeSlot(resolvedArgs);
             case 'basic-arithmetic':
                 return this.resolveBasicArithmetic(resolvedArgs);
             case 'call':
@@ -236,6 +238,82 @@ class ValueResolver {
         const slotValue = ethers_1.ethers.toBigInt(slot);
         const storageValue = await context.provider.getStorage(address, slotValue);
         return ethers_1.ethers.hexlify(storageValue);
+    }
+    resolveComputeSlot(args) {
+        if (!args || typeof args !== 'object' || typeof args.kind !== 'string') {
+            throw new Error('compute-slot: "kind" is required');
+        }
+        switch (args.kind) {
+            case 'mapping': {
+                const { slot, key, keyType } = args;
+                if (slot === undefined || slot === null) {
+                    throw new Error('compute-slot (mapping): "slot" is required');
+                }
+                if (key === undefined || key === null) {
+                    throw new Error('compute-slot (mapping): "key" is required');
+                }
+                const baseSlot = ethers_1.ethers.toBigInt(slot);
+                const type = keyType || 'uint256';
+                try {
+                    if (type === 'string' || type === 'bytes') {
+                        return ethers_1.ethers.solidityPackedKeccak256([type, 'uint256'], [key, baseSlot]);
+                    }
+                    const encoded = ethers_1.ethers.AbiCoder.defaultAbiCoder().encode([type, 'uint256'], [key, baseSlot]);
+                    return ethers_1.ethers.keccak256(encoded);
+                }
+                catch (error) {
+                    throw new Error(`compute-slot (mapping): failed to encode key as "${type}": ${error instanceof Error ? error.message : String(error)}`);
+                }
+            }
+            case 'dynamic-array': {
+                const { slot, index, elementSize } = args;
+                if (slot === undefined || slot === null) {
+                    throw new Error('compute-slot (dynamic-array): "slot" is required');
+                }
+                const baseSlot = ethers_1.ethers.toBigInt(slot);
+                const idx = index === undefined || index === null ? 0n : ethers_1.ethers.toBigInt(index);
+                const size = elementSize === undefined || elementSize === null ? 1n : ethers_1.ethers.toBigInt(elementSize);
+                const dataStart = ethers_1.ethers.toBigInt(ethers_1.ethers.keccak256(ethers_1.ethers.toBeHex(baseSlot, 32)));
+                return ethers_1.ethers.toBeHex(dataStart + idx * size, 32);
+            }
+            case 'struct-field': {
+                const { slot, offset } = args;
+                if (slot === undefined || slot === null) {
+                    throw new Error('compute-slot (struct-field): "slot" is required');
+                }
+                if (offset === undefined || offset === null) {
+                    throw new Error('compute-slot (struct-field): "offset" is required');
+                }
+                const result = ethers_1.ethers.toBigInt(slot) + ethers_1.ethers.toBigInt(offset);
+                return ethers_1.ethers.toBeHex(result, 32);
+            }
+            case 'erc7201': {
+                const { id } = args;
+                if (typeof id !== 'string' || id.length === 0) {
+                    throw new Error('compute-slot (erc7201): "id" must be a non-empty string');
+                }
+                const idHash = ethers_1.ethers.toBigInt(ethers_1.ethers.keccak256(ethers_1.ethers.toUtf8Bytes(id)));
+                const inner = ethers_1.ethers.keccak256(ethers_1.ethers.toBeHex(idHash - 1n, 32));
+                const mask = ((1n << 256n) - 1n) ^ 0xffn;
+                return ethers_1.ethers.toBeHex(ethers_1.ethers.toBigInt(inner) & mask, 32);
+            }
+            case 'eip1967': {
+                const labels = {
+                    implementation: 'eip1967.proxy.implementation',
+                    admin: 'eip1967.proxy.admin',
+                    beacon: 'eip1967.proxy.beacon',
+                };
+                const name = args.name;
+                const label = labels[name];
+                if (!label) {
+                    throw new Error(`compute-slot (eip1967): "name" must be one of implementation, admin, beacon (got "${name}")`);
+                }
+                const slot = ethers_1.ethers.toBigInt(ethers_1.ethers.keccak256(ethers_1.ethers.toUtf8Bytes(label))) - 1n;
+                return ethers_1.ethers.toBeHex(slot, 32);
+            }
+            default:
+                throw new Error(`compute-slot: unknown kind "${args.kind}"`);
+        }
     }
     resolveBasicArithmetic(args) {
         if (!args.values || args.values.length < 2) {
