@@ -6,4 +6,5 @@ export * from './actions';
 export * from './definitions';
 export * from './artifacts';
 export * from './buildinfo';
+export * from './source';
 //# sourceMappingURL=index.d.ts.map

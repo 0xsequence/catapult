@@ -1886,4 +1886,120 @@ describe('ExecutionEngine', () => {
       )
     })
   })
+
+  describe('skip_if behavior', () => {
+    it('should NOT post-check skip_if after job execution', async () => {
+      // This is the key semantic difference: skip_if is ONLY a pre-skip gate
+      // The pre-skip check for skip_if happens in the deployer, not in executeJob
+      // So executeJob runs normally without any post-check for skip_if
+      const jobWithSkipIf: Job = {
+        name: 'skip-if-job',
+        version: '1.0.0',
+        skip_if: [
+          { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }
+        ],
+        actions: [
+          {
+            name: 'generate-payload',
+            type: 'static',
+            arguments: { value: 'payload-data' }
+          }
+        ]
+      }
+
+      // Set context so skip_if would evaluate to false if checked
+      context.setOutput('should_skip', 0)
+
+      // This should succeed because skip_if is NOT post-checked in executeJob
+      // The job has no skip_condition, so no post-check happens
+      await expect(engine.executeJob(jobWithSkipIf, context)).resolves.not.toThrow()
+
+      // Action should have been executed
+      expect(context.getOutput('generate-payload.value')).toBe('payload-data')
+    })
+
+    it('should post-check skip_condition but NOT skip_if', async () => {
+      // Job with skip_condition - should post-check and fail
+      const jobWithSkipCondition: Job = {
+        name: 'skip-condition-job',
+        version: '1.0.0',
+        skip_condition: [
+          { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{converged}}', 1] } }
+        ],
+        actions: [
+          {
+            name: 'do-work',
+            type: 'static',
+            arguments: { value: 'work-done' }
+          }
+        ]
+      }
+
+      // Pre-execution: skip_condition is false (0) -> job runs
+      context.setOutput('converged', 0)
+
+      // Post-execution: skip_condition is STILL false -> should FAIL
+      // The post-check re-evaluates skip_condition and throws if not true
+      await expect(engine.executeJob(jobWithSkipCondition, context)).rejects.toThrow('failed post-execution check')
+    })
+
+    it('should not post-check skip_if (only skip_condition is post-checked)', async () => {
+      // Job with only skip_if - no post-check should happen
+      const jobWithOnlySkipIf: Job = {
+        name: 'skip-if-only-job',
+        version: '1.0.0',
+        skip_if: [
+          { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }
+        ],
+        actions: [
+          {
+            name: 'generate-artifact',
+            type: 'static',
+            arguments: { value: 'artifact-data' }
+          }
+        ]
+      }
+
+      // Set context so skip_if would be true if checked post-execution
+      context.setOutput('should_skip', 1)
+
+      // But since skip_if is NOT post-checked (only skip_condition is),
+      // and the job has no skip_condition, no post-check happens
+      await expect(engine.executeJob(jobWithOnlySkipIf, context)).resolves.not.toThrow()
+
+      // Action should have been executed
+      expect(context.getOutput('generate-artifact.value')).toBe('artifact-data')
+    })
+
+    it('should post-check skip_condition when both skip_if and skip_condition are present', async () => {
+      // Job with BOTH skip_if and skip_condition
+      // skip_if is only pre-checked (in deployer)
+      // skip_condition is both pre-checked and post-checked
+      const jobWithBoth: Job = {
+        name: 'both-conditions-job',
+        version: '1.0.0',
+        skip_condition: [
+          { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{converged}}', 1] } }
+        ],
+        skip_if: [
+          { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }
+        ],
+        actions: [
+          {
+            name: 'do-work',
+            type: 'static',
+            arguments: { value: 'work-done' }
+          }
+        ]
+      }
+
+      // Pre-execution: both conditions are false -> job runs
+      context.setOutput('should_skip', 0)
+      context.setOutput('converged', 0)
+
+      // Post-execution: skip_condition is STILL false -> should FAIL
+      // skip_if is NOT post-checked
+      await expect(engine.executeJob(jobWithBoth, context)).rejects.toThrow('failed post-execution check')
+    })
+  })
 }) 

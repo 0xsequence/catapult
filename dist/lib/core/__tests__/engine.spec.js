@@ -1522,5 +1522,85 @@ describe('ExecutionEngine', () => {
             }));
         });
     });
+    describe('skip_if behavior', () => {
+        it('should NOT post-check skip_if after job execution', async () => {
+            const jobWithSkipIf = {
+                name: 'skip-if-job',
+                version: '1.0.0',
+                skip_if: [
+                    { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }
+                ],
+                actions: [
+                    {
+                        name: 'generate-payload',
+                        type: 'static',
+                        arguments: { value: 'payload-data' }
+                    }
+                ]
+            };
+            context.setOutput('should_skip', 0);
+            await expect(engine.executeJob(jobWithSkipIf, context)).resolves.not.toThrow();
+            expect(context.getOutput('generate-payload.value')).toBe('payload-data');
+        });
+        it('should post-check skip_condition but NOT skip_if', async () => {
+            const jobWithSkipCondition = {
+                name: 'skip-condition-job',
+                version: '1.0.0',
+                skip_condition: [
+                    { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{converged}}', 1] } }
+                ],
+                actions: [
+                    {
+                        name: 'do-work',
+                        type: 'static',
+                        arguments: { value: 'work-done' }
+                    }
+                ]
+            };
+            context.setOutput('converged', 0);
+            await expect(engine.executeJob(jobWithSkipCondition, context)).rejects.toThrow('failed post-execution check');
+        });
+        it('should not post-check skip_if (only skip_condition is post-checked)', async () => {
+            const jobWithOnlySkipIf = {
+                name: 'skip-if-only-job',
+                version: '1.0.0',
+                skip_if: [
+                    { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }
+                ],
+                actions: [
+                    {
+                        name: 'generate-artifact',
+                        type: 'static',
+                        arguments: { value: 'artifact-data' }
+                    }
+                ]
+            };
+            context.setOutput('should_skip', 1);
+            await expect(engine.executeJob(jobWithOnlySkipIf, context)).resolves.not.toThrow();
+            expect(context.getOutput('generate-artifact.value')).toBe('artifact-data');
+        });
+        it('should post-check skip_condition when both skip_if and skip_condition are present', async () => {
+            const jobWithBoth = {
+                name: 'both-conditions-job',
+                version: '1.0.0',
+                skip_condition: [
+                    { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{converged}}', 1] } }
+                ],
+                skip_if: [
+                    { type: 'basic-arithmetic', arguments: { operation: 'eq', values: ['{{should_skip}}', 1] } }
+                ],
+                actions: [
+                    {
+                        name: 'do-work',
+                        type: 'static',
+                        arguments: { value: 'work-done' }
+                    }
+                ]
+            };
+            context.setOutput('should_skip', 0);
+            context.setOutput('converged', 0);
+            await expect(engine.executeJob(jobWithBoth, context)).rejects.toThrow('failed post-execution check');
+        });
+    });
 });
 //# sourceMappingURL=engine.spec.js.map

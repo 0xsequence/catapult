@@ -10,5 +10,8 @@ export * as parsers from './parsers'
 // Export the deployer
 export * from './deployer'
 
+// Export provenance helpers
+export * from './provenance'
+
 // This will be the main entry point for the lib
 // Additional functionality will be added here as the lib grows

@@ -55,6 +55,13 @@ export interface Job {
     /** Minimum EVM hardfork required to run this job (e.g. "london", "paris", "shanghai", "cancun") */
     min_evm_version?: string
     skip_condition?: Condition[];
+    /**
+     * Pure gate conditions: if ANY condition is true, the job is skipped BEFORE execution.
+     * Unlike skip_condition, these are NOT post-execution-checked. Use this for jobs that
+     * generate artifacts (e.g., Safe/multisig transaction payloads) and should skip when
+     * already in desired state, without requiring convergence within the run.
+     */
+    skip_if?: Condition[];
     constants?: Record<string, Value<any>>; // Optional job-level constants
     deprecated?: boolean; // Optional flag to mark the job as deprecated
     _path?: string; // Path to the job file for relative artifact resolution

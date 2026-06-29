@@ -18,4 +18,5 @@ __exportStar(require("./template"), exports);
 __exportStar(require("./job"), exports);
 __exportStar(require("./buildinfo"), exports);
 __exportStar(require("./constants"), exports);
+__exportStar(require("./source"), exports);
 //# sourceMappingURL=index.js.map

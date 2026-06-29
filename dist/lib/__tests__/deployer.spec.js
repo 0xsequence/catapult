@@ -1238,7 +1238,7 @@ describe('Deployer', () => {
             const jobAResult = results.get('job-a');
             expect(jobAResult).toBeDefined();
             expect(jobAResult.outputs.get(mockNetwork1.chainId).status).toBe('skipped');
-            expect(jobAResult.outputs.get(mockNetwork1.chainId).data).toContain('skipped due to skip condition');
+            expect(jobAResult.outputs.get(mockNetwork1.chainId).data).toContain('skip_condition');
             const jobBResult = results.get('job-b');
             expect(jobBResult).toBeDefined();
             expect(jobBResult.outputs.get(mockNetwork1.chainId).status).toBe('success');
@@ -1542,6 +1542,123 @@ describe('Deployer', () => {
                     keyContracts: []
                 })
             }));
+        });
+    });
+    describe('skip_if functionality', () => {
+        it('should skip job when skip_if condition is true', async () => {
+            const jobWithSkipIf = {
+                name: 'job-with-skip-if',
+                version: '1.0.0',
+                description: 'Job with skip_if condition',
+                skip_if: [{ type: 'contract-exists', arguments: { address: '0xabc' } }],
+                actions: [
+                    { name: 'action1', template: 'template1', arguments: {} }
+                ]
+            };
+            mockLoader.jobs.clear();
+            mockLoader.jobs.set('job-with-skip-if', jobWithSkipIf);
+            mockGraph.getExecutionOrder.mockReturnValue(['job-with-skip-if']);
+            mockEngine.evaluateSkipConditions = jest.fn().mockResolvedValue(true);
+            const deployer = new deployer_1.Deployer(deployerOptions);
+            await deployer.run();
+            const results = deployer.results;
+            const jobResult = results.get('job-with-skip-if');
+            expect(jobResult).toBeDefined();
+            expect(jobResult.outputs.get(mockNetwork1.chainId).status).toBe('skipped');
+            expect(jobResult.outputs.get(mockNetwork1.chainId).data).toContain('skip_if');
+            expect(mockEngine.executeJob).not.toHaveBeenCalled();
+        });
+        it('should run job when skip_if condition is false', async () => {
+            const jobWithSkipIf = {
+                name: 'job-with-skip-if-false',
+                version: '1.0.0',
+                description: 'Job with skip_if condition that is false',
+                skip_if: [{ type: 'contract-exists', arguments: { address: '0xabc' } }],
+                actions: [
+                    { name: 'action1', template: 'template1', arguments: {} }
+                ]
+            };
+            mockLoader.jobs.clear();
+            mockLoader.jobs.set('job-with-skip-if-false', jobWithSkipIf);
+            mockGraph.getExecutionOrder.mockReturnValue(['job-with-skip-if-false']);
+            mockEngine.evaluateSkipConditions = jest.fn().mockResolvedValue(false);
+            const deployer = new deployer_1.Deployer(deployerOptions);
+            await deployer.run();
+            const results = deployer.results;
+            const jobResult = results.get('job-with-skip-if-false');
+            expect(jobResult).toBeDefined();
+            expect(jobResult.outputs.get(mockNetwork1.chainId).status).toBe('success');
+            expect(mockEngine.executeJob).toHaveBeenCalledWith(jobWithSkipIf, expect.anything());
+        });
+        it('should skip job when skip_if OR skip_condition is true', async () => {
+            const jobWithBoth = {
+                name: 'job-with-both',
+                version: '1.0.0',
+                description: 'Job with both skip_if and skip_condition',
+                skip_condition: [{ type: 'contract-exists', arguments: { address: '0xabc' } }],
+                skip_if: [{ type: 'job-completed', arguments: { job: 'other-job' } }],
+                actions: [
+                    { name: 'action1', template: 'template1', arguments: {} }
+                ]
+            };
+            mockLoader.jobs.clear();
+            mockLoader.jobs.set('job-with-both', jobWithBoth);
+            mockGraph.getExecutionOrder.mockReturnValue(['job-with-both']);
+            mockEngine.evaluateSkipConditions = jest.fn().mockResolvedValue(true);
+            const deployer = new deployer_1.Deployer(deployerOptions);
+            await deployer.run();
+            const results = deployer.results;
+            const jobResult = results.get('job-with-both');
+            expect(jobResult).toBeDefined();
+            expect(jobResult.outputs.get(mockNetwork1.chainId).status).toBe('skipped');
+            expect(mockEngine.executeJob).not.toHaveBeenCalled();
+        });
+        it('should NOT post-check skip_if after execution (only skip_condition is post-checked)', async () => {
+            const jobWithSkipIfOnly = {
+                name: 'job-skip-if-only',
+                version: '1.0.0',
+                description: 'Job with skip_if that remains false after execution',
+                only_networks: [1],
+                skip_if: [{ type: 'contract-exists', arguments: { address: '0xabc' } }],
+                actions: [
+                    { name: 'action1', template: 'template1', arguments: {} }
+                ]
+            };
+            mockLoader.jobs.clear();
+            mockLoader.jobs.set('job-skip-if-only', jobWithSkipIfOnly);
+            mockGraph.getExecutionOrder.mockReturnValue(['job-skip-if-only']);
+            mockEngine.evaluateSkipConditions = jest.fn().mockResolvedValue(false);
+            mockEngine.executeJob = jest.fn().mockResolvedValue(undefined);
+            const deployer = new deployer_1.Deployer(deployerOptions);
+            await deployer.run();
+            const results = deployer.results;
+            const jobResult = results.get('job-skip-if-only');
+            expect(jobResult).toBeDefined();
+            expect(jobResult.outputs.get(mockNetwork1.chainId).status).toBe('success');
+            expect(mockEngine.evaluateSkipConditions).toHaveBeenCalledTimes(1);
+            expect(mockEngine.executeJob).toHaveBeenCalledTimes(1);
+        });
+        it('should still post-check skip_condition (existing behavior unchanged)', async () => {
+            const jobWithSkipCondition = {
+                name: 'job-skip-condition',
+                version: '1.0.0',
+                description: 'Job with skip_condition',
+                skip_condition: [{ type: 'contract-exists', arguments: { address: '0xabc' } }],
+                actions: [
+                    { name: 'action1', template: 'template1', arguments: {} }
+                ]
+            };
+            mockLoader.jobs.clear();
+            mockLoader.jobs.set('job-skip-condition', jobWithSkipCondition);
+            mockGraph.getExecutionOrder.mockReturnValue(['job-skip-condition']);
+            mockEngine.evaluateSkipConditions = jest.fn().mockResolvedValue(false);
+            mockEngine.executeJob = jest.fn().mockResolvedValue(undefined);
+            const deployer = new deployer_1.Deployer(deployerOptions);
+            await deployer.run();
+            const results = deployer.results;
+            const jobResult = results.get('job-skip-condition');
+            expect(jobResult).toBeDefined();
+            expect(jobResult.outputs.get(mockNetwork1.chainId).status).toBe('success');
         });
     });
 });

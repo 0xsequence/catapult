@@ -8,6 +8,8 @@ import {
   ComputeCreateValue,
   ComputeCreate2Value,
   ReadBalanceValue,
+  GetStorageAtValue,
+  ComputeSlotValue,
   BasicArithmeticValue,
   CallValue,
   ContractExistsValue,
@@ -197,6 +199,10 @@ export class ValueResolver {
         return this.resolveComputeCreate2(resolvedArgs as ComputeCreate2Value['arguments'])
       case 'read-balance':
         return this.resolveReadBalance(resolvedArgs as ReadBalanceValue['arguments'], context)
+      case 'get-storage-at':
+        return this.resolveGetStorageAt(resolvedArgs as GetStorageAtValue['arguments'], context)
+      case 'compute-slot':
+        return this.resolveComputeSlot(resolvedArgs as ComputeSlotValue['arguments'])
       case 'basic-arithmetic':
         return this.resolveBasicArithmetic(resolvedArgs as BasicArithmeticValue['arguments'])
       case 'call':
@@ -373,6 +379,116 @@ export class ValueResolver {
 
     const balance = await context.provider.getBalance(addressValue)
     return balance.toString()
+  }
+
+  private async resolveGetStorageAt(args: GetStorageAtValue['arguments'], context: ExecutionContext): Promise<string> {
+    const { address, slot } = args
+
+    // Check if the address is a valid address
+    if (!isAddress(address)) {
+      throw new Error(`Invalid address: ${address}`)
+    }
+
+    // Normalize the slot to a BigInt
+    // After resolution, slot should be a string or number
+    const slotValue = ethers.toBigInt(slot as string | number)
+
+    const storageValue = await context.provider.getStorage(address, slotValue)
+    // getStorage returns a hex string, ensure it's 32 bytes (64 hex chars + 0x)
+    return ethers.hexlify(storageValue)
+  }
+
+  /**
+   * Computes EVM storage slots for the common Solidity storage layouts.
+   * Always returns a 32-byte, 0x-prefixed lowercase hex string so the result can
+   * be fed straight into `get-storage-at` or nested as the `slot` of another
+   * `compute-slot` (e.g. nested mappings, structs inside mappings, ...).
+   */
+  private resolveComputeSlot(args: ComputeSlotValue['arguments']): string {
+    if (!args || typeof args !== 'object' || typeof (args as any).kind !== 'string') {
+      throw new Error('compute-slot: "kind" is required')
+    }
+
+    switch (args.kind) {
+      case 'mapping': {
+        const { slot, key, keyType } = args
+        if (slot === undefined || slot === null) {
+          throw new Error('compute-slot (mapping): "slot" is required')
+        }
+        if (key === undefined || key === null) {
+          throw new Error('compute-slot (mapping): "key" is required')
+        }
+        const baseSlot = ethers.toBigInt(slot as string | number)
+        const type = (keyType as string) || 'uint256'
+        try {
+          // mapping value slot = keccak256(h(key) . p)
+          // Dynamic key types (string/bytes) are packed; value types are ABI-encoded (left-padded to 32 bytes).
+          if (type === 'string' || type === 'bytes') {
+            return ethers.solidityPackedKeccak256([type, 'uint256'], [key, baseSlot])
+          }
+          const encoded = ethers.AbiCoder.defaultAbiCoder().encode([type, 'uint256'], [key, baseSlot])
+          return ethers.keccak256(encoded)
+        } catch (error) {
+          throw new Error(`compute-slot (mapping): failed to encode key as "${type}": ${error instanceof Error ? error.message : String(error)}`)
+        }
+      }
+
+      case 'dynamic-array': {
+        const { slot, index, elementSize } = args
+        if (slot === undefined || slot === null) {
+          throw new Error('compute-slot (dynamic-array): "slot" is required')
+        }
+        const baseSlot = ethers.toBigInt(slot as string | number)
+        const idx = index === undefined || index === null ? 0n : ethers.toBigInt(index as string | number)
+        const size = elementSize === undefined || elementSize === null ? 1n : ethers.toBigInt(elementSize as string | number)
+        // element slot = keccak256(slot) + index * elementSize
+        const dataStart = ethers.toBigInt(ethers.keccak256(ethers.toBeHex(baseSlot, 32)))
+        return ethers.toBeHex(dataStart + idx * size, 32)
+      }
+
+      case 'struct-field': {
+        const { slot, offset } = args
+        if (slot === undefined || slot === null) {
+          throw new Error('compute-slot (struct-field): "slot" is required')
+        }
+        if (offset === undefined || offset === null) {
+          throw new Error('compute-slot (struct-field): "offset" is required')
+        }
+        const result = ethers.toBigInt(slot as string | number) + ethers.toBigInt(offset as string | number)
+        return ethers.toBeHex(result, 32)
+      }
+
+      case 'erc7201': {
+        const { id } = args
+        if (typeof id !== 'string' || id.length === 0) {
+          throw new Error('compute-slot (erc7201): "id" must be a non-empty string')
+        }
+        // keccak256(abi.encode(uint256(keccak256(id)) - 1)) & ~bytes32(uint256(0xff))
+        const idHash = ethers.toBigInt(ethers.keccak256(ethers.toUtf8Bytes(id)))
+        const inner = ethers.keccak256(ethers.toBeHex(idHash - 1n, 32))
+        const mask = ((1n << 256n) - 1n) ^ 0xffn
+        return ethers.toBeHex(ethers.toBigInt(inner) & mask, 32)
+      }
+
+      case 'eip1967': {
+        const labels: Record<string, string> = {
+          implementation: 'eip1967.proxy.implementation',
+          admin: 'eip1967.proxy.admin',
+          beacon: 'eip1967.proxy.beacon',
+        }
+        const name = args.name as string
+        const label = labels[name]
+        if (!label) {
+          throw new Error(`compute-slot (eip1967): "name" must be one of implementation, admin, beacon (got "${name}")`)
+        }
+        // slot = keccak256("eip1967.proxy.<name>") - 1
+        const slot = ethers.toBigInt(ethers.keccak256(ethers.toUtf8Bytes(label))) - 1n
+        return ethers.toBeHex(slot, 32)
+      }
+
+      default:
+        throw new Error(`compute-slot: unknown kind "${(args as any).kind}"`)
+    }
   }
 
   private resolveBasicArithmetic(args: BasicArithmeticValue['arguments']): string | boolean {

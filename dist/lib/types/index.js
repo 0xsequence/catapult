@@ -22,4 +22,5 @@ __exportStar(require("./actions"), exports);
 __exportStar(require("./definitions"), exports);
 __exportStar(require("./artifacts"), exports);
 __exportStar(require("./buildinfo"), exports);
+__exportStar(require("./source"), exports);
 //# sourceMappingURL=index.js.map

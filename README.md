@@ -513,6 +513,22 @@ catapult etherscan source -n 1 -a 0xdAC17F958D2ee523a2206206994597C13D831ec7 --e
 catapult etherscan source -n mainnet -a 0xdAC17F... --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
+Source provenance helpers:
+
+```bash
+# Verify every source.yaml provenance entry in the project
+catapult provenance verify
+
+# Verify only one job's provenance entries
+catapult provenance verify my-job
+
+# Verify a job and the jobs it depends on
+catapult provenance verify my-job --include-dependencies
+
+# Generate missing build-info JSON files from source.yaml provenance
+catapult provenance generate
+```
+
 ## Built-in Actions
 
 Catapult provides several built-in primitive actions:
@@ -710,6 +726,99 @@ result:
     values: []
 ```
 
+### `get-storage-at`
+Read a raw EVM storage slot via `eth_getStorageAt`:
+
+```yaml
+storageValue:
+  type: "get-storage-at"
+  arguments:
+    address: "{{contract.address}}"
+    slot: "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"  # EIP-1967 implementation slot
+```
+
+The slot can be a hex string, a number, or a reference to another value. Returns the 32-byte storage value as a hex string.
+
+### `compute-slot`
+Compute EVM storage slots for the common Solidity storage layouts. The result is always a 32-byte, `0x`-prefixed hex string, so it can be fed directly into `get-storage-at` or nested as the `slot` of another `compute-slot` (e.g. for nested mappings). Select a layout with `kind`:
+
+**`mapping`** — value slot of `mapping[key]` (`keccak256(h(key) . slot)`):
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "mapping"
+    slot: 0                 # declaration slot of the mapping
+    key: "{{owner}}"
+    keyType: "address"      # optional, default "uint256"; "string"/"bytes" keys are packed
+```
+
+Nested mappings (`balances[a][b]`) are expressed by nesting `compute-slot` in the `slot` field:
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "mapping"
+    key: "{{spender}}"
+    keyType: "address"
+    slot:
+      type: "compute-slot"
+      arguments:
+        kind: "mapping"
+        slot: 1
+        key: "{{owner}}"
+        keyType: "address"
+```
+
+**`dynamic-array`** — element slot of a dynamic array (`keccak256(slot) + index * elementSize`). The array length lives at `slot` itself:
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "dynamic-array"
+    slot: 3
+    index: 4            # optional, default 0
+    elementSize: 1      # optional slots-per-element, default 1
+```
+
+**`struct-field`** — a struct field or fixed-array element (`slot + offset`):
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "struct-field"
+    slot: "{{structBase}}"
+    offset: 2
+```
+
+**`erc7201`** — ERC-7201 namespaced storage root (`keccak256(abi.encode(uint256(keccak256(id)) - 1)) & ~0xff`):
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "erc7201"
+    id: "openzeppelin.storage.Ownable"
+```
+
+**`eip1967`** — well-known EIP-1967 proxy slot (`keccak256("eip1967.proxy.<name>") - 1`), where `name` is `implementation`, `admin`, or `beacon`:
+
+```yaml
+implementation:
+  type: "get-storage-at"
+  arguments:
+    address: "{{proxy.address}}"
+    slot:
+      type: "compute-slot"
+      arguments:
+        kind: "eip1967"
+        name: "implementation"
+```
+
 ### `verify-contract`
 ### `read-json`
 Read a value from a JSON object at a given path:
@@ -789,6 +898,53 @@ skip_condition:
       job: "prerequisite-job"
 ```
 
+### `skip_if` (pure gate, no post-execution check)
+
+In addition to `skip_condition`, jobs support a `skip_if` field for **pure gate** semantics:
+
+- Evaluated ONCE, BEFORE the job runs (the pre-skip decision)
+- If ANY condition in `skip_if` is true → skip the whole job (status `skipped`)
+- **NEVER** post-execution-checked (this is the key difference from `skip_condition`)
+
+Use `skip_if` for jobs that generate artifacts (e.g., Safe/multisig transaction payloads for human execution out-of-band) and should skip when already in the desired state, without requiring convergence within the run itself.
+
+```yaml
+name: "generate-upgrade-payload"
+version: "1.0.0"
+skip_if:
+  - type: "contract-exists"
+    arguments:
+      address: "{{computed_upgrade_address}}"
+actions:
+  - name: "generate"
+    type: "static"
+    arguments:
+      value: "upgrade-payload-data"
+```
+
+**Combining `skip_condition` and `skip_if`:**
+
+If both are present, the job is skipped if ANY condition in either array is true at pre-skip time. Only `skip_condition` is post-execution-checked.
+
+```yaml
+name: "hybrid-job"
+version: "1.0.0"
+skip_condition:
+  - type: "contract-exists"
+    arguments:
+      address: "{{deployed_address}}"
+skip_if:
+  - type: "job-completed"
+    arguments:
+      job: "setup-job"
+actions:
+  - name: "deploy"
+    template: "erc-2470"
+    arguments:
+      creationCode: "{{Contract(MyContract).creationCode}}"
+      salt: "0"
+```
+
 ## Standard Templates
 
 Catapult includes several standard templates:
@@ -817,6 +973,65 @@ Reference contracts in your YAML using the new unified Contract() syntax:
 creationCode: "{{Contract(path/to/MyContract).creationCode}}"
 # or
 creationCode: "{{Contract(0x1234...hash).creationCode}}"
+```
+
+Build-info files can carry optional source provenance through a nearby `source.yaml`
+sidecar. Deployment runs still use committed artifacts; Catapult does not rebuild
+from the source repository during `catapult run`.
+
+```text
+jobs/my-stack/build-info/rc-5/
+├── stage1.json
+└── source.yaml
+```
+
+```yaml
+type: source
+
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+    ref: "v3.0.0-rc.5"
+    commit: "0d9061f229da73edae890e6fdd1fbf753028df6d"
+    build: "forge build --build-info"
+```
+
+Catapult can use the same provenance to rebuild and compare build-info files on
+demand:
+
+```bash
+# Rebuild each source provenance entry and compare it with the committed file
+catapult provenance verify
+
+# Scope to one job, or include that job's dependencies
+catapult provenance verify my-job
+catapult provenance verify my-job --include-dependencies
+
+# Clone/build from provenance and write missing build-info files
+catapult provenance generate
+catapult provenance generate my-job --include-dependencies
+```
+
+`provenance generate` skips existing build-info files by default; pass `--force`
+to overwrite them. Both commands clone the configured `repo`, check out `ref` or
+`commit`, run the `build` command in that checkout, and look for generated
+`build-info/*.json` files. If the build produces more than one build-info file,
+Catapult selects by matching the committed build-info `id`, then by filename; if
+neither is unique, the entry fails with an ambiguity error.
+
+If a build-info file needs a per-contract override, key it by fully-qualified
+contract name:
+
+```yaml
+type: source
+
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+    commit: "0d9061f229da73edae890e6fdd1fbf753028df6d"
+    contracts:
+      "src/Stage1Module.sol:Stage1Module":
+        ref: "stage1-special"
 ```
 
 ## Output Format
