@@ -1678,5 +1678,184 @@ describe('ValueResolver', () => {
             expect(result).toBe('0x010203');
         });
     });
+    describe('get-storage-at', () => {
+        const testAddress = '0x1234567890123456789012345678901234567890';
+        const testSlot = '0x0000000000000000000000000000000000000000000000000000000000000000';
+        const testSlotNumber = 0;
+        const expectedStorageValue = '0x0000000000000000000000000000000000000000000000000000000000000001';
+        let anvilProvider;
+        beforeEach(async () => {
+            anvilProvider = context.provider;
+        });
+        it('should read storage slot with hex string slot', async () => {
+            await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue]);
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: testAddress,
+                    slot: testSlot
+                },
+            };
+            const result = await resolver.resolve(value, context);
+            expect(result).toBe(expectedStorageValue);
+        });
+        it('should read storage slot with numeric slot', async () => {
+            await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue]);
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: testAddress,
+                    slot: testSlotNumber
+                },
+            };
+            const result = await resolver.resolve(value, context);
+            expect(result).toBe(expectedStorageValue);
+        });
+        it('should read storage slot with string number slot', async () => {
+            await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue]);
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: testAddress,
+                    slot: '0'
+                },
+            };
+            const result = await resolver.resolve(value, context);
+            expect(result).toBe(expectedStorageValue);
+        });
+        it('should read different storage slots', async () => {
+            const slot1 = '0x0000000000000000000000000000000000000000000000000000000000000000';
+            const slot2 = '0x0000000000000000000000000000000000000000000000000000000000000001';
+            const value1 = '0x00000000000000000000000000000000000000000000000000000000000000aa';
+            const value2 = '0x00000000000000000000000000000000000000000000000000000000000000bb';
+            await anvilProvider.send('anvil_setStorageAt', [testAddress, slot1, value1]);
+            await anvilProvider.send('anvil_setStorageAt', [testAddress, slot2, value2]);
+            const valueForSlot1 = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: testAddress,
+                    slot: slot1
+                },
+            };
+            const valueForSlot2 = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: testAddress,
+                    slot: slot2
+                },
+            };
+            const result1 = await resolver.resolve(valueForSlot1, context);
+            const result2 = await resolver.resolve(valueForSlot2, context);
+            expect(result1).toBe(value1);
+            expect(result2).toBe(value2);
+        });
+        it('should resolve address from context variable', async () => {
+            context.setOutput('myAddress', testAddress);
+            await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue]);
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: '{{myAddress}}',
+                    slot: testSlot
+                },
+            };
+            const result = await resolver.resolve(value, context);
+            expect(result).toBe(expectedStorageValue);
+        });
+        it('should resolve slot from context variable', async () => {
+            context.setOutput('mySlot', testSlot);
+            await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue]);
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: testAddress,
+                    slot: '{{mySlot}}'
+                },
+            };
+            const result = await resolver.resolve(value, context);
+            expect(result).toBe(expectedStorageValue);
+        });
+        it('should return zero storage for non-existent slot', async () => {
+            const nonExistentSlot = '0x000000000000000000000000000000000000000000000000000000000000ffff';
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: testAddress,
+                    slot: nonExistentSlot
+                },
+            };
+            const result = await resolver.resolve(value, context);
+            expect(result).toBe('0x0000000000000000000000000000000000000000000000000000000000000000');
+        });
+        it('should throw error for invalid address', async () => {
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: 'invalid-address',
+                    slot: testSlot
+                },
+            };
+            await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid address: invalid-address');
+        });
+        it('should throw error for null address', async () => {
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: null,
+                    slot: testSlot
+                },
+            };
+            await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid address: null');
+        });
+        it('should throw error for undefined address', async () => {
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: undefined,
+                    slot: testSlot
+                },
+            };
+            await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid address: undefined');
+        });
+        it('should handle checksummed addresses', async () => {
+            const checksummedAddress = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed';
+            await anvilProvider.send('anvil_setStorageAt', [checksummedAddress, testSlot, expectedStorageValue]);
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: checksummedAddress,
+                    slot: testSlot
+                },
+            };
+            const result = await resolver.resolve(value, context);
+            expect(result).toBe(expectedStorageValue);
+        });
+        it('should handle lowercase addresses', async () => {
+            const lowercaseAddress = testAddress.toLowerCase();
+            await anvilProvider.send('anvil_setStorageAt', [lowercaseAddress, testSlot, expectedStorageValue]);
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: lowercaseAddress,
+                    slot: testSlot
+                },
+            };
+            const result = await resolver.resolve(value, context);
+            expect(result).toBe(expectedStorageValue);
+        });
+        it('should handle large slot numbers', async () => {
+            const eip1967Slot = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
+            await anvilProvider.send('anvil_setStorageAt', [testAddress, eip1967Slot, expectedStorageValue]);
+            const value = {
+                type: 'get-storage-at',
+                arguments: {
+                    address: testAddress,
+                    slot: eip1967Slot
+                },
+            };
+            const result = await resolver.resolve(value, context);
+            expect(result).toBe(expectedStorageValue);
+        });
+    });
 });
 //# sourceMappingURL=resolver.spec.js.map

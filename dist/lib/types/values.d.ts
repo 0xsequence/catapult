@@ -42,6 +42,13 @@ export interface ReadBalanceValue {
         address: AddressValue;
     };
 }
+export interface GetStorageAtValue {
+    type: 'get-storage-at';
+    arguments: {
+        address: AddressValue;
+        slot: Value<string | number>;
+    };
+}
 export interface BasicArithmeticValue {
     type: 'basic-arithmetic';
     arguments: {
@@ -95,7 +102,7 @@ export interface SliceBytesValue {
         range?: Value<string>;
     };
 }
-export type ValueResolver = AbiEncodeValue | AbiPackValue | ConstructorEncodeValue | ComputeCreateValue | ComputeCreate2Value | ReadBalanceValue | BasicArithmeticValue | CallValue | ContractExistsValue | JobCompletedValue | ReadJsonValue | ResolveJsonValue | ValueEmptyValue | SliceBytesValue;
+export type ValueResolver = AbiEncodeValue | AbiPackValue | ConstructorEncodeValue | ComputeCreateValue | ComputeCreate2Value | ReadBalanceValue | GetStorageAtValue | BasicArithmeticValue | CallValue | ContractExistsValue | JobCompletedValue | ReadJsonValue | ResolveJsonValue | ValueEmptyValue | SliceBytesValue;
 export type Value<T = string | number | boolean> = T | Reference | ValueResolver;
 export type BytesValue = Value<string>;
 export type AddressValue = Value<string>;

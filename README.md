@@ -676,6 +676,19 @@ result:
     values: []
 ```
 
+### `get-storage-at`
+Read a raw EVM storage slot via `eth_getStorageAt`:
+
+```yaml
+storageValue:
+  type: "get-storage-at"
+  arguments:
+    address: "{{contract.address}}"
+    slot: "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"  # EIP-1967 implementation slot
+```
+
+The slot can be a hex string, a number, or a reference to another value. Returns the 32-byte storage value as a hex string.
+
 ### `verify-contract`
 ### `read-json`
 Read a value from a JSON object at a given path:

@@ -8,6 +8,7 @@ import {
   ComputeCreateValue,
   ComputeCreate2Value,
   ReadBalanceValue,
+  GetStorageAtValue,
   BasicArithmeticValue,
   CallValue,
   ContractExistsValue,
@@ -197,6 +198,8 @@ export class ValueResolver {
         return this.resolveComputeCreate2(resolvedArgs as ComputeCreate2Value['arguments'])
       case 'read-balance':
         return this.resolveReadBalance(resolvedArgs as ReadBalanceValue['arguments'], context)
+      case 'get-storage-at':
+        return this.resolveGetStorageAt(resolvedArgs as GetStorageAtValue['arguments'], context)
       case 'basic-arithmetic':
         return this.resolveBasicArithmetic(resolvedArgs as BasicArithmeticValue['arguments'])
       case 'call':
@@ -373,6 +376,23 @@ export class ValueResolver {
 
     const balance = await context.provider.getBalance(addressValue)
     return balance.toString()
+  }
+
+  private async resolveGetStorageAt(args: GetStorageAtValue['arguments'], context: ExecutionContext): Promise<string> {
+    const { address, slot } = args
+
+    // Check if the address is a valid address
+    if (!isAddress(address)) {
+      throw new Error(`Invalid address: ${address}`)
+    }
+
+    // Normalize the slot to a BigInt
+    // After resolution, slot should be a string or number
+    const slotValue = ethers.toBigInt(slot as string | number)
+
+    const storageValue = await context.provider.getStorage(address, slotValue)
+    // getStorage returns a hex string, ensure it's 32 bytes (64 hex chars + 0x)
+    return ethers.hexlify(storageValue)
   }
 
   private resolveBasicArithmetic(args: BasicArithmeticValue['arguments']): string | boolean {

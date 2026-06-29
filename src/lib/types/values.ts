@@ -56,6 +56,14 @@ export interface ReadBalanceValue {
   };
 }
 
+export interface GetStorageAtValue {
+  type: 'get-storage-at';
+  arguments: {
+    address: AddressValue;
+    slot: Value<string | number>;
+  };
+}
+
 export interface BasicArithmeticValue {
   type: 'basic-arithmetic';
   arguments: {
@@ -127,6 +135,7 @@ export type ValueResolver =
   | ComputeCreateValue
   | ComputeCreate2Value
   | ReadBalanceValue
+  | GetStorageAtValue
   | BasicArithmeticValue
   | CallValue
   | ContractExistsValue

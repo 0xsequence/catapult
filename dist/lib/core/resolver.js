@@ -105,6 +105,8 @@ class ValueResolver {
                 return this.resolveComputeCreate2(resolvedArgs);
             case 'read-balance':
                 return this.resolveReadBalance(resolvedArgs, context);
+            case 'get-storage-at':
+                return this.resolveGetStorageAt(resolvedArgs, context);
             case 'basic-arithmetic':
                 return this.resolveBasicArithmetic(resolvedArgs);
             case 'call':
@@ -225,6 +227,15 @@ class ValueResolver {
         }
         const balance = await context.provider.getBalance(addressValue);
         return balance.toString();
+    }
+    async resolveGetStorageAt(args, context) {
+        const { address, slot } = args;
+        if (!(0, assertion_1.isAddress)(address)) {
+            throw new Error(`Invalid address: ${address}`);
+        }
+        const slotValue = ethers_1.ethers.toBigInt(slot);
+        const storageValue = await context.provider.getStorage(address, slotValue);
+        return ethers_1.ethers.hexlify(storageValue);
     }
     resolveBasicArithmetic(args) {
         if (!args.values || args.values.length < 2) {
