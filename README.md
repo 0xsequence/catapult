@@ -676,6 +676,99 @@ result:
     values: []
 ```
 
+### `get-storage-at`
+Read a raw EVM storage slot via `eth_getStorageAt`:
+
+```yaml
+storageValue:
+  type: "get-storage-at"
+  arguments:
+    address: "{{contract.address}}"
+    slot: "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"  # EIP-1967 implementation slot
+```
+
+The slot can be a hex string, a number, or a reference to another value. Returns the 32-byte storage value as a hex string.
+
+### `compute-slot`
+Compute EVM storage slots for the common Solidity storage layouts. The result is always a 32-byte, `0x`-prefixed hex string, so it can be fed directly into `get-storage-at` or nested as the `slot` of another `compute-slot` (e.g. for nested mappings). Select a layout with `kind`:
+
+**`mapping`** — value slot of `mapping[key]` (`keccak256(h(key) . slot)`):
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "mapping"
+    slot: 0                 # declaration slot of the mapping
+    key: "{{owner}}"
+    keyType: "address"      # optional, default "uint256"; "string"/"bytes" keys are packed
+```
+
+Nested mappings (`balances[a][b]`) are expressed by nesting `compute-slot` in the `slot` field:
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "mapping"
+    key: "{{spender}}"
+    keyType: "address"
+    slot:
+      type: "compute-slot"
+      arguments:
+        kind: "mapping"
+        slot: 1
+        key: "{{owner}}"
+        keyType: "address"
+```
+
+**`dynamic-array`** — element slot of a dynamic array (`keccak256(slot) + index * elementSize`). The array length lives at `slot` itself:
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "dynamic-array"
+    slot: 3
+    index: 4            # optional, default 0
+    elementSize: 1      # optional slots-per-element, default 1
+```
+
+**`struct-field`** — a struct field or fixed-array element (`slot + offset`):
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "struct-field"
+    slot: "{{structBase}}"
+    offset: 2
+```
+
+**`erc7201`** — ERC-7201 namespaced storage root (`keccak256(abi.encode(uint256(keccak256(id)) - 1)) & ~0xff`):
+
+```yaml
+slot:
+  type: "compute-slot"
+  arguments:
+    kind: "erc7201"
+    id: "openzeppelin.storage.Ownable"
+```
+
+**`eip1967`** — well-known EIP-1967 proxy slot (`keccak256("eip1967.proxy.<name>") - 1`), where `name` is `implementation`, `admin`, or `beacon`:
+
+```yaml
+implementation:
+  type: "get-storage-at"
+  arguments:
+    address: "{{proxy.address}}"
+    slot:
+      type: "compute-slot"
+      arguments:
+        kind: "eip1967"
+        name: "implementation"
+```
+
 ### `verify-contract`
 ### `read-json`
 Read a value from a JSON object at a given path:

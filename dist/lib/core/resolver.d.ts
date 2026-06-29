@@ -11,6 +11,8 @@ export declare class ValueResolver {
     private resolveComputeCreate;
     private resolveComputeCreate2;
     private resolveReadBalance;
+    private resolveGetStorageAt;
+    private resolveComputeSlot;
     private resolveBasicArithmetic;
     private valuesEqual;
     private resolveCall;
