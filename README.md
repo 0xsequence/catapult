@@ -513,6 +513,22 @@ catapult etherscan source -n 1 -a 0xdAC17F958D2ee523a2206206994597C13D831ec7 --e
 catapult etherscan source -n mainnet -a 0xdAC17F... --etherscan-api-key $ETHERSCAN_API_KEY
 ```
 
+Source provenance helpers:
+
+```bash
+# Verify every source.yaml provenance entry in the project
+catapult provenance verify
+
+# Verify only one job's provenance entries
+catapult provenance verify my-job
+
+# Verify a job and the jobs it depends on
+catapult provenance verify my-job --include-dependencies
+
+# Generate missing build-info JSON files from source.yaml provenance
+catapult provenance generate
+```
+
 ## Built-in Actions
 
 Catapult provides several built-in primitive actions:
@@ -786,8 +802,8 @@ creationCode: "{{Contract(0x1234...hash).creationCode}}"
 ```
 
 Build-info files can carry optional source provenance through a nearby `source.yaml`
-sidecar. The metadata is informational only; Catapult still deploys from committed
-artifacts and never rebuilds from the source repository during execution.
+sidecar. Deployment runs still use committed artifacts; Catapult does not rebuild
+from the source repository during `catapult run`.
 
 ```text
 jobs/my-stack/build-info/rc-5/
@@ -805,6 +821,29 @@ build_info:
     commit: "0d9061f229da73edae890e6fdd1fbf753028df6d"
     build: "forge build --build-info"
 ```
+
+Catapult can use the same provenance to rebuild and compare build-info files on
+demand:
+
+```bash
+# Rebuild each source provenance entry and compare it with the committed file
+catapult provenance verify
+
+# Scope to one job, or include that job's dependencies
+catapult provenance verify my-job
+catapult provenance verify my-job --include-dependencies
+
+# Clone/build from provenance and write missing build-info files
+catapult provenance generate
+catapult provenance generate my-job --include-dependencies
+```
+
+`provenance generate` skips existing build-info files by default; pass `--force`
+to overwrite them. Both commands clone the configured `repo`, check out `ref` or
+`commit`, run the `build` command in that checkout, and look for generated
+`build-info/*.json` files. If the build produces more than one build-info file,
+Catapult selects by matching the committed build-info `id`, then by filename; if
+neither is unique, the entry fails with an ambiguity error.
 
 If a build-info file needs a per-contract override, key it by fully-qualified
 contract name:

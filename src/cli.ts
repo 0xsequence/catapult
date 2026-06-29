@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { makeRunCommand, makeDryRunCommand, makeListCommand, makeUtilsCommand } from './commands'
+import { makeRunCommand, makeDryRunCommand, makeListCommand, makeUtilsCommand, makeProvenanceCommand } from './commands'
 import { makeEtherscanCommand } from './commands/etherscan'
 
 export function setupCommands(program: Command): void {
@@ -14,4 +14,5 @@ export function setupCommands(program: Command): void {
   program.addCommand(makeListCommand())
   program.addCommand(makeUtilsCommand())
   program.addCommand(makeEtherscanCommand())
+  program.addCommand(makeProvenanceCommand())
 }
