@@ -183,12 +183,29 @@ class Deployer {
                                 signerInfoPrintedForChain.add(network.chainId);
                             }
                         }
-                        if (job.skip_condition) {
-                            const shouldSkip = await engine.evaluateSkipConditions(job.skip_condition, context, new Map());
+                        const skipIfConditions = job.skip_if;
+                        const skipConditions = job.skip_condition;
+                        if (skipIfConditions || skipConditions) {
+                            let shouldSkip = false;
+                            let skipReason = 'skip_condition';
+                            if (skipIfConditions) {
+                                const skipIfResult = await engine.evaluateSkipConditions(skipIfConditions, context, new Map());
+                                if (skipIfResult) {
+                                    shouldSkip = true;
+                                    skipReason = 'skip_if';
+                                }
+                            }
+                            if (!shouldSkip && skipConditions) {
+                                const skipConditionResult = await engine.evaluateSkipConditions(skipConditions, context, new Map());
+                                if (skipConditionResult) {
+                                    shouldSkip = true;
+                                    skipReason = 'skip_condition';
+                                }
+                            }
                             if (shouldSkip) {
                                 this.results.get(job.name).outputs.set(network.chainId, {
                                     status: 'skipped',
-                                    data: `Job "${job.name}" skipped due to skip condition`
+                                    data: `Job "${job.name}" skipped due to ${skipReason}`
                                 });
                                 this.events.emitEvent({
                                     type: 'job_skipped',
@@ -196,7 +213,7 @@ class Deployer {
                                     data: {
                                         jobName: job.name,
                                         networkName: network.name,
-                                        reason: 'skip_condition'
+                                        reason: skipReason
                                     }
                                 });
                                 continue;

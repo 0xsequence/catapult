@@ -848,6 +848,53 @@ skip_condition:
       job: "prerequisite-job"
 ```
 
+### `skip_if` (pure gate, no post-execution check)
+
+In addition to `skip_condition`, jobs support a `skip_if` field for **pure gate** semantics:
+
+- Evaluated ONCE, BEFORE the job runs (the pre-skip decision)
+- If ANY condition in `skip_if` is true → skip the whole job (status `skipped`)
+- **NEVER** post-execution-checked (this is the key difference from `skip_condition`)
+
+Use `skip_if` for jobs that generate artifacts (e.g., Safe/multisig transaction payloads for human execution out-of-band) and should skip when already in the desired state, without requiring convergence within the run itself.
+
+```yaml
+name: "generate-upgrade-payload"
+version: "1.0.0"
+skip_if:
+  - type: "contract-exists"
+    arguments:
+      address: "{{computed_upgrade_address}}"
+actions:
+  - name: "generate"
+    type: "static"
+    arguments:
+      value: "upgrade-payload-data"
+```
+
+**Combining `skip_condition` and `skip_if`:**
+
+If both are present, the job is skipped if ANY condition in either array is true at pre-skip time. Only `skip_condition` is post-execution-checked.
+
+```yaml
+name: "hybrid-job"
+version: "1.0.0"
+skip_condition:
+  - type: "contract-exists"
+    arguments:
+      address: "{{deployed_address}}"
+skip_if:
+  - type: "job-completed"
+    arguments:
+      job: "setup-job"
+actions:
+  - name: "deploy"
+    template: "erc-2470"
+    arguments:
+      creationCode: "{{Contract(MyContract).creationCode}}"
+      salt: "0"
+```
+
 ## Standard Templates
 
 Catapult includes several standard templates:

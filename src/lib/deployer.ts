@@ -261,13 +261,37 @@ export class Deployer {
             }
 
             // Check job-level skip conditions before execution
-            if (job.skip_condition) {
-              const shouldSkip = await engine.evaluateSkipConditions(job.skip_condition, context, new Map())
+            // skip_if is a pure gate (no post-check), skip_condition has both pre-skip and post-check
+            const skipIfConditions = job.skip_if
+            const skipConditions = job.skip_condition
+            
+            if (skipIfConditions || skipConditions) {
+              // Evaluate skip_if first (pure gate)
+              let shouldSkip = false
+              let skipReason: string = 'skip_condition'
+              
+              if (skipIfConditions) {
+                const skipIfResult = await engine.evaluateSkipConditions(skipIfConditions, context, new Map())
+                if (skipIfResult) {
+                  shouldSkip = true
+                  skipReason = 'skip_if'
+                }
+              }
+              
+              // If not skipped by skip_if, check skip_condition
+              if (!shouldSkip && skipConditions) {
+                const skipConditionResult = await engine.evaluateSkipConditions(skipConditions, context, new Map())
+                if (skipConditionResult) {
+                  shouldSkip = true
+                  skipReason = 'skip_condition'
+                }
+              }
+              
               if (shouldSkip) {
                 // Store skipped result
                 this.results.get(job.name)!.outputs.set(network.chainId, {
                   status: 'skipped',
-                  data: `Job "${job.name}" skipped due to skip condition`
+                  data: `Job "${job.name}" skipped due to ${skipReason}`
                 })
 
                 this.events.emitEvent({
@@ -276,7 +300,7 @@ export class Deployer {
                   data: {
                     jobName: job.name,
                     networkName: network.name,
-                    reason: 'skip_condition'
+                    reason: skipReason
                   }
                 })
 

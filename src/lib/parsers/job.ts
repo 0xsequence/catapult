@@ -110,7 +110,7 @@ export function parseJob(yamlContent: string): Job {
     throw new Error(`Invalid job "${rawObject.name}": "min_evm_version" must be a string if provided.`)
   }
 
-  // --- Optional: validate job-level skip_condition and constants ---
+  // --- Optional: validate job-level skip_condition and skip_if ---
   if (rawObject.skip_condition !== undefined) {
     if (!Array.isArray(rawObject.skip_condition)) {
       throw new Error(`Invalid job "${rawObject.name}": "skip_condition" must be an array if provided.`)
@@ -118,6 +118,17 @@ export function parseJob(yamlContent: string): Job {
     for (const condition of rawObject.skip_condition) {
       if (!isCondition(condition)) {
         throw new Error(`Invalid job "${rawObject.name}": "skip_condition" contains an invalid condition entry.`)
+      }
+    }
+  }
+
+  if (rawObject.skip_if !== undefined) {
+    if (!Array.isArray(rawObject.skip_if)) {
+      throw new Error(`Invalid job "${rawObject.name}": "skip_if" must be an array if provided.`)
+    }
+    for (const condition of rawObject.skip_if) {
+      if (!isCondition(condition)) {
+        throw new Error(`Invalid job "${rawObject.name}": "skip_if" contains an invalid condition entry.`)
       }
     }
   }
@@ -141,6 +152,7 @@ export function parseJob(yamlContent: string): Job {
     min_evm_version: rawObject.min_evm_version,
     deprecated: rawObject.deprecated === true,
     skip_condition: rawObject.skip_condition as Condition[] | undefined,
+    skip_if: rawObject.skip_if as Condition[] | undefined,
     constants: rawObject.constants,
   }
 
