@@ -50,7 +50,9 @@ class ProjectLoader {
         this.contractRepository = new repository_1.ContractRepository();
     }
     async load() {
-        await this.contractRepository.loadFrom(this.projectRoot);
+        if (this.options.loadContracts !== false) {
+            await this.contractRepository.loadFrom(this.projectRoot);
+        }
         if (this.options.loadStdTemplates !== false) {
             const stdTemplatePath = path.resolve(__dirname, '..', 'std', 'templates');
             if (await this.pathExists(stdTemplatePath)) {
@@ -125,6 +127,9 @@ class ProjectLoader {
                     const template = (0, parsers_1.parseTemplate)(content);
                     template._path = filePath;
                     this.templates.set(template.name, template);
+                    continue;
+                }
+                if (raw && typeof raw === 'object' && (raw.type === 'source' || raw.type === 'constants')) {
                     continue;
                 }
                 const job = (0, parsers_1.parseJob)(content);

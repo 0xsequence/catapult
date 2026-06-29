@@ -2,23 +2,26 @@ import * as fs from 'fs/promises'
 import * as path from 'path'
 import { createHash } from 'crypto'
 import { Contract } from '../types/contracts'
+import { BuildInfoSourceProvenance, SourceProvenance } from '../types/source'
 import { parseArtifact } from '../parsers/artifact'
 import { parseBuildInfo, isBuildInfoFile } from '../parsers/buildinfo'
+import { mergeSourceProvenance, parseSourceDocument } from '../parsers/source'
 
 export class ContractRepository {
   private contracts: Map<string, Contract> = new Map()
   private referenceMap: Map<string, string[]> = new Map()
   private ambiguousReferences: Set<string> = new Set()
+  private sourceProvenanceByBuildInfoPath: Map<string, BuildInfoSourceProvenance> = new Map()
 
   /**
    * Main entry point that orchestrates the discovery and hydration process
    */
   public async loadFrom(projectRoot: string): Promise<void> {
-    // Step 1: Discover all .json files
-    const files = await this.findContractFiles(projectRoot)
+    const files = await this.findProjectFiles(projectRoot)
 
-    // Step 2: Parse and hydrate contracts from all discovered files
-    for (const filePath of files) {
+    await this.loadSourceProvenanceFiles(files.sourceFiles)
+
+    for (const filePath of files.contractFiles) {
       try {
         const content = await fs.readFile(filePath, 'utf-8')
         await this.parseAndHydrateFromFile(content, filePath)
@@ -27,7 +30,6 @@ export class ContractRepository {
       }
     }
 
-    // Step 3: Build reference maps and identify ambiguous references
     this.disambiguateReferences()
   }
 
@@ -40,6 +42,7 @@ export class ContractRepository {
       const extractedContracts = parseBuildInfo(content, filePath)
       if (extractedContracts) {
         for (const extracted of extractedContracts) {
+          const sourceProvenance = this.getSourceProvenance(filePath, extracted.fullyQualifiedName)
           this.hydrateContract({
             creationCode: extracted.bytecode,
             runtimeBytecode: extracted.deployedBytecode,
@@ -49,6 +52,7 @@ export class ContractRepository {
             source: extracted.source,
             compiler: extracted.compiler,
             buildInfoId: extracted.buildInfoId,
+            sourceProvenance,
           }, filePath)
         }
         return
@@ -82,6 +86,7 @@ export class ContractRepository {
     source?: string
     compiler?: any
     buildInfoId?: string
+    sourceProvenance?: SourceProvenance
   }, sourceFilePath: string): void {
     // Validate that we have creation code for hashing (but allow empty string)
     if (data.creationCode === null || data.creationCode === undefined) {
@@ -97,7 +102,8 @@ export class ContractRepository {
       contract = {
         uniqueHash,
         creationCode: data.creationCode,
-        _sources: new Set<string>()
+        _sources: new Set<string>(),
+        _sourceProvenance: new Map<string, SourceProvenance>()
       }
       this.contracts.set(uniqueHash, contract)
     }
@@ -130,6 +136,28 @@ export class ContractRepository {
     if (data.buildInfoId && !contract.buildInfoId) {
       contract.buildInfoId = data.buildInfoId
     }
+    if (data.sourceProvenance) {
+      if (!contract._sourceProvenance) {
+        contract._sourceProvenance = new Map<string, SourceProvenance>()
+      }
+      contract._sourceProvenance.set(sourceFilePath, data.sourceProvenance)
+
+      contract.sourceProvenance = this.selectPreferredSourceProvenance(contract._sourceProvenance)
+    }
+  }
+
+  private getSourceProvenance(buildInfoPath: string, fullyQualifiedName: string): SourceProvenance | undefined {
+    const provenance = this.sourceProvenanceByBuildInfoPath.get(buildInfoPath)
+    if (!provenance) {
+      return undefined
+    }
+
+    return mergeSourceProvenance(provenance, provenance.contracts?.[fullyQualifiedName])
+  }
+
+  private selectPreferredSourceProvenance(sourceProvenance: Map<string, SourceProvenance>): SourceProvenance | undefined {
+    const firstEntry = Array.from(sourceProvenance.entries()).sort(([a], [b]) => a.localeCompare(b))[0]
+    return firstEntry?.[1]
   }
 
   /**
@@ -269,6 +297,7 @@ export class ContractRepository {
     source?: string
     compiler?: any
     buildInfoId?: string
+    sourceProvenance?: SourceProvenance
     _path: string
     _hash: string
   }): void {
@@ -281,17 +310,21 @@ export class ContractRepository {
       source: contractData.source,
       compiler: contractData.compiler,
       buildInfoId: contractData.buildInfoId,
+      sourceProvenance: contractData.sourceProvenance,
     }, contractData._path)
 
     // For testing, immediately disambiguate references after adding
     this.disambiguateReferences()
   }
 
-  /**
-   * Recursively finds all files that might contain contracts (e.g., .json files)
-   */
-  private async findContractFiles(dir: string, ignoreDirs: Set<string> = new Set(['node_modules', 'dist', '.git', '.idea', '.vscode'])): Promise<string[]> {
-    let results: string[] = []
+  private async findProjectFiles(
+    dir: string,
+    ignoreDirs: Set<string> = new Set(['node_modules', 'dist', '.git', '.idea', '.vscode'])
+  ): Promise<{ contractFiles: string[]; sourceFiles: string[] }> {
+    const results: { contractFiles: string[]; sourceFiles: string[] } = {
+      contractFiles: [],
+      sourceFiles: []
+    }
     try {
       const list = await fs.readdir(dir, { withFileTypes: true })
 
@@ -299,15 +332,80 @@ export class ContractRepository {
         const fullPath = path.resolve(dir, dirent.name)
         if (dirent.isDirectory()) {
           if (!ignoreDirs.has(dirent.name)) {
-            results = results.concat(await this.findContractFiles(fullPath, ignoreDirs))
+            const childResults = await this.findProjectFiles(fullPath, ignoreDirs)
+            results.contractFiles.push(...childResults.contractFiles)
+            results.sourceFiles.push(...childResults.sourceFiles)
           }
         } else if (dirent.isFile() && dirent.name.endsWith('.json')) {
-          results.push(fullPath)
+          results.contractFiles.push(fullPath)
+        } else if (dirent.isFile() && (dirent.name === 'source.yaml' || dirent.name === 'source.yml')) {
+          results.sourceFiles.push(fullPath)
         }
       }
     } catch (err) {
       // Ignore errors from trying to read directories we don't have access to
     }
     return results
+  }
+
+  private async loadSourceProvenanceFiles(sourceFiles: string[]): Promise<void> {
+    this.sourceProvenanceByBuildInfoPath.clear()
+
+    for (const sourceFilePath of sourceFiles) {
+      let sourceDocument
+      try {
+        const content = await fs.readFile(sourceFilePath, 'utf-8')
+        sourceDocument = parseSourceDocument(content)
+      } catch (error) {
+        this.warnSourceProvenance(`Skipping source provenance file ${sourceFilePath}: ${error instanceof Error ? error.message : String(error)}`)
+        continue
+      }
+
+      if (!sourceDocument) {
+        continue
+      }
+
+      for (const warning of sourceDocument.warnings || []) {
+        this.warnSourceProvenance(`Skipping source provenance entry ${sourceFilePath}: ${warning}`)
+      }
+
+      const sourceDir = path.dirname(sourceFilePath)
+      for (const [buildInfoRef, provenance] of Object.entries(sourceDocument.build_info)) {
+        const buildInfoPath = path.resolve(sourceDir, buildInfoRef)
+        if (!isBuildInfoFile(buildInfoPath)) {
+          this.warnSourceProvenance(`Skipping source provenance entry ${sourceFilePath}: "${buildInfoRef}" does not point to a build-info JSON file.`)
+          continue
+        }
+
+        if (!await this.pathExists(buildInfoPath)) {
+          this.warnSourceProvenance(`Skipping source provenance entry ${sourceFilePath}: build-info file "${buildInfoRef}" does not exist.`)
+          continue
+        }
+
+        if (this.sourceProvenanceByBuildInfoPath.has(buildInfoPath)) {
+          this.warnSourceProvenance(`Skipping source provenance entry ${sourceFilePath}: duplicate provenance for build-info file "${buildInfoRef}".`)
+          continue
+        }
+
+        this.sourceProvenanceByBuildInfoPath.set(buildInfoPath, {
+          ...provenance,
+          sourceDocumentPath: sourceFilePath,
+          buildInfoPath
+        })
+      }
+    }
+  }
+
+  private async pathExists(filePath: string): Promise<boolean> {
+    try {
+      await fs.access(filePath)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  private warnSourceProvenance(message: string): void {
+    console.warn(message)
   }
 }

@@ -41,4 +41,5 @@ __exportStar(require("./types"), exports);
 __exportStar(require("./contracts/repository"), exports);
 exports.parsers = __importStar(require("./parsers"));
 __exportStar(require("./deployer"), exports);
+__exportStar(require("./provenance"), exports);
 //# sourceMappingURL=index.js.map

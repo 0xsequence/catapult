@@ -150,6 +150,35 @@ actions: []`;
             expect(loader.jobs.size).toBe(1);
             expect(loader.jobs.has('valid-job')).toBe(true);
         });
+        it('should skip known non-job YAML documents under jobs without warning', async () => {
+            const jobsDir = path.join(tempDir, 'jobs');
+            const buildInfoDir = path.join(jobsDir, 'stack', 'build-info', 'rc-5');
+            await fs.mkdir(buildInfoDir, { recursive: true });
+            const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+            const validJobYaml = `name: "valid-job"
+version: "1"
+actions: []`;
+            await fs.writeFile(path.join(jobsDir, 'valid-job.yaml'), validJobYaml);
+            await fs.writeFile(path.join(buildInfoDir, 'source.yaml'), `
+type: source
+build_info: {}
+`);
+            await fs.writeFile(path.join(jobsDir, 'constants.yaml'), `
+type: constants
+constants:
+  value: 1
+`);
+            try {
+                const loader = new loader_1.ProjectLoader(tempDir);
+                await loader.load();
+                expect(loader.jobs.size).toBe(1);
+                expect(loader.jobs.has('valid-job')).toBe(true);
+                expect(warnSpy).not.toHaveBeenCalled();
+            }
+            finally {
+                warnSpy.mockRestore();
+            }
+        });
     });
     describe('template loading', () => {
         it('should load templates from the root templates directory', async () => {

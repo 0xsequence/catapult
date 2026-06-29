@@ -111,3 +111,6 @@ examples3/
 
 # Any tmp files
 *.tmp
+
+# Local notes
+notes/

@@ -2,6 +2,7 @@ import { Job, Template } from '../types';
 import { ContractRepository } from '../contracts/repository';
 export interface ProjectLoaderOptions {
     loadStdTemplates?: boolean;
+    loadContracts?: boolean;
 }
 export declare class ProjectLoader {
     private readonly projectRoot;

@@ -7,6 +7,7 @@ import { parseConstants } from '../parsers/constants'
 
 export interface ProjectLoaderOptions {
   loadStdTemplates?: boolean
+  loadContracts?: boolean
 }
 
 export class ProjectLoader {
@@ -28,7 +29,9 @@ export class ProjectLoader {
 
   async load() {
     // Load all contracts from the project root first
-    await this.contractRepository.loadFrom(this.projectRoot)
+    if (this.options.loadContracts !== false) {
+      await this.contractRepository.loadFrom(this.projectRoot)
+    }
 
     // Load standard library templates (unless disabled)
     if (this.options.loadStdTemplates !== false) {
@@ -117,6 +120,9 @@ export class ProjectLoader {
           const template = parseTemplate(content)
           template._path = filePath
           this.templates.set(template.name, template)
+          continue
+        }
+        if (raw && typeof raw === 'object' && (raw.type === 'source' || raw.type === 'constants')) {
           continue
         }
 
