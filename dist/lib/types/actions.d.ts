@@ -57,8 +57,24 @@ export interface JsonRequestAction {
         body?: Value<any>;
     };
 }
-export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | CreateContractAction | TestNicksMethodAction | JsonRequestAction;
-declare const primitiveActionTypes: readonly ["send-transaction", "send-signed-transaction", "verify-contract", "static", "create-contract", "test-nicks-method", "json-request"];
+export interface AssertAction {
+    type: 'assert';
+    arguments: {
+        to?: AddressValue;
+        signature?: string;
+        values?: any[];
+        actual?: Value<any>;
+        eq?: Value<any>;
+        neq?: Value<any>;
+        gt?: Value<any>;
+        lt?: Value<any>;
+        gte?: Value<any>;
+        lte?: Value<any>;
+        message?: string;
+    };
+}
+export type PrimitiveAction = SendTransactionAction | SendSignedTransactionAction | VerifyContractAction | StaticAction | CreateContractAction | TestNicksMethodAction | JsonRequestAction | AssertAction;
+declare const primitiveActionTypes: readonly ["send-transaction", "send-signed-transaction", "verify-contract", "static", "create-contract", "test-nicks-method", "json-request", "assert"];
 export declare const PRIMITIVE_ACTION_TYPES: Set<string>;
 export declare function isPrimitiveActionType(type: string): type is (typeof primitiveActionTypes)[number];
 export interface TemplateCallAction {

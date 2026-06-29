@@ -987,6 +987,58 @@ export class ExecutionEngine {
         }
         break
       }
+      case 'assert': {
+        // Determine the source of ACTUAL value
+        let actual: any
+        let describe: string
+        if (action.arguments.to !== undefined) {
+          // Use eth_call via the call resolver
+          actual = await this.resolver.resolve(
+            { type: 'call', arguments: { to: action.arguments.to, signature: action.arguments.signature, values: action.arguments.values ?? [] } },
+            context,
+            scope,
+          )
+          describe = action.arguments.signature ?? 'call'
+        } else {
+          // Use the `actual` value resolver
+          actual = await this.resolver.resolve(action.arguments.actual, context, scope)
+          describe = action.arguments.signature ?? 'value'
+        }
+
+        // Determine the comparator key and expected value (exactly one required)
+        const comparatorKeys = ['eq', 'neq', 'gt', 'lt', 'gte', 'lte']
+        const args = action.arguments as any
+        const presentKeys = comparatorKeys.filter((key) => args[key] !== undefined)
+        if (presentKeys.length === 0) {
+          throw new Error(`Action "${actionName}": assert must have exactly one of: ${comparatorKeys.join(', ')}`)
+        }
+        if (presentKeys.length > 1) {
+          throw new Error(`Action "${actionName}": assert must have exactly one comparator, but got: ${presentKeys.join(', ')}`)
+        }
+        const operation = presentKeys[0]
+        let expected: any = args[operation]
+
+        // Resolve expected value
+        expected = await this.resolver.resolve(expected, context, scope)
+
+        // Compare using basic-arithmetic (which returns a boolean for eq/neq/gt/lt/gte/lte)
+        const ok = await this.resolver.resolve(
+          { type: 'basic-arithmetic', arguments: { operation, values: [actual, expected] } },
+          context,
+          scope,
+        )
+
+        if (!ok) {
+          const messagePart = action.arguments.message ? `: ${action.arguments.message}` : ''
+          throw new Error(`assert failed${messagePart}: ${describe} (actual=${actual}, expected=${expected}, op=${operation})`)
+        }
+
+        // Store output if named and no custom output
+        if (action.name && !hasCustomOutput) {
+          context.setOutput(`${action.name}.actual`, actual)
+        }
+        break
+      }
       default:
         throw new Error(`Unknown or unimplemented primitive action type: ${(action as any).type}`)
     }

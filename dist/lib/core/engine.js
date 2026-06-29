@@ -760,6 +760,39 @@ class ExecutionEngine {
                 }
                 break;
             }
+            case 'assert': {
+                let actual;
+                let describe;
+                if (action.arguments.to !== undefined) {
+                    actual = await this.resolver.resolve({ type: 'call', arguments: { to: action.arguments.to, signature: action.arguments.signature, values: action.arguments.values ?? [] } }, context, scope);
+                    describe = action.arguments.signature ?? 'call';
+                }
+                else {
+                    actual = await this.resolver.resolve(action.arguments.actual, context, scope);
+                    describe = action.arguments.signature ?? 'value';
+                }
+                const comparatorKeys = ['eq', 'neq', 'gt', 'lt', 'gte', 'lte'];
+                const args = action.arguments;
+                const presentKeys = comparatorKeys.filter((key) => args[key] !== undefined);
+                if (presentKeys.length === 0) {
+                    throw new Error(`Action "${actionName}": assert must have exactly one of: ${comparatorKeys.join(', ')}`);
+                }
+                if (presentKeys.length > 1) {
+                    throw new Error(`Action "${actionName}": assert must have exactly one comparator, but got: ${presentKeys.join(', ')}`);
+                }
+                const operation = presentKeys[0];
+                let expected = args[operation];
+                expected = await this.resolver.resolve(expected, context, scope);
+                const ok = await this.resolver.resolve({ type: 'basic-arithmetic', arguments: { operation, values: [actual, expected] } }, context, scope);
+                if (!ok) {
+                    const messagePart = action.arguments.message ? `: ${action.arguments.message}` : '';
+                    throw new Error(`assert failed${messagePart}: ${describe} (actual=${actual}, expected=${expected}, op=${operation})`);
+                }
+                if (action.name && !hasCustomOutput) {
+                    context.setOutput(`${action.name}.actual`, actual);
+                }
+                break;
+            }
             default:
                 throw new Error(`Unknown or unimplemented primitive action type: ${action.type}`);
         }
