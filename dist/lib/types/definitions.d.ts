@@ -39,6 +39,7 @@ export interface Job {
     skip_networks?: number[];
     min_evm_version?: string;
     skip_condition?: Condition[];
+    skip_if?: Condition[];
     constants?: Record<string, Value<any>>;
     deprecated?: boolean;
     _path?: string;

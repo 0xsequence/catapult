@@ -42,6 +42,38 @@ export interface ReadBalanceValue {
         address: AddressValue;
     };
 }
+export interface GetStorageAtValue {
+    type: 'get-storage-at';
+    arguments: {
+        address: AddressValue;
+        slot: Value<string | number>;
+    };
+}
+export type ComputeSlotArguments = {
+    kind: 'mapping';
+    slot: Value<string | number>;
+    key: Value<string | number | boolean>;
+    keyType?: Value<string>;
+} | {
+    kind: 'dynamic-array';
+    slot: Value<string | number>;
+    index?: Value<string | number>;
+    elementSize?: Value<string | number>;
+} | {
+    kind: 'struct-field';
+    slot: Value<string | number>;
+    offset: Value<string | number>;
+} | {
+    kind: 'erc7201';
+    id: Value<string>;
+} | {
+    kind: 'eip1967';
+    name: Value<'implementation' | 'admin' | 'beacon'>;
+};
+export interface ComputeSlotValue {
+    type: 'compute-slot';
+    arguments: ComputeSlotArguments;
+}
 export interface BasicArithmeticValue {
     type: 'basic-arithmetic';
     arguments: {
@@ -95,7 +127,7 @@ export interface SliceBytesValue {
         range?: Value<string>;
     };
 }
-export type ValueResolver = AbiEncodeValue | AbiPackValue | ConstructorEncodeValue | ComputeCreateValue | ComputeCreate2Value | ReadBalanceValue | BasicArithmeticValue | CallValue | ContractExistsValue | JobCompletedValue | ReadJsonValue | ResolveJsonValue | ValueEmptyValue | SliceBytesValue;
+export type ValueResolver = AbiEncodeValue | AbiPackValue | ConstructorEncodeValue | ComputeCreateValue | ComputeCreate2Value | ReadBalanceValue | GetStorageAtValue | ComputeSlotValue | BasicArithmeticValue | CallValue | ContractExistsValue | JobCompletedValue | ReadJsonValue | ResolveJsonValue | ValueEmptyValue | SliceBytesValue;
 export type Value<T = string | number | boolean> = T | Reference | ValueResolver;
 export type BytesValue = Value<string>;
 export type AddressValue = Value<string>;

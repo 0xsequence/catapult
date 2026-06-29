@@ -1,7 +1,7 @@
 import { ethers } from 'ethers'
 import { ValueResolver } from '../resolver'
 import { ExecutionContext } from '../context'
-import { BasicArithmeticValue, Network, ReadBalanceValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, AbiPackValue, CallValue, ContractExistsValue, ComputeCreateValue, SliceBytesValue } from '../../types'
+import { BasicArithmeticValue, Network, ReadBalanceValue, GetStorageAtValue, ComputeSlotValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, AbiPackValue, CallValue, ContractExistsValue, ComputeCreateValue, SliceBytesValue } from '../../types'
 import { ContractRepository } from '../../contracts/repository'
 
 describe('ValueResolver', () => {
@@ -2048,6 +2048,449 @@ describe('ValueResolver', () => {
 
       const result = await resolver.resolve(value, context)
       expect(result).toBe('0x010203')
+    })
+  })
+
+  describe('get-storage-at', () => {
+    const testAddress = '0x1234567890123456789012345678901234567890'
+    const testSlot = '0x0000000000000000000000000000000000000000000000000000000000000000'
+    const testSlotNumber = 0
+    const expectedStorageValue = '0x0000000000000000000000000000000000000000000000000000000000000001'
+    let anvilProvider: ethers.JsonRpcProvider
+
+    beforeEach(async () => {
+      anvilProvider = context.provider as ethers.JsonRpcProvider
+    })
+
+    it('should read storage slot with hex string slot', async () => {
+      // Set storage at a specific slot using anvil_setStorageAt
+      await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue])
+
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: testAddress,
+          slot: testSlot
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(expectedStorageValue)
+    })
+
+    it('should read storage slot with numeric slot', async () => {
+      // Set storage at slot 0
+      await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue])
+
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: testAddress,
+          slot: testSlotNumber
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(expectedStorageValue)
+    })
+
+    it('should read storage slot with string number slot', async () => {
+      // Set storage at slot 0
+      await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue])
+
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: testAddress,
+          slot: '0'
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(expectedStorageValue)
+    })
+
+    it('should read different storage slots', async () => {
+      const slot1 = '0x0000000000000000000000000000000000000000000000000000000000000000'
+      const slot2 = '0x0000000000000000000000000000000000000000000000000000000000000001'
+      const value1 = '0x00000000000000000000000000000000000000000000000000000000000000aa'
+      const value2 = '0x00000000000000000000000000000000000000000000000000000000000000bb'
+
+      await anvilProvider.send('anvil_setStorageAt', [testAddress, slot1, value1])
+      await anvilProvider.send('anvil_setStorageAt', [testAddress, slot2, value2])
+
+      const valueForSlot1: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: testAddress,
+          slot: slot1
+        },
+      }
+      const valueForSlot2: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: testAddress,
+          slot: slot2
+        },
+      }
+
+      const result1 = await resolver.resolve(valueForSlot1, context)
+      const result2 = await resolver.resolve(valueForSlot2, context)
+
+      expect(result1).toBe(value1)
+      expect(result2).toBe(value2)
+    })
+
+    it('should resolve address from context variable', async () => {
+      context.setOutput('myAddress', testAddress)
+      await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue])
+
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: '{{myAddress}}',
+          slot: testSlot
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(expectedStorageValue)
+    })
+
+    it('should resolve slot from context variable', async () => {
+      context.setOutput('mySlot', testSlot)
+      await anvilProvider.send('anvil_setStorageAt', [testAddress, testSlot, expectedStorageValue])
+
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: testAddress,
+          slot: '{{mySlot}}'
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(expectedStorageValue)
+    })
+
+    it('should return zero storage for non-existent slot', async () => {
+      const nonExistentSlot = '0x000000000000000000000000000000000000000000000000000000000000ffff'
+
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: testAddress,
+          slot: nonExistentSlot
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      // Non-existent slots return 0x00...00
+      expect(result).toBe('0x0000000000000000000000000000000000000000000000000000000000000000')
+    })
+
+    it('should throw error for invalid address', async () => {
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: 'invalid-address',
+          slot: testSlot
+        },
+      }
+
+      await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid address: invalid-address')
+    })
+
+    it('should throw error for null address', async () => {
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: null as any,
+          slot: testSlot
+        },
+      }
+
+      await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid address: null')
+    })
+
+    it('should throw error for undefined address', async () => {
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: undefined as any,
+          slot: testSlot
+        },
+      }
+
+      await expect(resolver.resolve(value, context)).rejects.toThrow('Invalid address: undefined')
+    })
+
+    it('should handle checksummed addresses', async () => {
+      const checksummedAddress = '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
+      await anvilProvider.send('anvil_setStorageAt', [checksummedAddress, testSlot, expectedStorageValue])
+
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: checksummedAddress,
+          slot: testSlot
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(expectedStorageValue)
+    })
+
+    it('should handle lowercase addresses', async () => {
+      const lowercaseAddress = testAddress.toLowerCase()
+      await anvilProvider.send('anvil_setStorageAt', [lowercaseAddress, testSlot, expectedStorageValue])
+
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: lowercaseAddress,
+          slot: testSlot
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(expectedStorageValue)
+    })
+
+    it('should handle large slot numbers', async () => {
+      // EIP-1967 implementation slot
+      const eip1967Slot = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc'
+      await anvilProvider.send('anvil_setStorageAt', [testAddress, eip1967Slot, expectedStorageValue])
+
+      const value: GetStorageAtValue = {
+        type: 'get-storage-at',
+        arguments: {
+          address: testAddress,
+          slot: eip1967Slot
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe(expectedStorageValue)
+    })
+  })
+
+  describe('compute-slot', () => {
+    describe('mapping', () => {
+      it('should compute a mapping value slot with an address key', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: {
+            kind: 'mapping',
+            slot: 2,
+            key: '0x1111111111111111111111111111111111111111',
+            keyType: 'address',
+          },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0x06bb1b9bc4293ba066a12274418b7ea4df183c2e4e6b39591987369520ca3956')
+      })
+
+      it('should default keyType to uint256', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: {
+            kind: 'mapping',
+            slot: 1,
+            key: 5,
+          },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0xe2689cd4a84e23ad2f564004f1c9013e9589d260bde6380aba3ca7e09e4df40c')
+      })
+
+      it('should pack dynamic (string) keys', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: {
+            kind: 'mapping',
+            slot: 7,
+            key: 'hello',
+            keyType: 'string',
+          },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0xa39e328cf6237afe41b514c6c18ccdc6b503f43ce841d4b5bca5e763723b44a9')
+      })
+
+      it('should support nesting for nested mappings', async () => {
+        // balances[a][b] where the outer mapping is at slot 0
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: {
+            kind: 'mapping',
+            key: '0x2222222222222222222222222222222222222222',
+            keyType: 'address',
+            slot: {
+              type: 'compute-slot',
+              arguments: {
+                kind: 'mapping',
+                slot: 0,
+                key: '0x1111111111111111111111111111111111111111',
+                keyType: 'address',
+              },
+            },
+          },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0xd1360c905f62126f789549525bc3219e0fb5feba645fd0705768a3cc3bf3fc5c')
+      })
+
+      it('should resolve references in arguments', async () => {
+        context.setOutput('mapSlot', 2)
+        context.setOutput('owner', '0x1111111111111111111111111111111111111111')
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: {
+            kind: 'mapping',
+            slot: '{{mapSlot}}',
+            key: '{{owner}}',
+            keyType: 'address',
+          },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0x06bb1b9bc4293ba066a12274418b7ea4df183c2e4e6b39591987369520ca3956')
+      })
+
+      it('should throw when key is missing', async () => {
+        const value = {
+          type: 'compute-slot',
+          arguments: { kind: 'mapping', slot: 0 },
+        } as unknown as ComputeSlotValue
+        await expect(resolver.resolve(value, context)).rejects.toThrow('compute-slot (mapping): "key" is required')
+      })
+    })
+
+    describe('dynamic-array', () => {
+      it('should compute an element slot', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: { kind: 'dynamic-array', slot: 3, index: 4 },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0xc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85f')
+      })
+
+      it('should default index to 0', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: { kind: 'dynamic-array', slot: 3 },
+        }
+        const result = await resolver.resolve(value, context)
+        // keccak256(slot) with index 0
+        expect(result).toBe(ethers.keccak256(ethers.toBeHex(3, 32)))
+      })
+
+      it('should account for multi-slot elements via elementSize', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: { kind: 'dynamic-array', slot: 3, index: 1, elementSize: 2 },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0xc2575a0e9e593c00f959f8c92f12db2869c3395a3b0502d05e2516446f71f85d')
+      })
+    })
+
+    describe('struct-field', () => {
+      it('should add the field offset to the base slot', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: { kind: 'struct-field', slot: 100, offset: 3 },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0x0000000000000000000000000000000000000000000000000000000000000067')
+      })
+
+      it('should throw when offset is missing', async () => {
+        const value = {
+          type: 'compute-slot',
+          arguments: { kind: 'struct-field', slot: 1 },
+        } as unknown as ComputeSlotValue
+        await expect(resolver.resolve(value, context)).rejects.toThrow('compute-slot (struct-field): "offset" is required')
+      })
+    })
+
+    describe('erc7201', () => {
+      it('should compute the namespaced root for the EIP-7201 example', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: { kind: 'erc7201', id: 'example.main' },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0x183a6125c38840424c4a85fa12bab2ab606c4b6d0e7cc73c0c06ba5300eab500')
+      })
+
+      it('should match OpenZeppelin Ownable namespace', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: { kind: 'erc7201', id: 'openzeppelin.storage.Ownable' },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300')
+      })
+
+      it('should throw on empty id', async () => {
+        const value = {
+          type: 'compute-slot',
+          arguments: { kind: 'erc7201', id: '' },
+        } as unknown as ComputeSlotValue
+        await expect(resolver.resolve(value, context)).rejects.toThrow('compute-slot (erc7201): "id" must be a non-empty string')
+      })
+    })
+
+    describe('eip1967', () => {
+      it('should compute the implementation slot', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: { kind: 'eip1967', name: 'implementation' },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc')
+      })
+
+      it('should compute the admin slot', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: { kind: 'eip1967', name: 'admin' },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103')
+      })
+
+      it('should compute the beacon slot', async () => {
+        const value: ComputeSlotValue = {
+          type: 'compute-slot',
+          arguments: { kind: 'eip1967', name: 'beacon' },
+        }
+        const result = await resolver.resolve(value, context)
+        expect(result).toBe('0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50')
+      })
+
+      it('should throw on unknown name', async () => {
+        const value = {
+          type: 'compute-slot',
+          arguments: { kind: 'eip1967', name: 'nope' },
+        } as unknown as ComputeSlotValue
+        await expect(resolver.resolve(value, context)).rejects.toThrow('compute-slot (eip1967): "name" must be one of')
+      })
+    })
+
+    it('should chain into get-storage-at as the slot argument', async () => {
+      // The computed slot is a valid bytes32 hex that get-storage-at can consume.
+      const computed = await resolver.resolve<string>({
+        type: 'compute-slot',
+        arguments: { kind: 'eip1967', name: 'implementation' },
+      } as ComputeSlotValue, context)
+      expect(computed).toBe('0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc')
+    })
+
+    it('should throw when kind is missing', async () => {
+      const value = { type: 'compute-slot', arguments: {} } as unknown as ComputeSlotValue
+      await expect(resolver.resolve(value, context)).rejects.toThrow('compute-slot: "kind" is required')
+    })
+
+    it('should throw on unknown kind', async () => {
+      const value = {
+        type: 'compute-slot',
+        arguments: { kind: 'bogus' },
+      } as unknown as ComputeSlotValue
+      await expect(resolver.resolve(value, context)).rejects.toThrow('compute-slot: unknown kind "bogus"')
     })
   })
 })

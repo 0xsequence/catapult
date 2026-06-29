@@ -355,4 +355,85 @@ actions:
       arguments: { address: '0xabc' }
     })
   })
+
+  it('should parse job-level skip_if conditions', () => {
+    const yamlContent = `
+name: "job-with-skip-if"
+version: "1"
+skip_if:
+  - type: "contract-exists"
+    arguments:
+      address: "0xdef"
+actions:
+  - name: "a1"
+    template: "t1"
+    arguments: {}
+`
+    const job = parseJob(yamlContent)
+    expect(job.skip_if).toHaveLength(1)
+    expect(job.skip_if?.[0]).toEqual({
+      type: 'contract-exists',
+      arguments: { address: '0xdef' }
+    })
+  })
+
+  it('should parse both skip_condition and skip_if on a job', () => {
+    const yamlContent = `
+name: "job-with-both"
+version: "1"
+skip_condition:
+  - type: "contract-exists"
+    arguments:
+      address: "0xabc"
+skip_if:
+  - type: "job-completed"
+    arguments:
+      job: "other-job"
+actions:
+  - name: "a1"
+    template: "t1"
+    arguments: {}
+`
+    const job = parseJob(yamlContent)
+    expect(job.skip_condition).toHaveLength(1)
+    expect(job.skip_condition?.[0]).toEqual({
+      type: 'contract-exists',
+      arguments: { address: '0xabc' }
+    })
+    expect(job.skip_if).toHaveLength(1)
+    expect(job.skip_if?.[0]).toEqual({
+      type: 'job-completed',
+      arguments: { job: 'other-job' }
+    })
+  })
+
+  it('should throw when skip_if is not an array', () => {
+    const yamlContent = `
+name: "job-with-invalid-skip-if"
+version: "1"
+skip_if:
+  type: "contract-exists"
+  arguments:
+    address: "0xabc"
+actions:
+  - name: "a1"
+    template: "t1"
+    arguments: {}
+`
+    expect(() => parseJob(yamlContent)).toThrow('"skip_if" must be an array if provided')
+  })
+
+  it('should throw when skip_if contains invalid condition', () => {
+    const yamlContent = `
+name: "job-with-invalid-skip-if"
+version: "1"
+skip_if:
+  - type: "invalid-type"
+actions:
+  - name: "a1"
+    template: "t1"
+    arguments: {}
+`
+    expect(() => parseJob(yamlContent)).toThrow('"skip_if" contains an invalid condition entry')
+  })
 })
