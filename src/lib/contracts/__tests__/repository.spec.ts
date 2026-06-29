@@ -1,7 +1,64 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
 import { ContractRepository } from '../repository'
-import { Contract } from '../../types/contracts'
+
+function buildInfoContent(): string {
+  return JSON.stringify({
+    _format: 'hh-sol-build-info-1',
+    id: 'test-build-id',
+    solcVersion: '0.8.0',
+    solcLongVersion: '0.8.0+commit.c7dfd78e',
+    input: {
+      language: 'Solidity',
+      sources: {
+        'src/Stage1Module.sol': {
+          content: 'contract Stage1Module {}'
+        },
+        'src/Stage2Module.sol': {
+          content: 'contract Stage2Module {}'
+        }
+      },
+      settings: {
+        outputSelection: {
+          '*': {
+            '*': ['abi', 'evm.bytecode', 'evm.deployedBytecode']
+          }
+        }
+      }
+    },
+    output: {
+      contracts: {
+        'src/Stage1Module.sol': {
+          Stage1Module: {
+            abi: [],
+            evm: {
+              bytecode: {
+                object: '0x608060405234801561001057600080fd5b50111111'
+              },
+              deployedBytecode: {
+                object: '0x608060405234801561001057600080fd5b50111112'
+              }
+            }
+          }
+        },
+        'src/Stage2Module.sol': {
+          Stage2Module: {
+            abi: [],
+            evm: {
+              bytecode: {
+                object: '0x608060405234801561001057600080fd5b50222222'
+              },
+              deployedBytecode: {
+                object: '0x608060405234801561001057600080fd5b50222223'
+              }
+            }
+          }
+        }
+      },
+      sources: {}
+    }
+  })
+}
 
 describe('ContractRepository', () => {
   let repository: ContractRepository
@@ -109,6 +166,217 @@ describe('ContractRepository', () => {
       expect(contract.buildInfoId).toBe('test-build-id')
       expect(contract.source).toBe('contract TestContract { function test() public {} }')
       expect(contract._sources.has(buildInfoPath)).toBe(true)
+    })
+
+    it('should attach source provenance from build-info sidecars', async () => {
+      const buildInfoDir = path.join(tempDir, 'build-info', 'rc-5')
+      await fs.mkdir(buildInfoDir, { recursive: true })
+      const buildInfoPath = path.join(buildInfoDir, 'stage1.json')
+      const sourcePath = path.join(buildInfoDir, 'source.yaml')
+
+      await fs.writeFile(buildInfoPath, buildInfoContent())
+      await fs.writeFile(sourcePath, `
+type: source
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+    ref: "v3.0.0-rc.5"
+    commit: "0d9061f229da73edae890e6fdd1fbf753028df6d"
+    build: "forge build --build-info"
+    contracts:
+      "src/Stage1Module.sol:Stage1Module":
+        ref: "stage1-special"
+`)
+
+      await repository.loadFrom(tempDir)
+
+      const stage1 = repository.lookup(`${buildInfoPath}:Stage1Module`)
+      const stage2 = repository.lookup(`${buildInfoPath}:Stage2Module`)
+
+      expect(stage1).not.toBeNull()
+      expect(stage2).not.toBeNull()
+
+      expect(stage1!.sourceProvenance).toMatchObject({
+        repo: 'https://github.com/0xsequence/wallet-contracts-v3',
+        ref: 'stage1-special',
+        commit: '0d9061f229da73edae890e6fdd1fbf753028df6d',
+        build: 'forge build --build-info',
+        sourceDocumentPath: sourcePath,
+        buildInfoPath
+      })
+      expect(stage2!.sourceProvenance).toMatchObject({
+        repo: 'https://github.com/0xsequence/wallet-contracts-v3',
+        ref: 'v3.0.0-rc.5',
+        commit: '0d9061f229da73edae890e6fdd1fbf753028df6d'
+      })
+
+      expect(stage1!._sourceProvenance?.get(buildInfoPath)?.ref).toBe('stage1-special')
+    })
+
+    it('should skip source sidecars that point to missing build-info files', async () => {
+      const buildInfoDir = path.join(tempDir, 'build-info', 'rc-5')
+      await fs.mkdir(buildInfoDir, { recursive: true })
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+      await fs.writeFile(path.join(buildInfoDir, 'source.yaml'), `
+type: source
+build_info:
+  "./missing.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+`)
+
+      try {
+        await expect(repository.loadFrom(tempDir)).resolves.toBeUndefined()
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('does not exist'))
+      } finally {
+        warnSpy.mockRestore()
+      }
+    })
+
+    it('should skip malformed source sidecars without blocking build-info loading', async () => {
+      const buildInfoDir = path.join(tempDir, 'build-info', 'rc-5')
+      await fs.mkdir(buildInfoDir, { recursive: true })
+      const buildInfoPath = path.join(buildInfoDir, 'stage1.json')
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+      await fs.writeFile(buildInfoPath, buildInfoContent())
+      await fs.writeFile(path.join(buildInfoDir, 'source.yaml'), `
+type: source
+build_info:
+  "./stage1.json":
+    ref: "v3.0.0-rc.5"
+`)
+
+      try {
+        await repository.loadFrom(tempDir)
+      } finally {
+        warnSpy.mockRestore()
+      }
+
+      const stage1 = repository.lookup(`${buildInfoPath}:Stage1Module`)
+      expect(stage1).not.toBeNull()
+      expect(stage1!.sourceProvenance).toBeUndefined()
+    })
+
+    it('should keep valid source sidecar entries when sibling entries are invalid', async () => {
+      const buildInfoDir = path.join(tempDir, 'build-info', 'rc-5')
+      await fs.mkdir(buildInfoDir, { recursive: true })
+      const buildInfoPath = path.join(buildInfoDir, 'stage1.json')
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+      await fs.writeFile(buildInfoPath, buildInfoContent())
+      await fs.writeFile(path.join(buildInfoDir, 'source.yaml'), `
+type: source
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+    commit: "0d9061f229da73edae890e6fdd1fbf753028df6d"
+  "./bad.json":
+    typo_field: true
+`)
+
+      try {
+        await repository.loadFrom(tempDir)
+
+        const stage1 = repository.lookup(`${buildInfoPath}:Stage1Module`)
+        expect(stage1).not.toBeNull()
+        expect(stage1!.sourceProvenance).toMatchObject({
+          repo: 'https://github.com/0xsequence/wallet-contracts-v3',
+          commit: '0d9061f229da73edae890e6fdd1fbf753028df6d'
+        })
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('typo_field is not supported'))
+      } finally {
+        warnSpy.mockRestore()
+      }
+    })
+
+    it('should skip source sidecar entries that do not point to build-info JSON', async () => {
+      const buildInfoDir = path.join(tempDir, 'build-info', 'rc-5')
+      await fs.mkdir(buildInfoDir, { recursive: true })
+      const buildInfoPath = path.join(buildInfoDir, 'stage1.json')
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+      await fs.writeFile(buildInfoPath, buildInfoContent())
+      await fs.writeFile(path.join(buildInfoDir, 'source.yaml'), `
+type: source
+build_info:
+  "./stage1.txt":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+`)
+
+      try {
+        await repository.loadFrom(tempDir)
+
+        const stage1 = repository.lookup(`${buildInfoPath}:Stage1Module`)
+        expect(stage1).not.toBeNull()
+        expect(stage1!.sourceProvenance).toBeUndefined()
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('does not point to a build-info JSON file'))
+      } finally {
+        warnSpy.mockRestore()
+      }
+    })
+
+    it('should skip duplicate source provenance entries for the same build-info file', async () => {
+      const buildInfoDir = path.join(tempDir, 'build-info', 'rc-5')
+      await fs.mkdir(buildInfoDir, { recursive: true })
+      const buildInfoPath = path.join(buildInfoDir, 'stage1.json')
+      const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => undefined)
+
+      await fs.writeFile(buildInfoPath, buildInfoContent())
+      await fs.writeFile(path.join(buildInfoDir, 'source.yaml'), `
+type: source
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3-a"
+`)
+      await fs.writeFile(path.join(buildInfoDir, 'source.yml'), `
+type: source
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3-b"
+`)
+
+      try {
+        await repository.loadFrom(tempDir)
+
+        const stage1 = repository.lookup(`${buildInfoPath}:Stage1Module`)
+        expect(stage1).not.toBeNull()
+        expect(stage1!._sourceProvenance?.size).toBe(1)
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('duplicate provenance'))
+      } finally {
+        warnSpy.mockRestore()
+      }
+    })
+
+    it('should select preferred source provenance deterministically for duplicate bytecode', async () => {
+      const olderBuildInfoDir = path.join(tempDir, 'build-info', 'b-release')
+      const newerBuildInfoDir = path.join(tempDir, 'build-info', 'a-release')
+      await fs.mkdir(olderBuildInfoDir, { recursive: true })
+      await fs.mkdir(newerBuildInfoDir, { recursive: true })
+
+      const olderBuildInfoPath = path.join(olderBuildInfoDir, 'stage1.json')
+      const newerBuildInfoPath = path.join(newerBuildInfoDir, 'stage1.json')
+      await fs.writeFile(olderBuildInfoPath, buildInfoContent())
+      await fs.writeFile(newerBuildInfoPath, buildInfoContent())
+
+      await fs.writeFile(path.join(olderBuildInfoDir, 'source.yaml'), `
+type: source
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3-old"
+`)
+      await fs.writeFile(path.join(newerBuildInfoDir, 'source.yaml'), `
+type: source
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3-new"
+`)
+
+      await repository.loadFrom(tempDir)
+
+      const stage1 = repository.lookup(`${newerBuildInfoPath}:Stage1Module`)
+      expect(stage1).not.toBeNull()
+      expect(stage1!._sourceProvenance?.size).toBe(2)
+      expect(stage1!.sourceProvenance?.repo).toBe('https://github.com/0xsequence/wallet-contracts-v3-new')
     })
 
     it('should hydrate contracts from multiple source files', async () => {

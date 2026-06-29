@@ -785,6 +785,42 @@ creationCode: "{{Contract(path/to/MyContract).creationCode}}"
 creationCode: "{{Contract(0x1234...hash).creationCode}}"
 ```
 
+Build-info files can carry optional source provenance through a nearby `source.yaml`
+sidecar. The metadata is informational only; Catapult still deploys from committed
+artifacts and never rebuilds from the source repository during execution.
+
+```text
+jobs/my-stack/build-info/rc-5/
+├── stage1.json
+└── source.yaml
+```
+
+```yaml
+type: source
+
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+    ref: "v3.0.0-rc.5"
+    commit: "0d9061f229da73edae890e6fdd1fbf753028df6d"
+    build: "forge build --build-info"
+```
+
+If a build-info file needs a per-contract override, key it by fully-qualified
+contract name:
+
+```yaml
+type: source
+
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+    commit: "0d9061f229da73edae890e6fdd1fbf753028df6d"
+    contracts:
+      "src/Stage1Module.sol:Stage1Module":
+        ref: "stage1-special"
+```
+
 ## Output Format
 
 After successful deployment, Catapult generates JSON files in the `output/` directory for each job. The output format is optimized to reduce repetition:

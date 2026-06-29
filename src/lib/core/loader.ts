@@ -119,6 +119,9 @@ export class ProjectLoader {
           this.templates.set(template.name, template)
           continue
         }
+        if (raw && typeof raw === 'object' && (raw.type === 'source' || raw.type === 'constants')) {
+          continue
+        }
 
         const job = parseJob(content)
         job._path = filePath

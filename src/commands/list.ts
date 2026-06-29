@@ -18,6 +18,13 @@ interface NetworksListOptions {
   onlyNonTestnets?: boolean
 }
 
+function formatSourceProvenance(provenance: { repo: string; commit?: string; ref?: string; build?: string }): string {
+  const ref = provenance.commit || provenance.ref
+  const suffix = ref ? ` @ ${ref}` : ''
+  const build = provenance.build ? ` (${provenance.build})` : ''
+  return `${provenance.repo}${suffix}${build}`
+}
+
 export function makeListCommand(): Command {
   const list = new Command('list')
     .description('List project resources like jobs, contracts, and networks')
@@ -79,6 +86,12 @@ export function makeListCommand(): Command {
           console.log(`  ${chalk.gray('Unique Hash:')} ${contract.uniqueHash}`)
           if (contract.buildInfoId) {
             console.log(`  ${chalk.gray('Build Info ID:')} ${contract.buildInfoId}`)
+          }
+          if (contract._sourceProvenance && contract._sourceProvenance.size > 0) {
+            for (const [buildInfoPath, provenance] of contract._sourceProvenance.entries()) {
+              const relativeBuildInfoPath = path.relative(options.project, buildInfoPath)
+              console.log(`  ${chalk.gray('Provenance:')} ${formatSourceProvenance(provenance)} ${chalk.gray(`[${relativeBuildInfoPath}]`)}`)
+            }
           }
           console.log(`  ${chalk.gray('Sources:')} ${Array.from(contract._sources).map(p => path.relative(options.project, p)).join(', ')}`)
         }

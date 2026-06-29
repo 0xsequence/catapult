@@ -1,4 +1,5 @@
 import { CompilerInfo } from './artifacts'
+import { SourceProvenance } from './source'
 
 export interface Contract {
   // The ultimate, unambiguous identifier
@@ -17,7 +18,9 @@ export interface Contract {
   // Compilation Information
   compiler?: CompilerInfo
   buildInfoId?: string // The ID from the build-info file it was found in
+  sourceProvenance?: SourceProvenance // Repository/ref/build metadata for the preferred build-info source
 
   // Internal Management - tracks all file paths from which this contract's data was hydrated
   _sources: Set<string>
+  _sourceProvenance?: Map<string, SourceProvenance>
 }
