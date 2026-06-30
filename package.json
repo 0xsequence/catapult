@@ -6,6 +6,9 @@
   "bin": {
     "catapult": "dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc && cp -r src/lib/std dist/lib/",
     "dev": "ts-node src/index.ts",
