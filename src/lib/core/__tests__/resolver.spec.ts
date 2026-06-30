@@ -22,6 +22,16 @@ describe('ValueResolver', () => {
       supports: ["sourcify", "etherscan_v2"],
       gasLimit: 10000000,
       evmVersion: 'cancun',
+      params: {
+        dataSource: {
+          endpoint: 'https://api.example.com/data',
+          domain: {
+            name: 'Example',
+            version: '1',
+          },
+        },
+        blockMode: 'small',
+      },
     }
     // A dummy private key is fine as these tests don't send transactions
     const mockPrivateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
@@ -1571,6 +1581,16 @@ describe('ValueResolver', () => {
         const result = await resolver.resolve('{{Network().evmVersion}}', context)
         expect(result).toBe(mockNetwork.evmVersion)
       })
+
+      it('should return params metadata object for valid network', async () => {
+        const result = await resolver.resolve('{{Network().params}}', context)
+        expect(result).toEqual(mockNetwork.params)
+      })
+
+      it('should resolve nested params metadata path', async () => {
+        const result = await resolver.resolve('{{Network().params.dataSource.endpoint}}', context)
+        expect(result).toBe('https://api.example.com/data')
+      })
     })
 
     describe('Network().params dotted paths', () => {
@@ -1624,6 +1644,11 @@ describe('ValueResolver', () => {
       it('should fail for undefined property', async () => {
         await expect(resolver.resolve('{{Network().undefined}}', context))
           .rejects.toThrow('Property "undefined" does not exist on network')
+      })
+
+      it('should default missing nested property to false', async () => {
+        const result = await resolver.resolve('{{Network().params.missing}}', context)
+        expect(result).toBe(false)
       })
 
       it('should fail for network with reference', async () => {
