@@ -272,7 +272,7 @@ async function buildFromSourceProvenance(provenance: BuildInfoSourceProvenance):
     }
 
     const head = await gitStdout(['rev-parse', 'HEAD'], checkoutDir)
-    await runShell(provenance.build, checkoutDir)
+    await runBuild(provenance.build, checkoutDir, provenance.image)
     const candidates = await findBuildInfoCandidates(checkoutDir)
 
     if (candidates.length === 0) {
@@ -525,6 +525,77 @@ async function checkoutGitCommit(commit: string, cwd: string): Promise<void> {
   await runGit(['checkout', '--detach', commit], cwd)
 }
 
+/**
+ * Runs a provenance build command. When `image` is set the command runs inside
+ * `docker run <image>` with the checkout bind-mounted, so the build toolchain is
+ * pinned per source entry and nothing on the host/runner is mutated. Otherwise it
+ * runs directly on the host shell.
+ */
+async function runBuild(command: string, cwd: string, image?: string): Promise<void> {
+  if (image) {
+    await runDockerBuild(command, cwd, image)
+  } else {
+    await runShell(command, cwd)
+  }
+}
+
+const CONTAINER_WORKDIR = '/workspace'
+
+/**
+ * Runs the build command inside a container. The checkout is mounted at
+ * `/workspace` and used as the working directory; `HOME` points there too so
+ * toolchains that cache to `$HOME` (e.g. solc downloads) write into the
+ * (disposable) checkout. On POSIX the container runs as the host uid:gid so the
+ * generated build-info is owned by the caller and the temp checkout can be read
+ * back and cleaned up. The image's entrypoint is overridden with `sh -c` so the
+ * build string is interpreted the same way regardless of the image.
+ */
+async function runDockerBuild(command: string, cwd: string, image: string): Promise<void> {
+  const args = [
+    'run',
+    '--rm',
+    '-v',
+    `${cwd}:${CONTAINER_WORKDIR}`,
+    '-w',
+    CONTAINER_WORKDIR,
+    '-e',
+    `HOME=${CONTAINER_WORKDIR}`
+  ]
+
+  const uid = typeof process.getuid === 'function' ? process.getuid() : undefined
+  const gid = typeof process.getgid === 'function' ? process.getgid() : undefined
+  if (uid !== undefined && gid !== undefined) {
+    args.push('--user', `${uid}:${gid}`)
+  }
+
+  args.push('--entrypoint', 'sh', image, '-c', command)
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn('docker', args, {
+      cwd,
+      env: process.env,
+      stdio: 'inherit'
+    })
+
+    child.on('error', error => {
+      reject(
+        new Error(
+          `failed to start docker for image "${image}" (is Docker installed and running?): ${error.message}`
+        )
+      )
+    })
+    child.on('exit', (code, signal) => {
+      if (code === 0) {
+        resolve()
+      } else if (signal) {
+        reject(new Error(`build command failed: terminated by ${signal}`))
+      } else {
+        reject(new Error(`build command failed: exited with code ${code}`))
+      }
+    })
+  })
+}
+
 async function runShell(command: string, cwd: string): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const child = spawn(command, {
@@ -586,7 +657,8 @@ function buildCacheKey(provenance: BuildInfoSourceProvenance): string {
     repo: provenance.repo,
     ref: provenance.ref,
     commit: provenance.commit,
-    build: provenance.build
+    build: provenance.build,
+    image: provenance.image
   })
 }
 

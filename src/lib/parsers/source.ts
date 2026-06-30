@@ -1,7 +1,7 @@
 import { parse as parseYaml, YAMLParseError } from 'yaml'
 import { BuildInfoSourceProvenance, SourceDocument, SourceProvenance, SourceProvenanceOverride } from '../types'
 
-const STRING_FIELDS = ['repo', 'ref', 'commit', 'build'] as const
+const STRING_FIELDS = ['repo', 'ref', 'commit', 'build', 'image'] as const
 const BUILD_INFO_FIELDS = new Set<string>([...STRING_FIELDS, 'contracts'])
 const CONTRACT_OVERRIDE_FIELDS = new Set<string>(STRING_FIELDS)
 

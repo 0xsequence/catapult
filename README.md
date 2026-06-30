@@ -1019,6 +1019,33 @@ to overwrite them. Both commands clone the configured `repo`, check out `ref` or
 Catapult selects by matching the committed build-info `id`, then by filename; if
 neither is unique, the entry fails with an ambiguity error.
 
+### Pinning the build toolchain with `image`
+
+Because provenance compares the *entire* build-info JSON (including compiler
+settings such as `evmVersion`), the rebuild must use the same toolchain that
+produced the committed file. Add an optional `image` field to run the `build`
+command inside a pinned Docker image instead of on the host:
+
+```yaml
+type: source
+
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+    commit: "0d9061f229da73edae890e6fdd1fbf753028df6d"
+    image: "ghcr.io/foundry-rs/foundry:v1.5.1"
+    build: "forge build --build-info"
+```
+
+When `image` is set, Catapult runs `docker run <image>` with the checkout
+bind-mounted at `/workspace` (also the working directory and `$HOME`), the build
+command executed via `sh -c`, and — on POSIX hosts — the container running as the
+caller's `uid:gid` so the generated files are owned by you and the temporary
+checkout can be cleaned up. This keeps the toolchain pinned per entry (different
+build-info files can use different images) and leaves the host/runner untouched;
+it requires Docker to be installed and running. The `image` field is also
+supported in per-contract `contracts` overrides.
+
 If a build-info file needs a per-contract override, key it by fully-qualified
 contract name:
 

@@ -30,6 +30,37 @@ build_info:
     expect(result!.build_info['./stage1.json'].contracts?.['src/Stage1Module.sol:Stage1Module'].ref).toBe('stage1-special')
   })
 
+  it('should parse the optional image field', () => {
+    const result = parseSourceDocument(`
+type: source
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+    commit: "0d9061f229da73edae890e6fdd1fbf753028df6d"
+    image: "ghcr.io/foundry-rs/foundry:v1.5.1"
+    build: "forge build --build-info"
+`)
+
+    expect(result).not.toBeNull()
+    expect(result!.build_info['./stage1.json'].image).toBe('ghcr.io/foundry-rs/foundry:v1.5.1')
+  })
+
+  it('should validate that image is a string', () => {
+    const result = parseSourceDocument(`
+type: source
+build_info:
+  "./stage1.json":
+    repo: "https://github.com/0xsequence/wallet-contracts-v3"
+    image: 123
+`)
+
+    expect(result).not.toBeNull()
+    expect(result!.build_info).toEqual({})
+    expect(result!.warnings).toEqual([
+      expect.stringContaining('image')
+    ])
+  })
+
   it('should require repo on each build-info provenance entry', () => {
     const result = parseSourceDocument(`
 type: source
@@ -129,6 +160,18 @@ build_info:
         commit: '0d9061f229da73edae890e6fdd1fbf753028df6d'
       })
       expect(result).not.toHaveProperty('contracts')
+    })
+
+    it('should let a contract override the image', () => {
+      const result = mergeSourceProvenance({
+        repo: 'https://github.com/0xsequence/wallet-contracts-v3',
+        commit: '0d9061f229da73edae890e6fdd1fbf753028df6d',
+        image: 'ghcr.io/foundry-rs/foundry:v1.5.1'
+      }, {
+        image: 'ghcr.io/foundry-rs/foundry:v1.6.0'
+      })
+
+      expect(result.image).toBe('ghcr.io/foundry-rs/foundry:v1.6.0')
     })
   })
 })
