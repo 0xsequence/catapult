@@ -1,0 +1,5 @@
+
+- name: "Bad"
+  chainId: 1
+  rpcUrl: "https://bad.example"
+  platform: "cosmos"

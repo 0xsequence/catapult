@@ -11,6 +11,12 @@ export interface Network {
   /** The RPC URL endpoint for the network */
   rpcUrl: string
 
+  /**
+   * Execution backend for this network. Defaults to "evm" for backward compatibility.
+   * "svm" is reserved for a future Solana/SVM adapter and is intentionally not implemented yet.
+   */
+  platform?: 'evm' | 'tron' | 'svm'
+
   /** Supported verification platforms */
   supports?: string[]
 

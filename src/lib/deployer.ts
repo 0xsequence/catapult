@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises'
 import * as path from 'path'
+import { ethers } from 'ethers'
 
 import { ProjectLoader, ProjectLoaderOptions } from './core/loader'
 import { DependencyGraph } from './core/graph'
@@ -223,35 +224,37 @@ export class Deployer {
             // Emit signer info once per network using the first job's context
             if (!signerInfoPrintedForChain.has(network.chainId)) {
               try {
-                const getSignerFn = (context as unknown as {
-                  getResolvedSigner?: () => Promise<{ getAddress: () => Promise<string> }>
-                  signer?: { getAddress: () => Promise<string> }
-                }).getResolvedSigner
-                const signer = getSignerFn
-                  ? await getSignerFn.call(context)
-                  : (context as unknown as { signer?: { getAddress: () => Promise<string> } }).signer
-                if (signer && typeof signer.getAddress === 'function') {
-                  const address = await signer.getAddress()
-                  // provider may not exist on mocked contexts; guard for it
-                  const provider = (context as unknown as {
-                    provider?: { getBalance: (addr: string) => Promise<bigint | number | { toString: () => string }> }
-                  }).provider
-                  if (provider && typeof provider.getBalance === 'function') {
-                    const balanceBn = await provider.getBalance(address)
-                    const balanceWei = balanceBn.toString()
-                    const balanceEth = (Number(balanceBn) / 1e18).toString()
-                    this.events.emitEvent({
-                      type: 'network_signer_info',
-                      level: 'info',
-                      data: {
-                        networkName: network.name,
-                        chainId: network.chainId,
-                        address,
-                        balanceWei,
-                        balance: balanceEth
-                      }
-                    })
+                const adapter = (context as unknown as {
+                  adapter?: {
+                    getSignerAddress: () => Promise<string>
+                    getSignerBalance: () => Promise<bigint | number | { toString: () => string }>
+                    formatNativeValue?: (value: bigint) => string
+                    nativeCurrencySymbol?: string
                   }
+                }).adapter
+                if (adapter && typeof adapter.getSignerAddress === 'function' && typeof adapter.getSignerBalance === 'function') {
+                  const address = await adapter.getSignerAddress()
+                  const balanceBn = await adapter.getSignerBalance()
+                  const balanceBaseUnit = balanceBn.toString()
+                  const balance = typeof balanceBn === 'bigint' ? balanceBn : BigInt(balanceBaseUnit)
+                  const platform = network.platform || 'evm'
+                  const nativeUnit = adapter.nativeCurrencySymbol || (platform === 'tron' ? 'TRX' : 'ETH')
+                  const formattedBalance = adapter.formatNativeValue
+                    ? adapter.formatNativeValue(balance)
+                    : ethers.formatEther(balance)
+                  this.events.emitEvent({
+                    type: 'network_signer_info',
+                    level: 'info',
+                    data: {
+                      networkName: network.name,
+                      chainId: network.chainId,
+                      address,
+                      balanceWei: balanceBaseUnit,
+                      balance: formattedBalance,
+                      balanceUnit: nativeUnit,
+                      balanceBaseUnit: platform === 'tron' ? 'sun' : 'wei'
+                    }
+                  })
                 }
               } catch {
                 // ignore non-fatal signer info errors

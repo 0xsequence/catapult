@@ -104,18 +104,37 @@ Create a `networks.yaml` file in your project root to define target networks:
 - name: "Polygon"
   chainId: 137
   rpcUrl: "https://polygon-rpc.com"
+  platform: "evm"             # Optional: evm (default), tron, or reserved svm
   supports: ["etherscan_v2"]  # Optional: verification platforms supported
   gasLimit: 500000            # Optional: gas limit for all transactions on this network
   testnet: true               # Optional: mark as test network
   evmVersion: "cancun"        # Optional: network EVM hardfork (e.g., london, paris, shanghai, cancun)
+
+- name: "Tron Nile"
+  chainId: 3448148188
+  rpcUrl: "https://nile.trongrid.io"
+  platform: "tron"
+  params:
+    feeLimit: 150000000       # Sun. 150 TRX max burn for energy/bandwidth
+    tronGridApiKeyEnv: "TRONGRID_API_KEY"
 ```
+
+`platform` defaults to `evm`. `tron` enables the TronWeb-backed adapter for direct contract deployment and contract calls. `svm` is accepted as a reserved value so projects can model future Solana/SVM networks, but SVM execution is not implemented yet and will fail with a clear "not implemented" error if selected.
 
 The `supports` field is optional and specifies which verification platforms are available for the network. Currently supported platforms:
 
 - `etherscan_v2`: Etherscan v2 verification API (supports Ethereum, Polygon, Arbitrum, BSC, etc.)
 - `sourcify`: Sourcify verification (no API key required)
 
-If `supports` is omitted, all built-in platforms are allowed for that network. Etherscan requires an API key to be considered “configured”; Sourcify requires no configuration. The `gasLimit` field is optional and specifies a fixed gas limit to use for all transactions on this network. If not specified, the system will use ethers.js default gas estimation.
+If `supports` is omitted, all built-in platforms are allowed for that network. Etherscan requires an API key to be considered “configured”; Sourcify requires no configuration. The `gasLimit` field is optional and specifies a fixed gas limit to use for all EVM transactions on this network. If not specified, EVM networks use ethers.js default gas estimation.
+
+Tron notes:
+
+- `value` fields are in sun, the smallest TRX unit.
+- Contract gas estimates are converted from energy into sun fee limits using the node's `getEnergyFee` chain parameter; set `params.energyFeeSun` only for nodes that do not expose it.
+- Contract addresses are stored internally as `0x`-prefixed 20-byte addresses; the Tron adapter converts Base58/`41`-prefixed addresses at the network boundary.
+- `send-signed-transaction`, Nick's method bootstrap templates, and raw Ethereum pre-signed deployer templates are EVM-only for now.
+- `get-storage-at` is not implemented for Tron.
 
 ### Constants
 
@@ -540,7 +559,7 @@ Send a transaction to the blockchain:
 - type: "send-transaction"
   arguments:
     to: "0x742..."
-    value: "1000000000000000000"  # 1 ETH in wei
+    value: "1000000000000000000"  # Native smallest unit: wei on EVM, sun on Tron
     data: "0x..."
     gasMultiplier: 1.5  # Optional: multiply gas limit by this factor
 ```
@@ -593,8 +612,11 @@ Create a contract by sending its creation bytecode (and optional value):
   name: "deploy-foo"
   arguments:
     data: "{{Contract(Foo).creationCode}}"
+    abi: "{{Contract(Foo).abi}}"
     gasMultiplier: 1.2
 ```
+
+The `abi` field is optional and is useful for platforms that need constructor metadata, such as Tron payable constructors.
 
 ### `json-request`
 Make an HTTP JSON request and use the result downstream:
@@ -727,7 +749,7 @@ result:
 ```
 
 ### `get-storage-at`
-Read a raw EVM storage slot via `eth_getStorageAt`:
+Read a raw EVM storage slot via `eth_getStorageAt` (EVM only):
 
 ```yaml
 storageValue:

@@ -45,6 +45,7 @@ export interface CreateContractAction {
     data: BytesValue; // The contract bytecode (creation code)
     value?: Uint256Value; // ETH to send with the contract creation
     gasMultiplier?: number; // Optional gas multiplier
+    abi?: Value<any[]>; // Optional ABI, used by platforms that need constructor metadata
   };
 }
 

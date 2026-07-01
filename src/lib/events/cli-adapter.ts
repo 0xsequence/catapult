@@ -117,7 +117,7 @@ export class CLIEventAdapter {
 
       case 'network_signer_info':
         console.log(chalk.gray(`        Sender: ${event.data.address}`))
-        console.log(chalk.gray(`        Balance: ${event.data.balance} ETH (${event.data.balanceWei} wei)`))
+        console.log(chalk.gray(`        Balance: ${event.data.balance} ${event.data.balanceUnit || 'ETH'} (${event.data.balanceWei} ${event.data.balanceBaseUnit || 'wei'})`))
         break
 
       case 'job_started':

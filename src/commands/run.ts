@@ -84,6 +84,7 @@ export function makeRunCommand(): Command {
             name: detectedNetwork.name || knownNetwork?.name || `custom-${detectedNetwork.chainId}`,
             chainId: detectedNetwork.chainId!,
             rpcUrl: options.rpcUrl,
+            platform: knownNetwork?.platform || detectedNetwork.platform || 'evm',
             // Optional fields with defaults
             supports: detectedNetwork.supports || knownNetwork?.supports || [],
             gasLimit: detectedNetwork.gasLimit || knownNetwork?.gasLimit,

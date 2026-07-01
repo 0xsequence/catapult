@@ -144,5 +144,34 @@ describe('sign primitives', () => {
     expect(context.getOutput('msg.signature')).toBe(expectedSignature)
     expect(context.getOutput('msg.message')).toBe(message)
   })
-})
 
+  it('rejects EVM signing actions on Tron networks', async () => {
+    const tronContext = new ExecutionContext(
+      {
+        name: 'Tron Nile',
+        chainId: 3448148188,
+        rpcUrl: 'https://nile.trongrid.io',
+        platform: 'tron'
+      },
+      PRIVATE_KEY,
+      new ContractRepository()
+    )
+
+    const job: Job = {
+      name: 'tron-sign-message',
+      version: '1',
+      actions: [
+        {
+          name: 'msg',
+          type: 'sign-message',
+          arguments: {
+            message: 'Hello from Catapult!'
+          }
+        }
+      ]
+    }
+
+    await expect(engine.executeJob(job, tronContext)).rejects.toThrow('sign-message is only supported on EVM networks')
+    await tronContext.dispose()
+  })
+})

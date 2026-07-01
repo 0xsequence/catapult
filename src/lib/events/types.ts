@@ -330,7 +330,9 @@ export interface NetworkSignerInfoEvent extends BaseEvent {
     chainId: number
     address: string
     balanceWei: string
-    balance: string // formatted in ETH
+    balance: string // formatted in the network native currency
+    balanceUnit?: string
+    balanceBaseUnit?: string
   }
 }
 

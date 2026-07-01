@@ -149,3 +149,40 @@ describe('network-loader params', () => {
     await expect(loadNetworks(projectRoot)).rejects.toThrow(/Failed to load or parse networks.yaml/)
   })
 })
+
+describe('network-loader platform', () => {
+  test('accepts evm, tron, and reserved svm platforms', async () => {
+    const projectRoot = path.join(tmpDir, 'platform-valid')
+    const yaml = `
+- name: "Ethereum"
+  chainId: 1
+  rpcUrl: "https://eth.example"
+  platform: "evm"
+- name: "Tron"
+  chainId: 3448148188
+  rpcUrl: "https://nile.trongrid.io"
+  platform: "tron"
+- name: "Future SVM"
+  chainId: 900000
+  rpcUrl: "http://127.0.0.1:8899"
+  platform: "svm"
+`
+    await writeNetworksYaml(projectRoot, yaml)
+
+    const networks = await loadNetworks(projectRoot)
+    expect(networks.map(n => n.platform)).toEqual(['evm', 'tron', 'svm'])
+  })
+
+  test('rejects unknown platforms', async () => {
+    const projectRoot = path.join(tmpDir, 'platform-invalid')
+    const yaml = `
+- name: "Bad"
+  chainId: 1
+  rpcUrl: "https://bad.example"
+  platform: "cosmos"
+`
+    await writeNetworksYaml(projectRoot, yaml)
+
+    await expect(loadNetworks(projectRoot)).rejects.toThrow(/Failed to load or parse networks.yaml/)
+  })
+})

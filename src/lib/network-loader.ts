@@ -13,6 +13,8 @@ function isValidNetwork(obj: unknown): obj is Network {
     typeof (obj as Record<string, unknown>).name === 'string' &&
     typeof (obj as Record<string, unknown>).chainId === 'number' &&
     typeof (obj as Record<string, unknown>).rpcUrl === 'string' &&
+    // platform field is optional and defaults to "evm"
+    (!('platform' in obj) || ['evm', 'tron', 'svm'].includes((obj as Record<string, unknown>).platform as string)) &&
     // supports field is optional and should be an array of strings if present
     (!('supports' in obj) ||
      (Array.isArray((obj as Record<string, unknown>).supports) &&

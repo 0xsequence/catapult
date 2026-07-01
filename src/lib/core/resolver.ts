@@ -19,7 +19,7 @@ import {
   SliceBytesValue,
 } from '../types'
 import { ExecutionContext } from './context'
-import { isAddress, isBigNumberish, isBytesLike } from '../utils/assertion'
+import { isBigNumberish, isBytesLike } from '../utils/assertion'
 
 /**
  * A scope for resolving local variables, such as template arguments.
@@ -194,9 +194,9 @@ export class ValueResolver {
       case 'constructor-encode':
         return this.resolveConstructorEncode(resolvedArgs as ConstructorEncodeValue['arguments'])
       case 'compute-create':
-        return this.resolveComputeCreate(resolvedArgs as ComputeCreateValue['arguments'])
+        return this.resolveComputeCreate(resolvedArgs as ComputeCreateValue['arguments'], context)
       case 'compute-create2':
-        return this.resolveComputeCreate2(resolvedArgs as ComputeCreate2Value['arguments'])
+        return this.resolveComputeCreate2(resolvedArgs as ComputeCreate2Value['arguments'], context)
       case 'read-balance':
         return this.resolveReadBalance(resolvedArgs as ReadBalanceValue['arguments'], context)
       case 'get-storage-at':
@@ -331,53 +331,53 @@ export class ValueResolver {
     return '0x' + cleanCreationCode + cleanEncodedArgs
   }
 
-  private resolveComputeCreate(args: ComputeCreateValue['arguments']): string {
+  private resolveComputeCreate(args: ComputeCreateValue['arguments'], context: ExecutionContext): string {
+    this.requireEvmAddressDerivation('compute-create', context)
     const { deployerAddress, nonce } = args
-    // Check if the deployer address is a valid address
-    if (!isAddress(deployerAddress)) {
+    if (typeof deployerAddress !== 'string' || !context.adapter.isAddress(deployerAddress)) {
       throw new Error(`Invalid deployer address: ${deployerAddress}`)
     }
-    // Check if the nonce is a valid value
     if (!isBigNumberish(nonce)) {
       throw new Error(`Invalid nonce: ${nonce}`)
     }
     const bnNonce = ethers.toBigInt(nonce)
-    // Create the create address
     return ethers.getCreateAddress({
-      from: deployerAddress,
+      from: context.adapter.normalizeAddress(deployerAddress),
       nonce: bnNonce,
     })
   }
 
-  private resolveComputeCreate2(args: ComputeCreate2Value['arguments']): string {
+  private resolveComputeCreate2(args: ComputeCreate2Value['arguments'], context: ExecutionContext): string {
+    this.requireEvmAddressDerivation('compute-create2', context)
     const { deployerAddress, salt, initCode } = args
-    // Check if the deployer address is a valid address
-    if (!isAddress(deployerAddress)) {
+    if (typeof deployerAddress !== 'string' || !context.adapter.isAddress(deployerAddress)) {
       throw new Error(`Invalid deployer address: ${deployerAddress}`)
     }
-    // Check if the salt is a valid bytes value
     if (!isBytesLike(salt)) {
       throw new Error(`Invalid salt: ${salt}`)
     }
-    // Check if the init code is a valid bytes value
     if (!isBytesLike(initCode)) {
       throw new Error(`Invalid init code: ${initCode}`)
     }
-    // Hash the init code using Keccak256
     const initCodeHash = ethers.keccak256(initCode)
-    // Create the create2 address
-    return ethers.getCreate2Address(deployerAddress, salt, initCodeHash)
+    return ethers.getCreate2Address(context.adapter.normalizeAddress(deployerAddress), salt, initCodeHash)
+  }
+
+  private requireEvmAddressDerivation(resolverType: string, context: ExecutionContext): void {
+    if (context.adapter.platform !== 'evm') {
+      throw new Error(`${resolverType}: EVM address derivation is not supported on ${context.adapter.platform} networks.`)
+    }
   }
 
   private async resolveReadBalance(args: ReadBalanceValue['arguments'], context: ExecutionContext): Promise<string> {
     // Check if the address is a valid address
     const addressValue = args.address as any
 
-    if (!isAddress(addressValue)) {
+    if (!context.adapter.isAddress(addressValue)) {
       throw new Error(`Invalid address: ${addressValue}`)
     }
 
-    const balance = await context.provider.getBalance(addressValue)
+    const balance = await context.adapter.getBalance(addressValue)
     return balance.toString()
   }
 
@@ -385,7 +385,7 @@ export class ValueResolver {
     const { address, slot } = args
 
     // Check if the address is a valid address
-    if (!isAddress(address)) {
+    if (!context.adapter.isAddress(address)) {
       throw new Error(`Invalid address: ${address}`)
     }
 
@@ -393,9 +393,8 @@ export class ValueResolver {
     // After resolution, slot should be a string or number
     const slotValue = ethers.toBigInt(slot as string | number)
 
-    const storageValue = await context.provider.getStorage(address, slotValue)
-    // getStorage returns a hex string, ensure it's 32 bytes (64 hex chars + 0x)
-    return ethers.hexlify(storageValue)
+    const storageValue = await context.adapter.getStorageAt(address, slotValue)
+    return storageValue
   }
 
   /**
@@ -575,7 +574,7 @@ export class ValueResolver {
     }
 
     // Validate that the target address is a valid Ethereum address
-    if (!isAddress(to)) {
+    if (!context.adapter.isAddress(to)) {
       throw new Error(`call: invalid target address: ${to}`)
     }
 
@@ -605,7 +604,7 @@ export class ValueResolver {
       const callData = iface.encodeFunctionData(functionName, values)
 
       // Make the call using the provider
-      const result = await context.provider.call({
+      const result = await context.adapter.call({
         to: to,
         data: callData
       })
@@ -633,12 +632,12 @@ export class ValueResolver {
   private async resolveContractExists(args: ContractExistsValue['arguments'], context: ExecutionContext): Promise<boolean> {
     const { address } = args
 
-    if (!isAddress(address)) {
+    if (!context.adapter.isAddress(address)) {
       throw new Error(`contract-exists: invalid address: ${address}`)
     }
 
     try {
-      const code = await context.provider.getCode(address)
+      const code = await context.adapter.getCode(address)
       // getCode returns '0x' if no contract exists at the address
       return code !== '0x'
     } catch (error) {

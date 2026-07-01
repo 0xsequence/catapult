@@ -12,7 +12,7 @@ import {
 import { Contract } from '../types/contracts'
 import { ExecutionContext } from './context'
 import { ValueResolver, ResolutionScope } from './resolver'
-import { validateAddress, validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
+import { validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
 import { DeploymentEventEmitter, deploymentEvents } from '../events'
 import { createDefaultVerificationRegistry, VerificationPlatformRegistry } from '../verification/etherscan'
 import { BuildInfo } from '../types/buildinfo'
@@ -456,8 +456,7 @@ export class ExecutionEngine {
         const resolvedValue = action.arguments.value ? await this.resolver.resolve(action.arguments.value, context, scope) : 0
         const resolvedGasMultiplier = action.arguments.gasMultiplier !== undefined ? await this.resolver.resolve(action.arguments.gasMultiplier, context, scope) : undefined
         
-        // Validate and convert types
-        const to = validateAddress(resolvedTo, actionName)
+        const to = this.validateAddressForContext(resolvedTo, actionName, context)
         const data = validateHexData(resolvedData, actionName, 'data')
         const value = validateBigNumberish(resolvedValue, actionName, 'value')
         
@@ -475,18 +474,17 @@ export class ExecutionEngine {
         
         // Handle gas limit with optional multiplier
         const network = context.getNetwork()
-        const signer = await context.getResolvedSigner()
         if (network.gasLimit) {
           const baseGasLimit = network.gasLimit
           txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
         } else if (gasMultiplier) {
           // If gasMultiplier is specified but no network gasLimit, estimate gas first
-          const estimatedGas = await signer.estimateGas({ to, data, value })
+          const estimatedGas = await context.adapter.estimateGas({ to, data, value })
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
-        
-        await this.checkFundsForTransaction(actionName, txParams, context, signer)
-        const tx = await signer.sendTransaction(txParams)
+
+        await this.checkFundsForTransaction(actionName, txParams, context)
+        const tx = await context.adapter.sendTransaction(txParams)
         
         this.events.emitEvent({
           type: 'transaction_sent',
@@ -523,9 +521,12 @@ export class ExecutionEngine {
         const resolvedRawTx = await this.resolver.resolve(action.arguments.transaction, context, scope)
         
         // Validate and convert type
+        if (!context.adapter.supportsRawSignedTransactions) {
+          throw new Error(`Action "${actionName}": send-signed-transaction is not supported on ${context.adapter.platform} networks.`)
+        }
         const rawTx = validateRawTransaction(resolvedRawTx, actionName)
         
-        const tx = await context.provider.broadcastTransaction(rawTx)
+        const tx = await context.adapter.broadcastSignedTransaction(rawTx)
         
         this.events.emitEvent({
           type: 'transaction_sent',
@@ -572,7 +573,7 @@ export class ExecutionEngine {
           : 'all'
 
         // Validate inputs
-        const address = validateAddress(resolvedAddress, actionName)
+        const address = this.validateAddressForContext(resolvedAddress, actionName, context)
         
         if (!resolvedContract || typeof resolvedContract !== 'object') {
           throw new Error(`Action "${actionName}": contract must be a Contract object`)
@@ -787,10 +788,12 @@ export class ExecutionEngine {
         const resolvedData = await this.resolver.resolve(action.arguments.data, context, scope)
         const resolvedValue = action.arguments.value ? await this.resolver.resolve(action.arguments.value, context, scope) : 0
         const resolvedGasMultiplier = action.arguments.gasMultiplier !== undefined ? await this.resolver.resolve(action.arguments.gasMultiplier, context, scope) : undefined
+        const resolvedAbi = action.arguments.abi !== undefined ? await this.resolver.resolve(action.arguments.abi, context, scope) : undefined
         
         // Validate and convert types
         const data = validateHexData(resolvedData, actionName, 'data')
         const value = validateBigNumberish(resolvedValue, actionName, 'value')
+        const abi = resolvedAbi !== undefined ? this.validateAbi(resolvedAbi, actionName) : undefined
         
         // Validate gas multiplier if provided
         let gasMultiplier: number | undefined
@@ -801,23 +804,24 @@ export class ExecutionEngine {
           gasMultiplier = resolvedGasMultiplier
         }
         
-        // Prepare transaction parameters for contract creation (to: null)
-        const txParams: any = { to: null, data, value }
+        const txParams: any = { data, value }
+        if (abi !== undefined) {
+          txParams.abi = abi
+        }
         
         // Handle gas limit with optional multiplier
         const network = context.getNetwork()
-        const signer = await context.getResolvedSigner()
         if (network.gasLimit) {
           const baseGasLimit = network.gasLimit
           txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
         } else if (gasMultiplier) {
           // If gasMultiplier is specified but no network gasLimit, estimate gas first
-          const estimatedGas = await signer.estimateGas(txParams)
+          const estimatedGas = await context.adapter.estimateGas({ data, value })
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
 
-        await this.checkFundsForTransaction(actionName, txParams, context, signer)
-        const tx = await signer.sendTransaction(txParams)
+        await this.checkFundsForTransaction(actionName, txParams, context)
+        const tx = await context.adapter.createContract(txParams)
         
         this.events.emitEvent({
           type: 'transaction_sent',
@@ -866,6 +870,10 @@ export class ExecutionEngine {
         break
       }
       case 'test-nicks-method': {
+        if (!context.adapter.supportsNickMethod) {
+          throw new Error(`Nick's method is only supported on EVM networks; network "${context.getNetwork().name}" uses platform "${context.adapter.platform}".`)
+        }
+
         if (this.nicksMethodResult !== undefined && !this.allowMultipleNicksMethodTests) {
           if (this.nicksMethodResult === false) {
             throw new Error(`Nick's method test already failed this run`)
@@ -1082,6 +1090,7 @@ export class ExecutionEngine {
           throw new Error(`Action "${actionName}": digest must be 32 bytes (got ${ethers.getBytes(normalizedDigest).length}).`)
         }
 
+        this.requireEvmSigning(actionName, action.type, context)
         const signer = await context.getResolvedSigner()
         const signature = await signer.signDigest(normalizedDigest)
 
@@ -1109,6 +1118,7 @@ export class ExecutionEngine {
         }
 
         const { payload, storedRepresentation } = this.normalizeSignMessagePayload(resolvedMessage, actionName)
+        this.requireEvmSigning(actionName, action.type, context)
         const signer = await context.getResolvedSigner()
         const signature = await signer.signMessage(payload)
 
@@ -1164,6 +1174,7 @@ export class ExecutionEngine {
           resolvedPrimaryType
         )
 
+        this.requireEvmSigning(actionName, action.type, context)
         const signer = await context.getResolvedSigner()
         const signature = await signer.signTypedData(
           resolvedDomain as Record<string, any>,
@@ -1214,6 +1225,32 @@ export class ExecutionEngine {
       normalized[key] = value
     }
     return normalized
+  }
+
+  private validateAddressForContext(value: unknown, actionName: string, context: ExecutionContext): string {
+    if (typeof value !== 'string') {
+      throw new Error(`Invalid address for action "${actionName}": expected string, got ${typeof value}`)
+    }
+
+    try {
+      return context.adapter.normalizeAddress(value)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(`Invalid address for action "${actionName}": ${reason}`)
+    }
+  }
+
+  private validateAbi(value: unknown, actionName: string): unknown[] {
+    if (!Array.isArray(value)) {
+      throw new Error(`Action "${actionName}": abi must resolve to an array when provided.`)
+    }
+    return value
+  }
+
+  private requireEvmSigning(actionName: string, actionType: string, context: ExecutionContext): void {
+    if (!context.adapter.supportsEvmSignatures) {
+      throw new Error(`Action "${actionName}": ${actionType} is only supported on EVM networks; network "${context.getNetwork().name}" uses platform "${context.adapter.platform}".`)
+    }
   }
 
   private normalizeSignMessagePayload(
@@ -1454,7 +1491,7 @@ export class ExecutionEngine {
       // Check main signer balance first
       const signer = await context.getResolvedSigner()
       const signerAddress = await signer.getAddress()
-      const signerBalance = await context.provider.getBalance(signerAddress)
+      const signerBalance = await context.provider!.getBalance(signerAddress)
       
       if (signerBalance < BigInt(defaultFundingAmount.toString())) {
         this.events.emitEvent({
@@ -1482,7 +1519,7 @@ export class ExecutionEngine {
 
         if (unsignedTx.gasPrice) {
           // Check gas price
-          const gasPrice = await context.provider.getFeeData().then(data => data.gasPrice)
+          const gasPrice = await context.provider!.getFeeData().then(data => data.gasPrice)
           if (!gasPrice) {
             this.events.emitEvent({
               type: "debug_info",
@@ -1504,7 +1541,7 @@ export class ExecutionEngine {
 
         if (simulationTx.gasLimit) {
           // Simulate the transaction expected gas usage
-          const estimatedGas = await context.provider.estimateGas(simulationTx);
+          const estimatedGas = await context.provider!.estimateGas(simulationTx);
           const estimatedGasStr = estimatedGas.toString();
           const simulationTxGasLimitStr = simulationTx.gasLimit.toString();
           if (estimatedGas > BigInt(simulationTxGasLimitStr)) {
@@ -1549,7 +1586,7 @@ export class ExecutionEngine {
       })
       
       // Check if EOA already has sufficient balance
-      const currentBalance = await context.provider.getBalance(eoaAddress)
+      const currentBalance = await context.provider!.getBalance(eoaAddress)
       const neededFunding = BigInt(defaultFundingAmount.toString()) - currentBalance
       
       if (neededFunding > 0) {
@@ -1635,7 +1672,7 @@ export class ExecutionEngine {
         }
       })
       
-      const deployTx = await context.provider.broadcastTransaction(signedTx)
+      const deployTx = await context.provider!.broadcastTransaction(signedTx)
       
       this.events.emitEvent({
         type: 'debug_info',
@@ -1772,7 +1809,7 @@ export class ExecutionEngine {
     context: ExecutionContext
   ): Promise<void> {
     // Check remaining balance in the test EOA
-    const remainingBalance = await context.provider.getBalance(eoaAddress)
+    const remainingBalance = await context.provider!.getBalance(eoaAddress)
     
     if (remainingBalance <= 0n) {
       // No funds to return
@@ -1780,10 +1817,10 @@ export class ExecutionEngine {
     }
     
     // Connect the wallet to the provider to send transactions
-    const connectedWallet = wallet.connect(context.provider)
+    const connectedWallet = wallet.connect(context.provider!)
     
     // Estimate gas for a simple transfer
-    const feeData = await context.provider.getFeeData()
+    const feeData = await context.provider!.getFeeData()
     const txGas = feeData.maxFeePerGas ? {
       maxFeePerGas: feeData.maxFeePerGas,
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || ethers.parseUnits('20', 'gwei')
@@ -1983,38 +2020,39 @@ export class ExecutionEngine {
    * Checks if the signer has enough funds to cover the estimated cost of the transaction.
    * Returns true if the signer has enough funds, false if the signer does not have enough funds, and null if no gas price is available.
    */
-  private async checkFundsForTransaction(actionName: string, txParams: ethers.TransactionRequest, context: ExecutionContext, signer: ethers.Signer): Promise<boolean | null> {
+  private async checkFundsForTransaction(actionName: string, txParams: any, context: ExecutionContext): Promise<boolean | null> {
     try {
-      const gasPrice = txParams.gasPrice || await context.provider.getFeeData().then(data => data.gasPrice)
-      if (!gasPrice) {
+      const estimate = await context.adapter.estimateTransactionCost(txParams)
+      if (!estimate) {
         this.events.emitEvent({
           type: 'debug_info',
           level: 'warn',
           data: {
             actionName: actionName,
-            message: `No gas price available`
+            message: `No transaction cost estimate available`
           }
         })
         return null
       }
-      const gasLimit = txParams.gasLimit || await signer.estimateGas(txParams)
-      const requiredETH = BigInt(gasLimit) * BigInt(gasPrice)
-      const signerBalance = await context.provider.getBalance(await signer.getAddress())
+
       this.events.emitEvent({
         type: 'debug_info',
           level: 'debug',
           data: {
             actionName: actionName,
-            message: `Transaction ${txParams.gasLimit ? 'set' : 'estimated'} gas limit: ${gasLimit}, ${txParams.gasPrice ? 'set' : 'estimated'} gas price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei, required ETH: ${ethers.formatEther(requiredETH)}`
+            message: estimate.gasLimit && estimate.gasPrice
+              ? `Transaction ${txParams.gasLimit ? 'set' : 'estimated'} gas limit: ${estimate.gasLimit}, estimated gas price: ${ethers.formatUnits(estimate.gasPrice, 'gwei')} gwei, required ${estimate.nativeUnit}: ${estimate.formattedRequired}`
+              : `Estimated maximum transaction cost: ${estimate.formattedRequired} ${estimate.nativeUnit}`
           }
         })
-      if (signerBalance < requiredETH) {
+
+      if (estimate.signerBalance < estimate.requiredBalance) {
         this.events.emitEvent({
         type: 'debug_info',
           level: 'warn',
           data: {
             actionName: actionName,
-            message: `Insufficient funds: signer has ${ethers.formatEther(signerBalance)} ETH but estimated cost is ${ethers.formatEther(requiredETH)} ETH`
+            message: `Insufficient funds: signer has ${estimate.formattedBalance} ${estimate.nativeUnit} but estimated cost is ${estimate.formattedRequired} ${estimate.nativeUnit}`
           }
         })
         return false
