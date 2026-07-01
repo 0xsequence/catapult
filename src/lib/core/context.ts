@@ -12,6 +12,7 @@ export class ExecutionContext {
  private etherscanApiKey?: string
  private currentContextPath?: string
  private resolvedSigner?: DigestSigner // Cache for resolved signer
+ private projectRoot?: string // Absolute project root, used to confine file reads
 
   // Constants registries
   private topLevelConstants: Map<string, any> = new Map()
@@ -22,12 +23,14 @@ export class ExecutionContext {
    privateKey: string | undefined, // Make privateKey optional
    contractRepository: ContractRepository,
    etherscanApiKey?: string,
-   topLevelConstants?: Map<string, any>
+   topLevelConstants?: Map<string, any>,
+   projectRoot?: string
  ) {
    this.network = network
    this.provider = new ethers.JsonRpcProvider(network.rpcUrl)
    this.contractRepository = contractRepository
    this.etherscanApiKey = etherscanApiKey
+   this.projectRoot = projectRoot
    if (topLevelConstants) {
      this.topLevelConstants = new Map(topLevelConstants)
    }
@@ -99,6 +102,10 @@ export class ExecutionContext {
 
   public getContextPath(): string | undefined {
     return this.currentContextPath
+  }
+
+  public getProjectRoot(): string | undefined {
+    return this.projectRoot
   }
 
   // Constants management

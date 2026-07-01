@@ -848,6 +848,34 @@ trimmedPatchData:
 
 You can also provide explicit `start` and `end` byte positions (end is exclusive). Negative indexes count from the end of the byte array, so `end: -1` trims the last byte and `start: -32` keeps the final 32 bytes. `range` accepts either `start:end` or the bracket form `[start:end]`.
 
+### `read-file`
+Read the raw contents of a file as a value. This is the home for large, opaque, per-execution operational blobs (e.g. packed multisig signatures) that don't belong in `constants` and aren't typed build artifacts. The path is resolved relative to the directory of the job/template that uses it and is confined to the project root (absolute paths and `..` escapes are rejected):
+
+```yaml
+# Read packed Safe owner signatures written to a gitignored file next to the job
+signatures:
+  type: "read-file"
+  arguments:
+    path: "signatures.hex"
+    encoding: "hex"   # "utf8" (default), "hex", or "json"
+```
+
+`encoding: "utf8"` returns the text with a single trailing newline trimmed; `"hex"` validates and normalizes to a `0x`-prefixed lowercase hex string; `"json"` parses the file and returns the resulting value (composes with `read-json`).
+
+### `concat`
+Join resolved parts into a single string. Use this for URL/path templating instead of embedding `{{...}}` inside a longer literal (which is not interpolated — a `{{ref}}` is only resolved when it is the entire value):
+
+```yaml
+url:
+  type: "concat"
+  arguments:
+    values:
+      - "https://safe-transaction-mainnet.safe.global/api/v1/multisig-transactions/"
+      - "{{safe-tx-hash}}"
+      - "/"
+    separator: ""   # optional, defaults to "" (direct concatenation)
+```
+
 Verify deployed contracts on block explorers:
 
 ```yaml
@@ -955,7 +983,57 @@ Catapult includes several standard templates:
 - **`erc-2470`** and raw variant: CREATE2 Deployer (singleton factory)
 - **`assured-deployment`**: Helper to ensure a contract is deployed at a specific address
 - **`min-balance`**: Ensure minimum balance for any given address
+- **`safe-exec-transaction`**: Assemble and broadcast a fully-signed Gnosis Safe `execTransaction` (see below)
 - Raw building blocks: `raw-sequence-universal-deployer-2`, `raw-nano-universal-deployer`, `raw-erc-2470`
+
+### `safe-exec-transaction`
+
+Broadcasts a fully-signed Gnosis Safe transaction on-chain ("Shape 1" relay) instead of stopping at calldata for a human to paste into the Safe UI. It packs the owner signatures the Safe already collected into `execTransaction` and sends the outer transaction with the configured EOA as relayer.
+
+The packed signatures are passed as the `signatures` argument. Where they come from is the caller's choice — the two common sources:
+
+Offline / air-gapped (signatures collected into a gitignorable file):
+
+```yaml
+- name: "relay"
+  template: "safe-exec-transaction"
+  arguments:
+    safe: "{{safe_address}}"
+    to: "{{target}}"
+    data: "{{inner_calldata}}"
+    operation: "0"          # 0 = CALL, 1 = DELEGATECALL
+    signatures:
+      type: "read-file"
+      arguments: { path: "signatures.hex", encoding: "hex" }
+```
+
+Safe Transaction Service (hosted flow — the service returns a top-level pre-packed `signatures` field):
+
+```yaml
+- name: "fetch-safe-tx"
+  type: "json-request"
+  arguments:
+    url:
+      type: "concat"
+      arguments:
+        values:
+          - "https://safe-transaction-mainnet.safe.global/api"
+          - "/v1/multisig-transactions/"
+          - "{{safe_tx_hash}}"
+          - "/"
+- name: "relay"
+  template: "safe-exec-transaction"
+  arguments:
+    safe: "{{safe_address}}"
+    to: "{{target}}"
+    data: "{{inner_calldata}}"
+    operation: "0"
+    signatures:
+      type: "read-json"
+      arguments: { json: "{{fetch-safe-tx.response}}", path: "signatures" }
+```
+
+The template only assembles and broadcasts; it does not impose a post-execution skip condition, because the desired state of a Safe relay is the effect of the *inner* call. Wrap the calling job with `skip_if` observing that on-chain effect (e.g. `owner() == newOwner`) for idempotent, re-runnable convergence.
 
 ## Contract Resolution
 
