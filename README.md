@@ -848,6 +848,34 @@ trimmedPatchData:
 
 You can also provide explicit `start` and `end` byte positions (end is exclusive). Negative indexes count from the end of the byte array, so `end: -1` trims the last byte and `start: -32` keeps the final 32 bytes. `range` accepts either `start:end` or the bracket form `[start:end]`.
 
+### `read-file`
+Read the raw contents of a file as a value. This is the home for large, opaque, per-execution operational blobs (e.g. packed multisig signatures) that don't belong in `constants` and aren't typed build artifacts. The path is resolved relative to the directory of the job/template that uses it and is confined to the project root (absolute paths and `..` escapes are rejected):
+
+```yaml
+# Read packed Safe owner signatures written to a gitignored file next to the job
+signatures:
+  type: "read-file"
+  arguments:
+    path: "signatures.hex"
+    encoding: "hex"   # "utf8" (default), "hex", or "json"
+```
+
+`encoding: "utf8"` returns the text with a single trailing newline trimmed; `"hex"` validates and normalizes to a `0x`-prefixed lowercase hex string; `"json"` parses the file and returns the resulting value (composes with `read-json`).
+
+### `concat`
+Join resolved parts into a single string. Use this for URL/path templating instead of embedding `{{...}}` inside a longer literal (which is not interpolated — a `{{ref}}` is only resolved when it is the entire value):
+
+```yaml
+url:
+  type: "concat"
+  arguments:
+    values:
+      - "https://safe-transaction-mainnet.safe.global/api/v1/multisig-transactions/"
+      - "{{safe-tx-hash}}"
+      - "/"
+    separator: ""   # optional, defaults to "" (direct concatenation)
+```
+
 Verify deployed contracts on block explorers:
 
 ```yaml
