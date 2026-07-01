@@ -983,7 +983,57 @@ Catapult includes several standard templates:
 - **`erc-2470`** and raw variant: CREATE2 Deployer (singleton factory)
 - **`assured-deployment`**: Helper to ensure a contract is deployed at a specific address
 - **`min-balance`**: Ensure minimum balance for any given address
+- **`safe-exec-transaction`**: Assemble and broadcast a fully-signed Gnosis Safe `execTransaction` (see below)
 - Raw building blocks: `raw-sequence-universal-deployer-2`, `raw-nano-universal-deployer`, `raw-erc-2470`
+
+### `safe-exec-transaction`
+
+Broadcasts a fully-signed Gnosis Safe transaction on-chain ("Shape 1" relay) instead of stopping at calldata for a human to paste into the Safe UI. It packs the owner signatures the Safe already collected into `execTransaction` and sends the outer transaction with the configured EOA as relayer.
+
+The packed signatures are passed as the `signatures` argument. Where they come from is the caller's choice — the two common sources:
+
+Offline / air-gapped (signatures collected into a gitignorable file):
+
+```yaml
+- name: "relay"
+  template: "safe-exec-transaction"
+  arguments:
+    safe: "{{safe_address}}"
+    to: "{{target}}"
+    data: "{{inner_calldata}}"
+    operation: "0"          # 0 = CALL, 1 = DELEGATECALL
+    signatures:
+      type: "read-file"
+      arguments: { path: "signatures.hex", encoding: "hex" }
+```
+
+Safe Transaction Service (hosted flow — the service returns a top-level pre-packed `signatures` field):
+
+```yaml
+- name: "fetch-safe-tx"
+  type: "json-request"
+  arguments:
+    url:
+      type: "concat"
+      arguments:
+        values:
+          - "https://safe-transaction-mainnet.safe.global/api"
+          - "/v1/multisig-transactions/"
+          - "{{safe_tx_hash}}"
+          - "/"
+- name: "relay"
+  template: "safe-exec-transaction"
+  arguments:
+    safe: "{{safe_address}}"
+    to: "{{target}}"
+    data: "{{inner_calldata}}"
+    operation: "0"
+    signatures:
+      type: "read-json"
+      arguments: { json: "{{fetch-safe-tx.response}}", path: "signatures" }
+```
+
+The template only assembles and broadcasts; it does not impose a post-execution skip condition, because the desired state of a Safe relay is the effect of the *inner* call. Wrap the calling job with `skip_if` observing that on-chain effect (e.g. `owner() == newOwner`) for idempotent, re-runnable convergence.
 
 ## Contract Resolution
 

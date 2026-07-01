@@ -36,9 +36,9 @@ A blob lives in its own file, referenced by path, resolved relative to the job d
 
 An explicit string-join, chosen over implicit whole-string interpolation. Implicit interpolation risks mangling values that legitimately contain `{{` and forces the resolver to guess intent; an explicit `concat` is unambiguous and self-documenting. Solves URL/path templating.
 
-### D. `safe-exec-transaction` std template — **sketched below, not built**
+### D. `safe-exec-transaction` std template — **built**
 
-Encapsulates the whole Shape-1 relay on top of the primitives + existing `json-request`/`read-json`. Worth doing, but it is a composition of primitives and should land after the primitives it depends on; it also overlaps with the `propose-transaction` / `pending`-state design in `roadmap-thinking.md` §2 and deserves that wider discussion.
+Encapsulates the Shape-1 relay on top of the primitives + existing `json-request`/`read-json`/`abi-encode`/`send-transaction`. See "The template" section below for the final shape and the one design decision that fell out of it (a single `signatures` argument rather than baking the file-vs-service choice into the template).
 
 ## What was built
 
@@ -79,8 +79,10 @@ Each part is resolved then coerced to a string (numbers/booleans allowed; object
 - `src/lib/core/resolver.ts` — imports, two dispatch cases, `resolveReadFile` / `resolveConcat` implementations.
 - `src/lib/core/context.ts` — optional `projectRoot` constructor arg + `getProjectRoot()` (used to confine reads). Backwards-compatible: existing 5-arg callers and test mocks are unaffected.
 - `src/lib/deployer.ts` — passes `options.projectRoot` into the context.
+- `src/lib/std/templates/safe-exec-transaction.yaml` — the Shape-1 relay std template.
 - `src/lib/core/__tests__/resolver.spec.ts` — `read-file` (11 cases) and `concat` (6 cases) describe blocks.
-- `README.md` — `read-file` and `concat` sections under Value Resolvers.
+- `src/lib/core/__tests__/safe-exec-transaction.spec.ts` — parses the shipped template and runs it end-to-end (2 cases).
+- `README.md` — `read-file` and `concat` sections under Value Resolvers, plus a `safe-exec-transaction` section under Standard Templates.
 
 ## Security considerations
 
@@ -151,20 +153,37 @@ actions:
             - { type: "read-file", arguments: { path: "signatures.hex", encoding: "hex" } }
 ```
 
-## Sketch: `safe-exec-transaction` std template (not implemented)
+## The template: `safe-exec-transaction`
 
-A std template in `src/lib/std/templates/safe-exec-transaction.yaml`, taking the Safe address, the inner call, and either a signatures file or a tx-service base URL. It would:
+Shipped at `src/lib/std/templates/safe-exec-transaction.yaml`. It takes the Safe address, the ten `execTransaction` parameters (`to`, `value`, `data`, `operation`, `safeTxGas`, `baseGas`, `gasPrice`, `gasToken`, `refundReceiver`) and the packed owner `signatures`, then:
 
-1. Compute/accept the SafeTxHash for the inner transaction.
-2. Obtain packed signatures — either `read-file` (offline) or `json-request` + `read-json` against a `concat`-built tx-service URL (online).
-3. `abi-encode` `execTransaction(...)` with the inner call + packed signatures.
-4. `send-transaction` to the Safe.
-5. Guard with a `skip_condition` that observes the on-chain effect (the same idempotent-convergence pattern as deployments), so a re-run either lands the tx or finds it already applied.
+1. `abi-encode`s `execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)` with those values.
+2. `send-transaction`s that calldata to the Safe (the configured EOA is the relayer).
+3. Exposes the outer tx hash as the template output `hash`.
 
-Open design point: this overlaps with the `propose-transaction` + `pending`-state model in `roadmap-thinking.md` §2. The primitives here (`read-file`, `concat`) are useful regardless of which way that lands, which is the argument for shipping them independently first.
+```yaml
+- name: "relay"
+  template: "safe-exec-transaction"
+  arguments:
+    safe: "{{safe_address}}"
+    to: "{{target}}"
+    data: "{{inner_calldata}}"
+    operation: "0"
+    signatures:
+      type: "read-file"                       # offline: a gitignorable signatures file
+      arguments: { path: "signatures.hex", encoding: "hex" }
+```
+
+For the hosted flow, the caller fetches the signatures with a sibling `json-request` (URL built with `concat`) and passes `read-json` of the response's `signatures` field — see README for that variant.
+
+**Design decision — one `signatures` argument, not a file-vs-service switch inside the template.** My first cut tried to make the template pick the source (fetch from the tx-service *or* read the file). That can't be expressed cleanly today: catapult has no conditional/coalesce value resolver, so a `read-file` with an empty path just errors — there's no "use A else B". Forcing it would have meant either a new `conditional` resolver (out of scope) or an ugly always-fetch-then-maybe-ignore. Instead the template takes a single resolved `signatures` value and the *caller* chooses the source with the resolver they want (`read-file` or `json-request`+`read-json`). This keeps the template single-responsibility (assemble + broadcast), mirrors how `min-balance` takes an already-resolved `balance`, and makes both source patterns first-class in the docs rather than one being privileged.
+
+**No post-execution skip condition in the template.** The desired state of a Safe relay is the effect of the *inner* call, which only the caller knows, so the template must not impose a generic post-check (catapult's template `skip_condition` is post-checked and would fail spuriously). The caller wraps the job with `skip_if` (a pure pre-gate that already exists for exactly the multisig-payload case — see `Job.skip_if` and `roadmap-thinking.md` §2) observing the on-chain effect, giving the same idempotent, re-runnable convergence as deployments.
+
+Open design point: this overlaps with the `propose-transaction` + `pending`-state model in `roadmap-thinking.md` §2 — a fuller lifecycle where catapult also *collects* signatures. `safe-exec-transaction` covers the "signatures already gathered, broadcast them" half; the primitives (`read-file`, `concat`) are useful regardless of how the collection half lands.
 
 ## Test results
 
-`src/lib/core/__tests__/resolver.spec.ts`: 216/216 pass (includes the 11 new `read-file` + 6 new `concat` cases). Build is clean (`pnpm build`), lint has 0 errors (only the pre-existing repo-wide `no-explicit-any` warnings).
+`resolver.spec.ts`: 216/216 pass (includes the 11 new `read-file` + 6 new `concat` cases). `safe-exec-transaction.spec.ts`: 2/2 pass — it parses the actually-shipped YAML, runs the template through the engine, and asserts the broadcast transaction goes to the Safe with `execTransaction` calldata that matches an independently-computed ethers encoding (an EOA stands in for the Safe so no real Safe is needed). Build is clean (`pnpm build`), lint has 0 errors (only the pre-existing repo-wide `no-explicit-any` warnings).
 
 The full suite has 4–5 pre-existing failures in `engine.spec.ts` (`send-signed-transaction`, `test-nicks-method`) — these fail identically on a clean `origin/master` tree and are environmental: the local node at `127.0.0.1:8545` is a Polygon mainnet fork (chainId `0x89`), not a clean instant-mining anvil with an unlocked funded account. They are unrelated to this change, which adds only two pure value resolvers and one optional constructor argument.
