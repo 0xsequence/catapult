@@ -4,16 +4,19 @@ import { parseJob, parseTemplate } from '../parsers'
 import { Job, Template } from '../types'
 import { ContractRepository } from '../contracts/repository'
 import { parseConstants } from '../parsers/constants'
+import { SvmProgramRepository } from '../programs/repository'
 
 export interface ProjectLoaderOptions {
   loadStdTemplates?: boolean
   loadContracts?: boolean
+  loadPrograms?: boolean
 }
 
 export class ProjectLoader {
   public jobs: Map<string, Job> = new Map()
   public templates: Map<string, Template> = new Map()
   public readonly contractRepository: ContractRepository
+  public readonly programRepository: SvmProgramRepository
 
   // Top-level constants registry
   public constants: Map<string, any> = new Map()
@@ -25,12 +28,16 @@ export class ProjectLoader {
     private readonly options: ProjectLoaderOptions = {}
   ) {
     this.contractRepository = new ContractRepository()
+    this.programRepository = new SvmProgramRepository()
   }
 
   async load() {
     // Load all contracts from the project root first
     if (this.options.loadContracts !== false) {
       await this.contractRepository.loadFrom(this.projectRoot)
+    }
+    if (this.options.loadPrograms !== false) {
+      await this.programRepository.loadFrom(this.projectRoot)
     }
 
     // Load standard library templates (unless disabled)

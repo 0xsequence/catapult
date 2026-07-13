@@ -47,8 +47,9 @@ export interface ChainCostEstimate {
   formattedBalance: string
 }
 
-export interface ChainAdapter {
+export interface BaseChainAdapter {
   readonly platform: ChainPlatform
+  readonly executionModel: 'evm-like' | 'svm'
   readonly nativeCurrencySymbol: string
   readonly supportsNickMethod: boolean
   readonly supportsRawSignedTransactions: boolean
@@ -63,6 +64,19 @@ export interface ChainAdapter {
   formatAddress(value: string): string
 
   getBalance(address: string): Promise<bigint>
+
+  dispose(): Promise<void>
+}
+
+/**
+ * Transaction and contract operations shared by EVM and EVM-like runtimes such
+ * as Tron. SVM deliberately does not implement this interface: a Solana
+ * transaction is a list of instructions with explicit account metadata, not a
+ * `to + data + value` envelope.
+ */
+export interface EvmLikeChainAdapter extends BaseChainAdapter {
+  readonly executionModel: 'evm-like'
+
   getCode(address: string): Promise<string>
   getStorageAt(address: string, slot: bigint): Promise<string>
   call(request: ChainCallRequest): Promise<string>
@@ -72,6 +86,86 @@ export interface ChainAdapter {
   sendTransaction(request: ChainTransactionRequest): Promise<ChainTransactionResponse>
   createContract(request: ChainContractCreationRequest): Promise<ChainTransactionResponse>
   broadcastSignedTransaction(rawTransaction: string): Promise<ChainTransactionResponse>
+}
 
-  dispose(): Promise<void>
+export interface SvmAccountMetaRequest {
+  address: string
+  isSigner?: boolean
+  isWritable?: boolean
+}
+
+export interface SvmInstructionRequest {
+  programId: string
+  accounts?: SvmAccountMetaRequest[]
+  /** 0x-prefixed hex, base64 with a `base64:` prefix, or raw bytes. */
+  data?: string | Uint8Array | number[]
+}
+
+export interface SvmTransactionOptions {
+  signerKeypairPaths?: string[]
+  computeUnitLimit?: number
+  computeUnitPriceMicroLamports?: bigint
+  simulate?: boolean
+}
+
+export interface SvmTransactionResult {
+  signature?: string
+  status: 0 | 1
+  slot?: number
+  simulated: boolean
+  logs?: string[] | null
+  unitsConsumed?: number
+  raw?: unknown
+}
+
+export interface SvmAccountResult {
+  address: string
+  lamports: bigint
+  owner: string
+  executable: boolean
+  rentEpoch?: bigint
+  data: string
+}
+
+export interface SvmProgramDeploymentRequest extends SvmTransactionOptions {
+  programBytes: Uint8Array
+  programKeypairPath: string
+  maxDataLength?: number
+}
+
+export interface SvmProgramUpgradeRequest extends SvmTransactionOptions {
+  programBytes: Uint8Array
+  programId: string
+}
+
+export interface SvmProgramDeploymentResult {
+  programId: string
+  programDataAddress: string
+  bufferAddress: string
+  signatures: string[]
+  slot?: number
+}
+
+export interface SvmChainAdapter extends BaseChainAdapter {
+  readonly platform: 'svm'
+  readonly executionModel: 'svm'
+
+  getAccount(address: string): Promise<SvmAccountResult | null>
+  programExists(address: string): Promise<boolean>
+  deriveProgramAddress(programId: string, seeds: Uint8Array[]): { address: string; bump: number }
+  deriveAssociatedTokenAddress(owner: string, mint: string, tokenProgramId?: string): string
+  sendInstructions(instructions: SvmInstructionRequest[], options?: SvmTransactionOptions): Promise<SvmTransactionResult>
+  transfer(to: string, lamports: bigint, options?: SvmTransactionOptions): Promise<SvmTransactionResult>
+  deployProgram(request: SvmProgramDeploymentRequest): Promise<SvmProgramDeploymentResult>
+  upgradeProgram(request: SvmProgramUpgradeRequest): Promise<SvmProgramDeploymentResult>
+}
+
+export type ChainAdapter = EvmLikeChainAdapter | SvmChainAdapter
+
+export function isEvmLikeAdapter(adapter: ChainAdapter): adapter is EvmLikeChainAdapter {
+  return adapter.executionModel === 'evm-like'
+}
+
+export function isSvmAdapter(adapter: ChainAdapter): adapter is SvmChainAdapter {
+  return adapter.executionModel === 'svm'
 }

@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { TronWeb } from 'tronweb'
 import { Network } from '../types/network'
 import {
-  ChainAdapter,
+  EvmLikeChainAdapter,
   ChainCallRequest,
   ChainContractCreationRequest,
   ChainCostEstimate,
@@ -17,8 +17,9 @@ type TronSignedTransaction = Record<string, unknown> & {
   contract_address?: string
 }
 
-export class TronAdapter implements ChainAdapter {
+export class TronAdapter implements EvmLikeChainAdapter {
   public readonly platform = 'tron' as const
+  public readonly executionModel = 'evm-like' as const
   public readonly nativeCurrencySymbol = 'TRX'
   public readonly supportsNickMethod = false
   public readonly supportsRawSignedTransactions = false

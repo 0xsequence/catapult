@@ -2,7 +2,7 @@ import { ethers } from 'ethers'
 import { Network } from '../types/network'
 import { DigestSigner, toDigestSigner } from '../core/signer'
 import {
-  ChainAdapter,
+  EvmLikeChainAdapter,
   ChainCallRequest,
   ChainContractCreationRequest,
   ChainCostEstimate,
@@ -12,8 +12,9 @@ import {
   ChainTransactionResponse,
 } from './types'
 
-export class EvmAdapter implements ChainAdapter {
+export class EvmAdapter implements EvmLikeChainAdapter {
   public readonly platform = 'evm' as const
+  public readonly executionModel = 'evm-like' as const
   public readonly nativeCurrencySymbol = 'ETH'
   public readonly supportsNickMethod = true
   public readonly supportsRawSignedTransactions = true

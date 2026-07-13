@@ -21,6 +21,9 @@ export interface DeployerOptions {
   /** The private key of the EOA to be used as the signer/relayer. Optional if an implicit sender from RPC is desired. */
   privateKey?: string
 
+  /** Solana CLI-compatible JSON keypair path used as the SVM fee payer and default authority. */
+  keypairPath?: string
+
   /** An array of network configurations to use for deployment. */
   networks: Network[]
 
@@ -214,7 +217,9 @@ export class Deployer {
               this.options.privateKey,
               this.loader.contractRepository,
               this.options.etherscanApiKey,
-              this.loader.constants
+              this.loader.constants,
+              this.loader.programRepository,
+              this.options.keypairPath
             )
             // Set job-level constants if present (guard for mocked contexts in tests)
             if (typeof (context as unknown as { setJobConstants?: (constants: unknown) => void }).setJobConstants === 'function') {
@@ -238,7 +243,7 @@ export class Deployer {
                   const balanceBaseUnit = balanceBn.toString()
                   const balance = typeof balanceBn === 'bigint' ? balanceBn : BigInt(balanceBaseUnit)
                   const platform = network.platform || 'evm'
-                  const nativeUnit = adapter.nativeCurrencySymbol || (platform === 'tron' ? 'TRX' : 'ETH')
+                  const nativeUnit = adapter.nativeCurrencySymbol || (platform === 'tron' ? 'TRX' : platform === 'svm' ? 'SOL' : 'ETH')
                   const formattedBalance = adapter.formatNativeValue
                     ? adapter.formatNativeValue(balance)
                     : ethers.formatEther(balance)
@@ -252,7 +257,7 @@ export class Deployer {
                       balanceWei: balanceBaseUnit,
                       balance: formattedBalance,
                       balanceUnit: nativeUnit,
-                      balanceBaseUnit: platform === 'tron' ? 'sun' : 'wei'
+                      balanceBaseUnit: platform === 'tron' ? 'sun' : platform === 'svm' ? 'lamports' : 'wei'
                     }
                   })
                 }

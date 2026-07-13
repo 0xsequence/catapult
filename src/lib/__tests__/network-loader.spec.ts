@@ -151,7 +151,7 @@ describe('network-loader params', () => {
 })
 
 describe('network-loader platform', () => {
-  test('accepts evm, tron, and reserved svm platforms', async () => {
+  test('accepts evm, tron, and svm platforms', async () => {
     const projectRoot = path.join(tmpDir, 'platform-valid')
     const yaml = `
 - name: "Ethereum"

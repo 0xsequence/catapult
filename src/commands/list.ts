@@ -27,7 +27,7 @@ function formatSourceProvenance(provenance: { repo: string; commit?: string; ref
 
 export function makeListCommand(): Command {
   const list = new Command('list')
-    .description('List project resources like jobs, contracts, and networks')
+    .description('List project resources like jobs, contracts, programs, and networks')
 
   const listJobs = new Command('jobs')
     .description('List all available jobs in the project')
@@ -145,6 +145,44 @@ export function makeListCommand(): Command {
     }
   })
 
+  const listPrograms = new Command('programs')
+    .description('List all Solana/SVM program artifacts found in the project')
+  projectOption(listPrograms)
+  noStdOption(listPrograms)
+  verbosityOption(listPrograms)
+  listPrograms.action(async (options: ListOptions) => {
+    try {
+      setVerbosity(options.verbose as 0 | 1 | 2 | 3)
+      const loader = await loadProject(options.project, {
+        loadStdTemplates: options.std !== false
+      })
+      const programs = loader.programRepository.getAll()
+      console.log(chalk.bold.underline('Available SVM Programs:'))
+      if (programs.length === 0) {
+        console.log(chalk.yellow('No .so program artifacts found in this project.'))
+      } else {
+        for (const program of programs) {
+          console.log(`- ${chalk.cyan(program.name)}`)
+          console.log(`  ${chalk.gray('Binary:')} ${path.relative(options.project, program.binaryPath)}`)
+          console.log(`  ${chalk.gray('Size:')} ${program.byteLength} bytes`)
+          console.log(`  ${chalk.gray('SHA-256:')} ${program.uniqueHash}`)
+          if (program.idlPath) {
+            console.log(`  ${chalk.gray('IDL:')} ${path.relative(options.project, program.idlPath)}`)
+          }
+        }
+      }
+
+      const ambiguousRefs = loader.programRepository.getAmbiguousReferences()
+      if (ambiguousRefs.length > 0) {
+        console.log('\n' + chalk.bold.underline(chalk.yellow('Ambiguous Program References:')))
+        for (const ref of ambiguousRefs) console.log(`- ${chalk.red(ref)}`)
+      }
+    } catch (error) {
+      console.error(chalk.red('Error listing SVM programs:'), error instanceof Error ? error.message : String(error))
+      process.exit(1)
+    }
+  })
+
   const listNetworks = new Command('networks')
     .description('List all configured networks')
   projectOption(listNetworks)
@@ -254,6 +292,7 @@ export function makeListCommand(): Command {
 
   list.addCommand(listJobs)
   list.addCommand(listContracts)
+  list.addCommand(listPrograms)
   list.addCommand(listTemplates)
   list.addCommand(listNetworks)
   list.addCommand(listConstants)

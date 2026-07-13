@@ -3,12 +3,14 @@ import { Network } from '../types'
 import { ContractRepository } from '../contracts/repository'
 import { DigestSigner } from './signer'
 import { ChainAdapter, createChainAdapter, EvmAdapter } from '../chains'
+import { SvmProgramRepository } from '../programs/repository'
 
 export class ExecutionContext {
  public readonly adapter: ChainAdapter
  public readonly provider?: ethers.JsonRpcProvider
  public readonly signer?: DigestSigner | Promise<DigestSigner> // Allow Promise for implicit signer
  public readonly contractRepository: ContractRepository
+ public readonly programRepository: SvmProgramRepository
  private outputs: Map<string, any> = new Map()
  private network: Network
  private etherscanApiKey?: string
@@ -24,15 +26,18 @@ export class ExecutionContext {
    privateKey: string | undefined, // Make privateKey optional
    contractRepository: ContractRepository,
    etherscanApiKey?: string,
-   topLevelConstants?: Map<string, any>
+   topLevelConstants?: Map<string, any>,
+   programRepository: SvmProgramRepository = new SvmProgramRepository(),
+   keypairPath?: string
  ) {
    this.network = network
-   this.adapter = createChainAdapter(network, privateKey)
+   this.adapter = createChainAdapter(network, privateKey, keypairPath)
    if (this.adapter instanceof EvmAdapter) {
      this.provider = this.adapter.provider
      this.signer = this.adapter.signer
    }
    this.contractRepository = contractRepository
+   this.programRepository = programRepository
    this.etherscanApiKey = etherscanApiKey
    if (topLevelConstants) {
      this.topLevelConstants = new Map(topLevelConstants)
@@ -75,6 +80,10 @@ export class ExecutionContext {
 
   public getContractRepository(): ContractRepository {
     return this.contractRepository
+  }
+
+  public getProgramRepository(): SvmProgramRepository {
+    return this.programRepository
   }
 
   // To store results like `{{sequence-v1.factory.address}}`

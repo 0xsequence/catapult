@@ -5,15 +5,25 @@ export interface Network {
   /** The human-readable name of the network */
   name: string
   
-  /** The chain ID of the network */
+  /** Numeric network selector. For SVM this is a Catapult-local identifier. */
   chainId: number
+
+  /**
+   * Stable platform-native network identifier. SVM networks should use values
+   * such as `solana-mainnet-beta` or a genesis hash; `chainId` remains required
+   * for backwards-compatible Catapult selection and output grouping.
+   */
+  networkId?: string
+
+  /** Optional expected Solana genesis hash, used to reject a mismatched RPC. */
+  genesisHash?: string
   
   /** The RPC URL endpoint for the network */
   rpcUrl: string
 
   /**
    * Execution backend for this network. Defaults to "evm" for backward compatibility.
-   * "svm" is reserved for a future Solana/SVM adapter and is intentionally not implemented yet.
+   * SVM selects the native Solana instruction/account execution model.
    */
   platform?: 'evm' | 'tron' | 'svm'
 

@@ -15,6 +15,7 @@ export * from './provenance'
 
 // Export chain adapter primitives
 export * from './chains'
+export * from './programs/repository'
 
 // This will be the main entry point for the lib
 // Additional functionality will be added here as the lib grows

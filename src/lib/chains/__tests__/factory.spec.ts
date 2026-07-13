@@ -1,4 +1,4 @@
-import { createChainAdapter, EvmAdapter, getNetworkPlatform, TronAdapter } from '..'
+import { createChainAdapter, EvmAdapter, getNetworkPlatform, SvmAdapter, TronAdapter } from '..'
 import { Network } from '../../types'
 
 describe('chain adapter factory', () => {
@@ -28,17 +28,16 @@ describe('chain adapter factory', () => {
     expect(createChainAdapter(network, '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80')).toBeInstanceOf(TronAdapter)
   })
 
-  it('recognizes SVM as reserved but not implemented', async () => {
+  it('creates an SVM adapter for Solana networks', () => {
     const network: Network = {
-      name: 'Future SVM',
+      name: 'Solana Localnet',
       chainId: 900_000,
       rpcUrl: 'http://127.0.0.1:8899',
       platform: 'svm',
     }
 
     const adapter = createChainAdapter(network)
-    expect(adapter.platform).toBe('svm')
-    await expect(adapter.getSignerAddress()).rejects.toThrow('recognized but not implemented')
+    expect(adapter).toBeInstanceOf(SvmAdapter)
+    expect(adapter.executionModel).toBe('svm')
   })
 })
-

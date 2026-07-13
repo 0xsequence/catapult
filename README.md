@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/0xsequence/catapult/actions/workflows/ci.yml/badge.svg)](https://github.com/0xsequence/catapult/actions/workflows/ci.yml)
 
-**Catapult** is a powerful Ethereum contract deployment and management framework designed to simplify the orchestration of complex contract deployments across multiple blockchain networks. Built with TypeScript and Node.js, it provides a declarative YAML-based approach to defining deployment jobs, templates, and dependencies.
+**Catapult** is a multi-chain deployment and management framework for EVM networks, Tron, and Solana/SVM. Built with TypeScript and Node.js, it provides a declarative YAML-based approach to defining deployment jobs, templates, and dependencies.
 
 ## Overview
 
@@ -83,6 +83,10 @@ my-deployment-project/
 ├── artifacts/                 # Contract build artifacts
 │   ├── MyContract.json
 │   └── Factory.json
+├── target/                    # Solana/Anchor build output (optional)
+│   ├── deploy/MyProgram.so
+│   └── idl/MyProgram.json
+├── keys/                      # Local keypair paths referenced by jobs (do not commit secrets)
 └── output/                    # Generated deployment results
 ```
 
@@ -104,7 +108,7 @@ Create a `networks.yaml` file in your project root to define target networks:
 - name: "Polygon"
   chainId: 137
   rpcUrl: "https://polygon-rpc.com"
-  platform: "evm"             # Optional: evm (default), tron, or reserved svm
+  platform: "evm"             # Optional: evm (default), tron, or svm
   supports: ["etherscan_v2"]  # Optional: verification platforms supported
   gasLimit: 500000            # Optional: gas limit for all transactions on this network
   testnet: true               # Optional: mark as test network
@@ -117,9 +121,20 @@ Create a `networks.yaml` file in your project root to define target networks:
   params:
     feeLimit: 150000000       # Sun. 150 TRX max burn for energy/bandwidth
     tronGridApiKeyEnv: "TRONGRID_API_KEY"
+
+- name: "Solana Devnet"
+  chainId: 900001             # Catapult selector; Solana has no numeric chain ID
+  networkId: "solana-devnet"
+  rpcUrl: "https://api.devnet.solana.com"
+  platform: "svm"
+  genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+  testnet: true
+  params:
+    commitment: "confirmed"  # processed, confirmed, or finalized
+    programChunkSize: 900
 ```
 
-`platform` defaults to `evm`. `tron` enables the TronWeb-backed adapter for direct contract deployment and contract calls. `svm` is accepted as a reserved value so projects can model future Solana/SVM networks, but SVM execution is not implemented yet and will fail with a clear "not implemented" error if selected.
+`platform` defaults to `evm`. `tron` enables the TronWeb-backed adapter. `svm` enables the native Solana adapter; it uses Solana instructions and explicit account metadata instead of emulating EVM `to/data/value` transactions. `chainId` remains required as Catapult's network selector, while optional `networkId` and `genesisHash` identify an SVM cluster without pretending Solana exposes an EVM chain ID.
 
 The `supports` field is optional and specifies which verification platforms are available for the network. Currently supported platforms:
 
@@ -135,6 +150,16 @@ Tron notes:
 - Contract addresses are stored internally as `0x`-prefixed 20-byte addresses; the Tron adapter converts Base58/`41`-prefixed addresses at the network boundary.
 - `send-signed-transaction`, Nick's method bootstrap templates, and raw Ethereum pre-signed deployer templates are EVM-only for now.
 - `get-storage-at` is not implemented for Tron.
+
+Solana/SVM notes:
+
+- Pass a standard 64-byte Solana JSON keypair with `--keypair` or `SOLANA_KEYPAIR`; EVM and Tron continue to use `--private-key` or `PRIVATE_KEY`.
+- Mixed-platform runs should provide both signer options so each adapter has its native credentials.
+- Values are in lamports, the smallest SOL unit. Program binaries are discovered from `.so` files, with matching Anchor-style IDLs attached when available, and referenced as `{{Program(name)}}`.
+- Deployment and upgrade use the native upgradeable BPF loader. A new deployment also needs a program keypair path; that keypair defines the stable program ID.
+- `svm-send-instructions` supports explicit account metadata, additional signer keypairs, compute-budget options, simulation, broadcast, and confirmation.
+- `genesisHash` is optional but recommended: Catapult checks it before its first RPC operation to prevent deploying to the wrong cluster.
+- EVM-only actions and resolvers fail explicitly on SVM. Use the `svm-*` actions and resolvers described below.
 
 ### Constants
 
@@ -409,6 +434,7 @@ Common options (run):
 - `-n, --network <selectors>`: Comma-separated selectors by chain ID or network name
 - `--rpc-url <url>`: Run against a single custom RPC; chain ID is auto-detected. If `networks.yaml` defines that chain, Catapult merges yaml settings (name, `supports`, `gasLimit`, `testnet`, `evmVersion`, `params`) while using your RPC URL.
 - `-k, --private-key <key>`: EOA private key (or set `PRIVATE_KEY`)
+- `--keypair <path>`: Solana JSON keypair path (or set `SOLANA_KEYPAIR`)
 - `--etherscan-api-key <key>`: Etherscan API key (or set `ETHERSCAN_API_KEY`)
 - `--fail-early`: Stop as soon as any job fails
 - `--ignore-verify-errors`: Convert verification errors to warnings and show complete report at end (instead of exiting with error code)
@@ -471,6 +497,12 @@ List detected contracts:
 
 ```bash
 catapult list contracts
+```
+
+List detected Solana/SVM `.so` programs and matching IDLs:
+
+```bash
+catapult list programs
 ```
 
 List available templates:
@@ -551,6 +583,58 @@ catapult provenance generate
 ## Built-in Actions
 
 Catapult provides several built-in primitive actions:
+
+### Solana/SVM actions
+
+Transfer native SOL in lamports:
+
+```yaml
+- name: "fund-account"
+  type: "svm-transfer"
+  arguments:
+    to: "9xQeWvG816bUx9EPf2gQqQpWgVwD2B5JmYhM8Z8aYk4K"
+    lamports: "1000000000"
+    computeUnitPriceMicroLamports: "2"
+```
+
+Send one or more native instructions. Instruction data accepts `0x` hex, `base64:<data>`, or a byte array:
+
+```yaml
+- name: "invoke-program"
+  type: "svm-send-instructions"
+  arguments:
+    instructions:
+      - programId: "{{deploy-counter.address}}"
+        accounts:
+          - address: "{{counter-pda.address}}"
+            isWritable: true
+          - address: "{{payer}}"
+            isSigner: true
+        data: "base64:AAE="
+    signerKeypairs: ["./keys/extra-authority.json"]
+    computeUnitLimit: 300000
+    simulate: false
+```
+
+Deploy or upgrade an upgradeable-loader program. Catapult scans the project for `.so` files, so a typical Anchor artifact can be referenced by basename:
+
+```yaml
+- name: "deploy-counter"
+  type: "svm-deploy-program"
+  arguments:
+    program: "{{Program(counter)}}"
+    programKeypair: "./keys/counter-program-keypair.json"
+    maxDataLength: 1048576
+
+- name: "upgrade-counter"
+  type: "svm-upgrade-program"
+  depends_on: ["deploy-counter"]
+  arguments:
+    program: "{{Program(counter)}}"
+    programId: "{{deploy-counter.address}}"
+```
+
+Deployment outputs include `address`/`programId`, `programDataAddress`, `bufferAddress`, `signatures`, and `slot`. Transaction outputs include `signature`, `slot`, `simulated`, `logs`, and `unitsConsumed`.
 
 ### `send-transaction`
 Send a transaction to the blockchain:
@@ -666,6 +750,43 @@ An optional `message` field is included in the error output for clarity.
 ## Value Resolvers
 
 Catapult includes powerful value resolvers for computing complex values:
+
+### Solana/SVM resolvers
+
+SVM account reads and executable-program checks use native account semantics:
+
+```yaml
+type: "svm-account"
+arguments:
+  address: "{{some-address}}"
+```
+
+```yaml
+type: "svm-program-exists"
+arguments:
+  address: "{{deploy-counter.address}}"
+```
+
+Derive a program-derived address (PDA). Seeds support `utf8` (default), `hex`, `base64`, `address`, or raw byte arrays:
+
+```yaml
+type: "svm-pda"
+arguments:
+  programId: "{{deploy-counter.address}}"
+  seeds:
+    - value: "counter"
+    - value: "{{payer}}"
+      encoding: "address"
+```
+
+The result contains both `address` and `bump`. Associated token addresses are also available:
+
+```yaml
+type: "svm-ata"
+arguments:
+  owner: "{{payer}}"
+  mint: "{{mint}}"
+```
 
 ### `abi-encode`
 ABI-encode function call data:
