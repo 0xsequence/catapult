@@ -1,4 +1,6 @@
 import { ethers } from 'ethers'
+import { PublicKey } from '@solana/web3.js'
+import { getVaultPda } from '@sqds/multisig'
 import {
   Value,
   ValueResolver as ValueResolverObject,
@@ -17,9 +19,16 @@ import {
   ReadJsonValue,
   ValueEmptyValue,
   SliceBytesValue,
+  SvmAccountValue,
+  SvmAssociatedTokenAddressValue,
+  SvmPdaSeed,
+  SvmPdaValue,
+  SvmProgramExistsValue,
+  SvmSquadsVaultValue,
 } from '../types'
 import { ExecutionContext } from './context'
-import { isAddress, isBigNumberish, isBytesLike } from '../utils/assertion'
+import { isBigNumberish, isBytesLike } from '../utils/assertion'
+import { isEvmLikeAdapter, isSvmAdapter, SvmChainAdapter } from '../chains'
 
 /**
  * A scope for resolving local variables, such as template arguments.
@@ -86,6 +95,21 @@ export class ValueResolver {
    * @private
    */
   private async resolveExpression(expression: string, context: ExecutionContext, scope: ResolutionScope): Promise<any> {
+    const programMatch = expression.match(/^Program\((.*?)\)(\.\w+)?$/)
+    if (programMatch) {
+      const [, reference, property] = programMatch
+      const program = context.programRepository.lookup(reference.trim(), context.getContextPath())
+      if (!program) {
+        throw new Error(`SVM program artifact not found for reference: "${reference.trim()}"`)
+      }
+      if (!property) return program
+      const propertyName = property.slice(1) as keyof typeof program
+      if (program[propertyName] === undefined) {
+        throw new Error(`Property "${propertyName}" does not exist on SVM program "${reference.trim()}"`)
+      }
+      return program[propertyName]
+    }
+
     // Check for Contract(...) syntax with optional property access
     const contractMatch = expression.match(/^Contract\((.*?)\)(\.\w+)?$/)
     if (contractMatch) {
@@ -194,9 +218,9 @@ export class ValueResolver {
       case 'constructor-encode':
         return this.resolveConstructorEncode(resolvedArgs as ConstructorEncodeValue['arguments'])
       case 'compute-create':
-        return this.resolveComputeCreate(resolvedArgs as ComputeCreateValue['arguments'])
+        return this.resolveComputeCreate(resolvedArgs as ComputeCreateValue['arguments'], context)
       case 'compute-create2':
-        return this.resolveComputeCreate2(resolvedArgs as ComputeCreate2Value['arguments'])
+        return this.resolveComputeCreate2(resolvedArgs as ComputeCreate2Value['arguments'], context)
       case 'read-balance':
         return this.resolveReadBalance(resolvedArgs as ReadBalanceValue['arguments'], context)
       case 'get-storage-at':
@@ -219,6 +243,16 @@ export class ValueResolver {
         return this.resolveValueEmpty(resolvedArgs as ValueEmptyValue['arguments'])
       case 'slice-bytes':
         return this.resolveSliceBytes(resolvedArgs as SliceBytesValue['arguments'])
+      case 'svm-account':
+        return this.resolveSvmAccount(resolvedArgs as SvmAccountValue['arguments'], context)
+      case 'svm-program-exists':
+        return this.resolveSvmProgramExists(resolvedArgs as SvmProgramExistsValue['arguments'], context)
+      case 'svm-pda':
+        return this.resolveSvmPda(resolvedArgs as SvmPdaValue['arguments'], context)
+      case 'svm-ata':
+        return this.resolveSvmAta(resolvedArgs as SvmAssociatedTokenAddressValue['arguments'], context)
+      case 'svm-squads-vault':
+        return this.resolveSvmSquadsVault(resolvedArgs as SvmSquadsVaultValue['arguments'], context)
       default:
         throw new Error(`Unknown value resolver type: ${(obj as any).type}`)
     }
@@ -331,53 +365,53 @@ export class ValueResolver {
     return '0x' + cleanCreationCode + cleanEncodedArgs
   }
 
-  private resolveComputeCreate(args: ComputeCreateValue['arguments']): string {
+  private resolveComputeCreate(args: ComputeCreateValue['arguments'], context: ExecutionContext): string {
+    this.requireEvmAddressDerivation('compute-create', context)
     const { deployerAddress, nonce } = args
-    // Check if the deployer address is a valid address
-    if (!isAddress(deployerAddress)) {
+    if (typeof deployerAddress !== 'string' || !context.adapter.isAddress(deployerAddress)) {
       throw new Error(`Invalid deployer address: ${deployerAddress}`)
     }
-    // Check if the nonce is a valid value
     if (!isBigNumberish(nonce)) {
       throw new Error(`Invalid nonce: ${nonce}`)
     }
     const bnNonce = ethers.toBigInt(nonce)
-    // Create the create address
     return ethers.getCreateAddress({
-      from: deployerAddress,
+      from: context.adapter.normalizeAddress(deployerAddress),
       nonce: bnNonce,
     })
   }
 
-  private resolveComputeCreate2(args: ComputeCreate2Value['arguments']): string {
+  private resolveComputeCreate2(args: ComputeCreate2Value['arguments'], context: ExecutionContext): string {
+    this.requireEvmAddressDerivation('compute-create2', context)
     const { deployerAddress, salt, initCode } = args
-    // Check if the deployer address is a valid address
-    if (!isAddress(deployerAddress)) {
+    if (typeof deployerAddress !== 'string' || !context.adapter.isAddress(deployerAddress)) {
       throw new Error(`Invalid deployer address: ${deployerAddress}`)
     }
-    // Check if the salt is a valid bytes value
     if (!isBytesLike(salt)) {
       throw new Error(`Invalid salt: ${salt}`)
     }
-    // Check if the init code is a valid bytes value
     if (!isBytesLike(initCode)) {
       throw new Error(`Invalid init code: ${initCode}`)
     }
-    // Hash the init code using Keccak256
     const initCodeHash = ethers.keccak256(initCode)
-    // Create the create2 address
-    return ethers.getCreate2Address(deployerAddress, salt, initCodeHash)
+    return ethers.getCreate2Address(context.adapter.normalizeAddress(deployerAddress), salt, initCodeHash)
+  }
+
+  private requireEvmAddressDerivation(resolverType: string, context: ExecutionContext): void {
+    if (context.adapter.platform !== 'evm') {
+      throw new Error(`${resolverType}: EVM address derivation is not supported on ${context.adapter.platform} networks.`)
+    }
   }
 
   private async resolveReadBalance(args: ReadBalanceValue['arguments'], context: ExecutionContext): Promise<string> {
     // Check if the address is a valid address
     const addressValue = args.address as any
 
-    if (!isAddress(addressValue)) {
+    if (!context.adapter.isAddress(addressValue)) {
       throw new Error(`Invalid address: ${addressValue}`)
     }
 
-    const balance = await context.provider.getBalance(addressValue)
+    const balance = await context.adapter.getBalance(addressValue)
     return balance.toString()
   }
 
@@ -385,7 +419,7 @@ export class ValueResolver {
     const { address, slot } = args
 
     // Check if the address is a valid address
-    if (!isAddress(address)) {
+    if (!context.adapter.isAddress(address)) {
       throw new Error(`Invalid address: ${address}`)
     }
 
@@ -393,9 +427,11 @@ export class ValueResolver {
     // After resolution, slot should be a string or number
     const slotValue = ethers.toBigInt(slot as string | number)
 
-    const storageValue = await context.provider.getStorage(address, slotValue)
-    // getStorage returns a hex string, ensure it's 32 bytes (64 hex chars + 0x)
-    return ethers.hexlify(storageValue)
+    if (!isEvmLikeAdapter(context.adapter)) {
+      throw new Error(`get-storage-at is not supported on ${context.adapter.platform} networks.`)
+    }
+    const storageValue = await context.adapter.getStorageAt(address, slotValue)
+    return storageValue
   }
 
   /**
@@ -575,7 +611,7 @@ export class ValueResolver {
     }
 
     // Validate that the target address is a valid Ethereum address
-    if (!isAddress(to)) {
+    if (!context.adapter.isAddress(to)) {
       throw new Error(`call: invalid target address: ${to}`)
     }
 
@@ -605,7 +641,10 @@ export class ValueResolver {
       const callData = iface.encodeFunctionData(functionName, values)
 
       // Make the call using the provider
-      const result = await context.provider.call({
+      if (!isEvmLikeAdapter(context.adapter)) {
+        throw new Error(`call is not supported on ${context.adapter.platform} networks; use svm-send-instructions or svm-account.`)
+      }
+      const result = await context.adapter.call({
         to: to,
         data: callData
       })
@@ -633,12 +672,16 @@ export class ValueResolver {
   private async resolveContractExists(args: ContractExistsValue['arguments'], context: ExecutionContext): Promise<boolean> {
     const { address } = args
 
-    if (!isAddress(address)) {
+    if (!context.adapter.isAddress(address)) {
       throw new Error(`contract-exists: invalid address: ${address}`)
     }
 
+    if (!isEvmLikeAdapter(context.adapter)) {
+      throw new Error(`contract-exists is not supported on ${context.adapter.platform} networks; use svm-program-exists.`)
+    }
+
     try {
-      const code = await context.provider.getCode(address)
+      const code = await context.adapter.getCode(address)
       // getCode returns '0x' if no contract exists at the address
       return code !== '0x'
     } catch (error) {
@@ -772,6 +815,85 @@ export class ValueResolver {
 
     const sliced = hexBody.slice(startIndex * 2, endIndex * 2)
     return sliced.length === 0 ? '0x' : `0x${sliced}`
+  }
+
+  private async resolveSvmAccount(args: SvmAccountValue['arguments'], context: ExecutionContext): Promise<any> {
+    const adapter = this.requireSvmAdapter('svm-account', context)
+    const account = await adapter.getAccount(String(args.address))
+    if (!account) return null
+    return {
+      ...account,
+      lamports: account.lamports.toString(),
+      rentEpoch: account.rentEpoch?.toString(),
+    }
+  }
+
+  private resolveSvmProgramExists(args: SvmProgramExistsValue['arguments'], context: ExecutionContext): Promise<boolean> {
+    const adapter = this.requireSvmAdapter('svm-program-exists', context)
+    return adapter.programExists(String(args.address))
+  }
+
+  private resolveSvmPda(args: SvmPdaValue['arguments'], context: ExecutionContext): { address: string; bump: number } {
+    const adapter = this.requireSvmAdapter('svm-pda', context)
+    if (!Array.isArray(args.seeds)) throw new Error('svm-pda: seeds must be an array.')
+    const seeds = args.seeds.map((seed, index) => this.decodeSvmSeed(seed, index))
+    return adapter.deriveProgramAddress(String(args.programId), seeds)
+  }
+
+  private resolveSvmAta(args: SvmAssociatedTokenAddressValue['arguments'], context: ExecutionContext): string {
+    const adapter = this.requireSvmAdapter('svm-ata', context)
+    return adapter.deriveAssociatedTokenAddress(
+      String(args.owner),
+      String(args.mint),
+      args.tokenProgramId === undefined ? undefined : String(args.tokenProgramId)
+    )
+  }
+
+  private resolveSvmSquadsVault(args: SvmSquadsVaultValue['arguments'], context: ExecutionContext): string {
+    const adapter = this.requireSvmAdapter('svm-squads-vault', context)
+    const multisig = new PublicKey(adapter.normalizeAddress(String(args.multisig)))
+    const vaultIndex = args.vaultIndex === undefined ? 0 : Number(args.vaultIndex)
+    if (!Number.isSafeInteger(vaultIndex) || vaultIndex < 0 || vaultIndex > 255) {
+      throw new Error('svm-squads-vault: vaultIndex must be an integer between 0 and 255.')
+    }
+    return getVaultPda({ multisigPda: multisig, index: vaultIndex })[0].toBase58()
+  }
+
+  private decodeSvmSeed(seed: SvmPdaSeed, index: number): Uint8Array {
+    if (!seed || typeof seed !== 'object' || !('value' in seed)) {
+      throw new Error(`svm-pda: seed ${index} must be an object with a value.`)
+    }
+    if (Array.isArray(seed.value)) {
+      if (!seed.value.every(value => Number.isInteger(value) && value >= 0 && value <= 255)) {
+        throw new Error(`svm-pda: seed ${index} byte array contains an invalid byte.`)
+      }
+      return Uint8Array.from(seed.value)
+    }
+    if (typeof seed.value !== 'string') {
+      throw new Error(`svm-pda: seed ${index} must be a string or byte array.`)
+    }
+    switch (seed.encoding || 'utf8') {
+      case 'utf8':
+        return Buffer.from(seed.value, 'utf8')
+      case 'hex': {
+        const value = seed.value.startsWith('0x') ? seed.value.slice(2) : seed.value
+        if (!/^(?:[0-9a-fA-F]{2})*$/.test(value)) throw new Error(`svm-pda: seed ${index} is not valid hex.`)
+        return Buffer.from(value, 'hex')
+      }
+      case 'base64':
+        return Buffer.from(seed.value.startsWith('base64:') ? seed.value.slice(7) : seed.value, 'base64')
+      case 'address':
+        return new PublicKey(seed.value).toBytes()
+      default:
+        throw new Error(`svm-pda: seed ${index} has an unsupported encoding.`)
+    }
+  }
+
+  private requireSvmAdapter(resolver: string, context: ExecutionContext): SvmChainAdapter {
+    if (!isSvmAdapter(context.adapter)) {
+      throw new Error(`${resolver} is only supported on SVM networks; current platform is ${context.adapter.platform}.`)
+    }
+    return context.adapter
   }
 
   private computeSliceBounds(

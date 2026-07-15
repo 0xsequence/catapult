@@ -186,6 +186,52 @@ export interface SliceBytesValue {
   };
 }
 
+export interface SvmAccountValue {
+  type: 'svm-account';
+  arguments: {
+    address: AddressValue;
+  };
+}
+
+export interface SvmProgramExistsValue {
+  type: 'svm-program-exists';
+  arguments: {
+    address: AddressValue;
+  };
+}
+
+export type SvmPdaSeedEncoding = 'utf8' | 'hex' | 'base64' | 'address'
+
+export interface SvmPdaSeed {
+  value: string | number[];
+  encoding?: SvmPdaSeedEncoding;
+}
+
+export interface SvmPdaValue {
+  type: 'svm-pda';
+  arguments: {
+    programId: AddressValue;
+    seeds: Value<SvmPdaSeed[]>;
+  };
+}
+
+export interface SvmAssociatedTokenAddressValue {
+  type: 'svm-ata';
+  arguments: {
+    owner: AddressValue;
+    mint: AddressValue;
+    tokenProgramId?: AddressValue;
+  };
+}
+
+export interface SvmSquadsVaultValue {
+  type: 'svm-squads-vault';
+  arguments: {
+    multisig: AddressValue;
+    vaultIndex?: Value<string | number>;
+  };
+}
+
 /**
  * A union of all possible value-resolver objects.
  */
@@ -205,7 +251,12 @@ export type ValueResolver =
   | ReadJsonValue
   | ResolveJsonValue
   | ValueEmptyValue
-  | SliceBytesValue;
+  | SliceBytesValue
+  | SvmAccountValue
+  | SvmProgramExistsValue
+  | SvmPdaValue
+  | SvmAssociatedTokenAddressValue
+  | SvmSquadsVaultValue;
 
 /**
  * A generic value type that can be a primitive literal (string, number, boolean),

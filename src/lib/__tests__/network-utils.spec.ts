@@ -65,7 +65,8 @@ describe('Network Utils', () => {
       expect(result).toEqual({
         name: 'mainnet',
         chainId: 1,
-        rpcUrl: 'https://mainnet.infura.io/v3/abc123'
+        rpcUrl: 'https://mainnet.infura.io/v3/abc123',
+        platform: 'evm'
       })
 
       // Verify provider was created with correct URL
@@ -86,7 +87,8 @@ describe('Network Utils', () => {
       expect(result).toEqual({
         name: 'unknown',
         chainId: 31337,
-        rpcUrl: 'http://localhost:8545'
+        rpcUrl: 'http://localhost:8545',
+        platform: 'evm'
       })
     })
 
@@ -126,6 +128,7 @@ describe('Network Utils', () => {
         name: detectedInfo.name || `custom-${detectedInfo.chainId}`,
         chainId: detectedInfo.chainId!,
         rpcUrl: 'https://sepolia.infura.io/v3/abc123',
+        platform: detectedInfo.platform || 'evm',
         supports: detectedInfo.supports || [],
         gasLimit: detectedInfo.gasLimit,
         testnet: detectedInfo.testnet,
@@ -137,6 +140,7 @@ describe('Network Utils', () => {
         name: 'sepolia',
         chainId: 11155111,
         rpcUrl: 'https://sepolia.infura.io/v3/abc123',
+        platform: 'evm',
         supports: [],
         gasLimit: undefined,
         testnet: undefined,
@@ -169,6 +173,7 @@ describe('Network Utils', () => {
         name: detectedInfo.name || knownNetwork.name || `custom-${detectedInfo.chainId}`,
         chainId: detectedInfo.chainId!,
         rpcUrl: 'http://127.0.0.1:8545',
+        platform: detectedInfo.platform || knownNetwork.platform || 'evm',
         supports: detectedInfo.supports || knownNetwork.supports || [],
         gasLimit: detectedInfo.gasLimit || knownNetwork.gasLimit,
         testnet: detectedInfo.testnet !== undefined ? detectedInfo.testnet : knownNetwork.testnet,
@@ -180,6 +185,7 @@ describe('Network Utils', () => {
         name: 'unknown',
         chainId: 137,
         rpcUrl: 'http://127.0.0.1:8545',
+        platform: 'evm',
         supports: ['etherscan_v2', 'sourcify'],
         gasLimit: undefined,
         testnet: false,
@@ -208,6 +214,7 @@ describe('Network Utils', () => {
         name: detectedInfo.name || `custom-${detectedInfo.chainId}`,
         chainId: detectedInfo.chainId!,
         rpcUrl: 'http://custom-network:8545',
+        platform: detectedInfo.platform || 'evm',
         supports: detectedInfo.supports || [],
         gasLimit: detectedInfo.gasLimit,
         testnet: detectedInfo.testnet,
@@ -219,6 +226,7 @@ describe('Network Utils', () => {
         name: 'unknown',
         chainId: 42,
         rpcUrl: 'http://custom-network:8545',
+        platform: 'evm',
         supports: [],
         gasLimit: undefined,
         testnet: undefined,

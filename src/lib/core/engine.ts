@@ -12,12 +12,15 @@ import {
 import { Contract } from '../types/contracts'
 import { ExecutionContext } from './context'
 import { ValueResolver, ResolutionScope } from './resolver'
-import { validateAddress, validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
+import { validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
 import { DeploymentEventEmitter, deploymentEvents } from '../events'
 import { createDefaultVerificationRegistry, VerificationPlatformRegistry } from '../verification/etherscan'
 import { BuildInfo } from '../types/buildinfo'
 import { ethers } from 'ethers'
 import type { TypedDataField } from 'ethers'
+import * as path from 'path'
+import { isEvmLikeAdapter, isSvmAdapter, EvmLikeChainAdapter, SvmChainAdapter, SvmTransactionOptions } from '../chains'
+import { SvmProgram } from '../types/programs'
 
 export type EngineOptions = {
   eventEmitter?: DeploymentEventEmitter
@@ -451,13 +454,13 @@ export class ExecutionEngine {
 
     switch (action.type) {
       case 'send-transaction': {
+        const adapter = this.requireEvmLikeAdapter(actionName, action.type, context)
         const resolvedTo = await this.resolver.resolve(action.arguments.to, context, scope)
         const resolvedData = action.arguments.data ? await this.resolver.resolve(action.arguments.data, context, scope) : '0x'
         const resolvedValue = action.arguments.value ? await this.resolver.resolve(action.arguments.value, context, scope) : 0
         const resolvedGasMultiplier = action.arguments.gasMultiplier !== undefined ? await this.resolver.resolve(action.arguments.gasMultiplier, context, scope) : undefined
         
-        // Validate and convert types
-        const to = validateAddress(resolvedTo, actionName)
+        const to = this.validateAddressForContext(resolvedTo, actionName, context)
         const data = validateHexData(resolvedData, actionName, 'data')
         const value = validateBigNumberish(resolvedValue, actionName, 'value')
         
@@ -475,18 +478,17 @@ export class ExecutionEngine {
         
         // Handle gas limit with optional multiplier
         const network = context.getNetwork()
-        const signer = await context.getResolvedSigner()
         if (network.gasLimit) {
           const baseGasLimit = network.gasLimit
           txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
         } else if (gasMultiplier) {
           // If gasMultiplier is specified but no network gasLimit, estimate gas first
-          const estimatedGas = await signer.estimateGas({ to, data, value })
+          const estimatedGas = await adapter.estimateGas({ to, data, value })
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
-        
-        await this.checkFundsForTransaction(actionName, txParams, context, signer)
-        const tx = await signer.sendTransaction(txParams)
+
+        await this.checkFundsForTransaction(actionName, txParams, context)
+        const tx = await adapter.sendTransaction(txParams)
         
         this.events.emitEvent({
           type: 'transaction_sent',
@@ -520,12 +522,16 @@ export class ExecutionEngine {
         break
       }
       case 'send-signed-transaction': {
+        const adapter = this.requireEvmLikeAdapter(actionName, action.type, context)
         const resolvedRawTx = await this.resolver.resolve(action.arguments.transaction, context, scope)
         
         // Validate and convert type
+        if (!adapter.supportsRawSignedTransactions) {
+          throw new Error(`Action "${actionName}": send-signed-transaction is not supported on ${context.adapter.platform} networks.`)
+        }
         const rawTx = validateRawTransaction(resolvedRawTx, actionName)
         
-        const tx = await context.provider.broadcastTransaction(rawTx)
+        const tx = await adapter.broadcastSignedTransaction(rawTx)
         
         this.events.emitEvent({
           type: 'transaction_sent',
@@ -572,7 +578,7 @@ export class ExecutionEngine {
           : 'all'
 
         // Validate inputs
-        const address = validateAddress(resolvedAddress, actionName)
+        const address = this.validateAddressForContext(resolvedAddress, actionName, context)
         
         if (!resolvedContract || typeof resolvedContract !== 'object') {
           throw new Error(`Action "${actionName}": contract must be a Contract object`)
@@ -784,13 +790,16 @@ export class ExecutionEngine {
         break
       }
       case 'create-contract': {
+        const adapter = this.requireEvmLikeAdapter(actionName, action.type, context)
         const resolvedData = await this.resolver.resolve(action.arguments.data, context, scope)
         const resolvedValue = action.arguments.value ? await this.resolver.resolve(action.arguments.value, context, scope) : 0
         const resolvedGasMultiplier = action.arguments.gasMultiplier !== undefined ? await this.resolver.resolve(action.arguments.gasMultiplier, context, scope) : undefined
+        const resolvedAbi = action.arguments.abi !== undefined ? await this.resolver.resolve(action.arguments.abi, context, scope) : undefined
         
         // Validate and convert types
         const data = validateHexData(resolvedData, actionName, 'data')
         const value = validateBigNumberish(resolvedValue, actionName, 'value')
+        const abi = resolvedAbi !== undefined ? this.validateAbi(resolvedAbi, actionName) : undefined
         
         // Validate gas multiplier if provided
         let gasMultiplier: number | undefined
@@ -801,23 +810,24 @@ export class ExecutionEngine {
           gasMultiplier = resolvedGasMultiplier
         }
         
-        // Prepare transaction parameters for contract creation (to: null)
-        const txParams: any = { to: null, data, value }
+        const txParams: any = { data, value }
+        if (abi !== undefined) {
+          txParams.abi = abi
+        }
         
         // Handle gas limit with optional multiplier
         const network = context.getNetwork()
-        const signer = await context.getResolvedSigner()
         if (network.gasLimit) {
           const baseGasLimit = network.gasLimit
           txParams.gasLimit = gasMultiplier ? Math.floor(baseGasLimit * gasMultiplier) : baseGasLimit
         } else if (gasMultiplier) {
           // If gasMultiplier is specified but no network gasLimit, estimate gas first
-          const estimatedGas = await signer.estimateGas(txParams)
+          const estimatedGas = await adapter.estimateGas({ data, value })
           txParams.gasLimit = Math.floor(Number(estimatedGas) * gasMultiplier)
         }
 
-        await this.checkFundsForTransaction(actionName, txParams, context, signer)
-        const tx = await signer.sendTransaction(txParams)
+        await this.checkFundsForTransaction(actionName, txParams, context)
+        const tx = await adapter.createContract(txParams)
         
         this.events.emitEvent({
           type: 'transaction_sent',
@@ -866,6 +876,10 @@ export class ExecutionEngine {
         break
       }
       case 'test-nicks-method': {
+        if (!context.adapter.supportsNickMethod) {
+          throw new Error(`Nick's method is only supported on EVM networks; network "${context.getNetwork().name}" uses platform "${context.adapter.platform}".`)
+        }
+
         if (this.nicksMethodResult !== undefined && !this.allowMultipleNicksMethodTests) {
           if (this.nicksMethodResult === false) {
             throw new Error(`Nick's method test already failed this run`)
@@ -1082,6 +1096,7 @@ export class ExecutionEngine {
           throw new Error(`Action "${actionName}": digest must be 32 bytes (got ${ethers.getBytes(normalizedDigest).length}).`)
         }
 
+        this.requireEvmSigning(actionName, action.type, context)
         const signer = await context.getResolvedSigner()
         const signature = await signer.signDigest(normalizedDigest)
 
@@ -1109,6 +1124,7 @@ export class ExecutionEngine {
         }
 
         const { payload, storedRepresentation } = this.normalizeSignMessagePayload(resolvedMessage, actionName)
+        this.requireEvmSigning(actionName, action.type, context)
         const signer = await context.getResolvedSigner()
         const signature = await signer.signMessage(payload)
 
@@ -1164,6 +1180,7 @@ export class ExecutionEngine {
           resolvedPrimaryType
         )
 
+        this.requireEvmSigning(actionName, action.type, context)
         const signer = await context.getResolvedSigner()
         const signature = await signer.signTypedData(
           resolvedDomain as Record<string, any>,
@@ -1178,6 +1195,212 @@ export class ExecutionEngine {
           context.setOutput(`${action.name}.message`, resolvedMessage)
           context.setOutput(`${action.name}.primaryType`, resolvedPrimaryType)
         }
+        break
+      }
+      case 'svm-transfer': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const to = await this.resolver.resolve<string>(action.arguments.to, context, scope)
+        const lamportsValue = await this.resolver.resolve<string | number>(action.arguments.lamports, context, scope)
+        const lamports = this.parseSvmBigInt(lamportsValue, actionName, 'lamports')
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const result = await adapter.transfer(to, lamports, options)
+        this.emitSvmTransactionResult(actionName, result)
+        if (action.name && !hasCustomOutput) this.storeSvmTransactionOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-send-instructions': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const instructions = await this.resolveLiteralObject(action.arguments.instructions, context, scope)
+        if (!Array.isArray(instructions)) {
+          throw new Error(`Action "${actionName}": instructions must resolve to an array.`)
+        }
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        if (action.arguments.signerKeypairs !== undefined) {
+          const signerKeypairs = await this.resolveLiteralObject(action.arguments.signerKeypairs, context, scope)
+          if (!Array.isArray(signerKeypairs) || !signerKeypairs.every(item => typeof item === 'string')) {
+            throw new Error(`Action "${actionName}": signerKeypairs must resolve to an array of paths.`)
+          }
+          options.signerKeypairPaths = signerKeypairs.map(item => this.resolveActionPath(item, context))
+        }
+        const result = await adapter.sendInstructions(instructions, options)
+        this.emitSvmTransactionResult(actionName, result)
+        if (action.name && !hasCustomOutput) this.storeSvmTransactionOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-deploy-program': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programKeypair = await this.resolver.resolve<string>(action.arguments.programKeypair, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const maxDataLengthValue = action.arguments.maxDataLength === undefined
+          ? undefined
+          : await this.resolver.resolve<string | number>(action.arguments.maxDataLength, context, scope)
+        const maxDataLength = maxDataLengthValue === undefined
+          ? undefined
+          : this.parseSvmSafeInteger(maxDataLengthValue, actionName, 'maxDataLength')
+        const result = await adapter.deployProgram({
+          ...options,
+          programBytes,
+          programKeypairPath: this.resolveActionPath(programKeypair, context),
+          maxDataLength,
+        })
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `SVM program deployed at ${result.programId}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmProgramOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-upgrade-program': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programId = await this.resolver.resolve<string>(action.arguments.programId, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const result = await adapter.upgradeProgram({ ...options, programBytes, programId })
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `SVM program upgraded at ${result.programId}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmProgramOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-reserve-program': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const stub = await this.resolver.resolve<SvmProgram | string>(action.arguments.stub, context, scope)
+        const stubBytes = await this.readSvmProgram(stub, actionName, context)
+        const finalAuthority = await this.resolver.resolve<string>(action.arguments.finalAuthority, context, scope)
+        const maxDataLengthValue = await this.resolver.resolve<string | number>(action.arguments.maxDataLength, context, scope)
+        const maxDataLength = this.parseSvmSafeInteger(maxDataLengthValue, actionName, 'maxDataLength')
+        const maxAttemptsValue = action.arguments.maxAttempts === undefined
+          ? undefined
+          : await this.resolver.resolve<string | number>(action.arguments.maxAttempts, context, scope)
+        const programKeypair = action.arguments.programKeypair === undefined
+          ? undefined
+          : await this.resolver.resolve<string>(action.arguments.programKeypair, context, scope)
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const result = await adapter.reserveProgram({
+          ...options,
+          stubBytes,
+          finalAuthority,
+          maxDataLength,
+          maxAttempts: maxAttemptsValue === undefined
+            ? undefined
+            : this.parseSvmSafeInteger(maxAttemptsValue, actionName, 'maxAttempts'),
+          programKeypairPath: programKeypair === undefined
+            ? undefined
+            : this.resolveActionPath(programKeypair, context),
+        })
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `SVM program address reserved at ${result.programId}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmProgramOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-write-buffer': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const finalAuthority = await this.resolver.resolve<string>(action.arguments.finalAuthority, context, scope)
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const result = await adapter.writeProgramBuffer({ ...options, programBytes, finalAuthority })
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `SVM program buffer sealed at ${result.bufferAddress}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmBufferOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-prepare-upgrade': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const programId = await this.resolver.resolve<string>(action.arguments.programId, context, scope)
+        const bufferAddress = await this.resolver.resolve<string>(action.arguments.bufferAddress, context, scope)
+        const result = await adapter.prepareUpgrade(programBytes, programId, bufferAddress)
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `Prepared governance upgrade for ${result.programId}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmPreparedUpgradeOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-squads-propose-upgrade': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const programId = await this.resolver.resolve<string>(action.arguments.programId, context, scope)
+        const bufferAddress = await this.resolver.resolve<string>(action.arguments.bufferAddress, context, scope)
+        const multisigAddress = await this.resolver.resolve<string>(action.arguments.multisig, context, scope)
+        const vaultIndexValue = action.arguments.vaultIndex === undefined
+          ? 0
+          : await this.resolver.resolve<string | number>(action.arguments.vaultIndex, context, scope)
+        const vaultIndex = this.parseSvmSafeInteger(vaultIndexValue, actionName, 'vaultIndex')
+        const memo = action.arguments.memo === undefined
+          ? undefined
+          : await this.resolver.resolve<string>(action.arguments.memo, context, scope)
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const prepared = await adapter.prepareUpgrade(programBytes, programId, bufferAddress)
+        const result = await adapter.createSquadsProposal({
+          ...options,
+          multisigAddress,
+          vaultIndex,
+          instructions: prepared.instructions,
+          memo,
+        })
+        this.emitSvmTransactionResult(actionName, result)
+        if (action.name && !hasCustomOutput) {
+          this.storeSvmPreparedUpgradeOutputs(action.name, prepared, context)
+          this.storeSvmSquadsProposalOutputs(action.name, result, context)
+        }
+        break
+      }
+      case 'svm-squads-execute': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const multisigAddress = await this.resolver.resolve<string>(action.arguments.multisig, context, scope)
+        const transactionIndexValue = await this.resolver.resolve<string | number>(action.arguments.transactionIndex, context, scope)
+        const transactionIndex = this.parseSvmBigInt(transactionIndexValue, actionName, 'transactionIndex')
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const result = await adapter.executeSquadsTransaction({ ...options, multisigAddress, transactionIndex })
+        this.emitSvmTransactionResult(actionName, result)
+        if (action.name && !hasCustomOutput) this.storeSvmTransactionOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-verify-program': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const programId = await this.resolver.resolve<string>(action.arguments.programId, context, scope)
+        const immutable = action.arguments.immutable === undefined
+          ? false
+          : await this.resolver.resolve<boolean>(action.arguments.immutable, context, scope)
+        if (typeof immutable !== 'boolean') throw new Error(`Action "${actionName}": immutable must resolve to a boolean.`)
+        if (immutable && action.arguments.expectedAuthority !== undefined) {
+          throw new Error(`Action "${actionName}": expectedAuthority and immutable cannot both be set.`)
+        }
+        const expectedAuthority = immutable
+          ? null
+          : (action.arguments.expectedAuthority === undefined
+              ? undefined
+              : await this.resolver.resolve<string>(action.arguments.expectedAuthority, context, scope))
+        const requireVisible = action.arguments.requireVisible === undefined
+          ? true
+          : await this.resolver.resolve<boolean>(action.arguments.requireVisible, context, scope)
+        if (typeof requireVisible !== 'boolean') throw new Error(`Action "${actionName}": requireVisible must resolve to a boolean.`)
+        const result = await adapter.verifyProgram({ programBytes, programId, expectedAuthority, requireVisible })
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `Verified SVM program ${result.programId} at slot ${result.deploymentSlot}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmVerificationOutputs(action.name, result, context)
         break
       }
       default:
@@ -1214,6 +1437,195 @@ export class ExecutionEngine {
       normalized[key] = value
     }
     return normalized
+  }
+
+  private validateAddressForContext(value: unknown, actionName: string, context: ExecutionContext): string {
+    if (typeof value !== 'string') {
+      throw new Error(`Invalid address for action "${actionName}": expected string, got ${typeof value}`)
+    }
+
+    try {
+      return context.adapter.normalizeAddress(value)
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error)
+      throw new Error(`Invalid address for action "${actionName}": ${reason}`)
+    }
+  }
+
+  private requireEvmLikeAdapter(actionName: string, actionType: string, context: ExecutionContext): EvmLikeChainAdapter {
+    if (!isEvmLikeAdapter(context.adapter)) {
+      throw new Error(`Action "${actionName}": ${actionType} requires an EVM-like network; current platform is ${context.adapter.platform}.`)
+    }
+    return context.adapter
+  }
+
+  private requireSvmAdapter(actionName: string, actionType: string, context: ExecutionContext): SvmChainAdapter {
+    if (!isSvmAdapter(context.adapter)) {
+      throw new Error(`Action "${actionName}": ${actionType} requires an SVM network; current platform is ${context.adapter.platform}.`)
+    }
+    return context.adapter
+  }
+
+  private async resolveSvmTransactionOptions(
+    actionName: string,
+    args: {
+      computeUnitLimit?: any
+      computeUnitPriceMicroLamports?: any
+      simulate?: any
+    },
+    context: ExecutionContext,
+    scope: ResolutionScope
+  ): Promise<SvmTransactionOptions> {
+    const result: SvmTransactionOptions = {}
+    if (args.computeUnitLimit !== undefined) {
+      const value = await this.resolver.resolve<string | number>(args.computeUnitLimit, context, scope)
+      result.computeUnitLimit = this.parseSvmSafeInteger(value, actionName, 'computeUnitLimit')
+    }
+    if (args.computeUnitPriceMicroLamports !== undefined) {
+      const value = await this.resolver.resolve<string | number>(args.computeUnitPriceMicroLamports, context, scope)
+      result.computeUnitPriceMicroLamports = this.parseSvmBigInt(value, actionName, 'computeUnitPriceMicroLamports')
+    }
+    if (args.simulate !== undefined) {
+      const value = await this.resolver.resolve<boolean>(args.simulate, context, scope)
+      if (typeof value !== 'boolean') throw new Error('SVM simulate must resolve to a boolean.')
+      result.simulate = value
+    }
+    return result
+  }
+
+  private parseSvmBigInt(value: unknown, actionName: string, field: string): bigint {
+    try {
+      const result = BigInt(value as string | number | bigint)
+      if (result < 0n) throw new Error('negative')
+      return result
+    } catch {
+      throw new Error(`Action "${actionName}": ${field} must be a non-negative integer.`)
+    }
+  }
+
+  private parseSvmSafeInteger(value: unknown, actionName: string, field: string): number {
+    const bigint = this.parseSvmBigInt(value, actionName, field)
+    if (bigint > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(`Action "${actionName}": ${field} exceeds the safe integer range.`)
+    }
+    return Number(bigint)
+  }
+
+  private resolveActionPath(value: string, context: ExecutionContext): string {
+    if (path.isAbsolute(value)) return value
+    const contextPath = context.getContextPath()
+    return path.resolve(contextPath ? path.dirname(contextPath) : process.cwd(), value)
+  }
+
+  private async readSvmProgram(program: SvmProgram | string, actionName: string, context: ExecutionContext): Promise<Uint8Array> {
+    const binaryPath = typeof program === 'string'
+      ? this.resolveActionPath(program, context)
+      : program?.binaryPath
+    if (!binaryPath || (typeof program !== 'string' && program.platform !== 'svm')) {
+      throw new Error(`Action "${actionName}": program must resolve to Program(...) or a .so path.`)
+    }
+    try {
+      const fs = await import('fs/promises')
+      return new Uint8Array(await fs.readFile(binaryPath))
+    } catch (error) {
+      throw new Error(`Action "${actionName}": unable to read SVM program ${binaryPath}: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  private emitSvmTransactionResult(actionName: string, result: { signature?: string; simulated: boolean; slot?: number }): void {
+    if (result.simulated) {
+      this.events.emitEvent({
+        type: 'action_completed',
+        level: 'info',
+        data: { actionName, result: 'SVM transaction simulation succeeded' }
+      })
+      return
+    }
+    this.events.emitEvent({
+      type: 'transaction_sent',
+      level: 'info',
+      data: { to: '', value: '0', dataPreview: 'SVM instructions', txHash: result.signature || '' }
+    })
+    this.events.emitEvent({
+      type: 'transaction_confirmed',
+      level: 'info',
+      data: { txHash: result.signature || '', blockNumber: result.slot }
+    })
+  }
+
+  private storeSvmTransactionOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.signature`, result.signature ?? null)
+    context.setOutput(`${actionName}.slot`, result.slot ?? null)
+    context.setOutput(`${actionName}.simulated`, result.simulated)
+    context.setOutput(`${actionName}.logs`, result.logs ?? null)
+    context.setOutput(`${actionName}.unitsConsumed`, result.unitsConsumed ?? null)
+  }
+
+  private storeSvmProgramOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.address`, result.programId)
+    context.setOutput(`${actionName}.programId`, result.programId)
+    context.setOutput(`${actionName}.programDataAddress`, result.programDataAddress)
+    context.setOutput(`${actionName}.bufferAddress`, result.bufferAddress)
+    context.setOutput(`${actionName}.signatures`, result.signatures)
+    context.setOutput(`${actionName}.slot`, result.slot ?? null)
+    context.setOutput(`${actionName}.authority`, result.authority ?? null)
+    context.setOutput(`${actionName}.artifactHash`, result.artifactHash ?? null)
+    context.setOutput(`${actionName}.attempts`, result.attempts ?? null)
+  }
+
+  private storeSvmBufferOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.address`, result.bufferAddress)
+    context.setOutput(`${actionName}.bufferAddress`, result.bufferAddress)
+    context.setOutput(`${actionName}.authority`, result.authority)
+    context.setOutput(`${actionName}.artifactHash`, result.artifactHash)
+    context.setOutput(`${actionName}.byteLength`, result.byteLength)
+    context.setOutput(`${actionName}.signatures`, result.signatures)
+    context.setOutput(`${actionName}.slot`, result.slot ?? null)
+  }
+
+  private storeSvmPreparedUpgradeOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.programId`, result.programId)
+    context.setOutput(`${actionName}.programDataAddress`, result.programDataAddress)
+    context.setOutput(`${actionName}.bufferAddress`, result.bufferAddress)
+    context.setOutput(`${actionName}.authority`, result.authority)
+    context.setOutput(`${actionName}.artifactHash`, result.artifactHash)
+    context.setOutput(`${actionName}.byteLength`, result.byteLength)
+    context.setOutput(`${actionName}.instructions`, result.instructions)
+  }
+
+  private storeSvmSquadsProposalOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.signature`, result.signature ?? null)
+    context.setOutput(`${actionName}.slot`, result.slot ?? null)
+    context.setOutput(`${actionName}.multisigAddress`, result.multisigAddress)
+    context.setOutput(`${actionName}.vaultAddress`, result.vaultAddress)
+    context.setOutput(`${actionName}.transactionAddress`, result.transactionAddress)
+    context.setOutput(`${actionName}.proposalAddress`, result.proposalAddress)
+    context.setOutput(`${actionName}.transactionIndex`, result.transactionIndex)
+  }
+
+  private storeSvmVerificationOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.verified`, true)
+    context.setOutput(`${actionName}.programId`, result.programId)
+    context.setOutput(`${actionName}.programDataAddress`, result.programDataAddress)
+    context.setOutput(`${actionName}.authority`, result.authority)
+    context.setOutput(`${actionName}.artifactHash`, result.artifactHash)
+    context.setOutput(`${actionName}.byteLength`, result.byteLength)
+    context.setOutput(`${actionName}.deploymentSlot`, result.deploymentSlot)
+    context.setOutput(`${actionName}.currentSlot`, result.currentSlot)
+    context.setOutput(`${actionName}.visible`, result.visible)
+  }
+
+  private validateAbi(value: unknown, actionName: string): unknown[] {
+    if (!Array.isArray(value)) {
+      throw new Error(`Action "${actionName}": abi must resolve to an array when provided.`)
+    }
+    return value
+  }
+
+  private requireEvmSigning(actionName: string, actionType: string, context: ExecutionContext): void {
+    if (!context.adapter.supportsEvmSignatures) {
+      throw new Error(`Action "${actionName}": ${actionType} is only supported on EVM networks; network "${context.getNetwork().name}" uses platform "${context.adapter.platform}".`)
+    }
   }
 
   private normalizeSignMessagePayload(
@@ -1454,7 +1866,7 @@ export class ExecutionEngine {
       // Check main signer balance first
       const signer = await context.getResolvedSigner()
       const signerAddress = await signer.getAddress()
-      const signerBalance = await context.provider.getBalance(signerAddress)
+      const signerBalance = await context.provider!.getBalance(signerAddress)
       
       if (signerBalance < BigInt(defaultFundingAmount.toString())) {
         this.events.emitEvent({
@@ -1482,7 +1894,7 @@ export class ExecutionEngine {
 
         if (unsignedTx.gasPrice) {
           // Check gas price
-          const gasPrice = await context.provider.getFeeData().then(data => data.gasPrice)
+          const gasPrice = await context.provider!.getFeeData().then(data => data.gasPrice)
           if (!gasPrice) {
             this.events.emitEvent({
               type: "debug_info",
@@ -1504,7 +1916,7 @@ export class ExecutionEngine {
 
         if (simulationTx.gasLimit) {
           // Simulate the transaction expected gas usage
-          const estimatedGas = await context.provider.estimateGas(simulationTx);
+          const estimatedGas = await context.provider!.estimateGas(simulationTx);
           const estimatedGasStr = estimatedGas.toString();
           const simulationTxGasLimitStr = simulationTx.gasLimit.toString();
           if (estimatedGas > BigInt(simulationTxGasLimitStr)) {
@@ -1549,7 +1961,7 @@ export class ExecutionEngine {
       })
       
       // Check if EOA already has sufficient balance
-      const currentBalance = await context.provider.getBalance(eoaAddress)
+      const currentBalance = await context.provider!.getBalance(eoaAddress)
       const neededFunding = BigInt(defaultFundingAmount.toString()) - currentBalance
       
       if (neededFunding > 0) {
@@ -1635,7 +2047,7 @@ export class ExecutionEngine {
         }
       })
       
-      const deployTx = await context.provider.broadcastTransaction(signedTx)
+      const deployTx = await context.provider!.broadcastTransaction(signedTx)
       
       this.events.emitEvent({
         type: 'debug_info',
@@ -1772,7 +2184,7 @@ export class ExecutionEngine {
     context: ExecutionContext
   ): Promise<void> {
     // Check remaining balance in the test EOA
-    const remainingBalance = await context.provider.getBalance(eoaAddress)
+    const remainingBalance = await context.provider!.getBalance(eoaAddress)
     
     if (remainingBalance <= 0n) {
       // No funds to return
@@ -1780,10 +2192,10 @@ export class ExecutionEngine {
     }
     
     // Connect the wallet to the provider to send transactions
-    const connectedWallet = wallet.connect(context.provider)
+    const connectedWallet = wallet.connect(context.provider!)
     
     // Estimate gas for a simple transfer
-    const feeData = await context.provider.getFeeData()
+    const feeData = await context.provider!.getFeeData()
     const txGas = feeData.maxFeePerGas ? {
       maxFeePerGas: feeData.maxFeePerGas,
       maxPriorityFeePerGas: feeData.maxPriorityFeePerGas || ethers.parseUnits('20', 'gwei')
@@ -1983,38 +2395,40 @@ export class ExecutionEngine {
    * Checks if the signer has enough funds to cover the estimated cost of the transaction.
    * Returns true if the signer has enough funds, false if the signer does not have enough funds, and null if no gas price is available.
    */
-  private async checkFundsForTransaction(actionName: string, txParams: ethers.TransactionRequest, context: ExecutionContext, signer: ethers.Signer): Promise<boolean | null> {
+  private async checkFundsForTransaction(actionName: string, txParams: any, context: ExecutionContext): Promise<boolean | null> {
     try {
-      const gasPrice = txParams.gasPrice || await context.provider.getFeeData().then(data => data.gasPrice)
-      if (!gasPrice) {
+      const adapter = this.requireEvmLikeAdapter(actionName, 'transaction cost estimation', context)
+      const estimate = await adapter.estimateTransactionCost(txParams)
+      if (!estimate) {
         this.events.emitEvent({
           type: 'debug_info',
           level: 'warn',
           data: {
             actionName: actionName,
-            message: `No gas price available`
+            message: `No transaction cost estimate available`
           }
         })
         return null
       }
-      const gasLimit = txParams.gasLimit || await signer.estimateGas(txParams)
-      const requiredETH = BigInt(gasLimit) * BigInt(gasPrice)
-      const signerBalance = await context.provider.getBalance(await signer.getAddress())
+
       this.events.emitEvent({
         type: 'debug_info',
           level: 'debug',
           data: {
             actionName: actionName,
-            message: `Transaction ${txParams.gasLimit ? 'set' : 'estimated'} gas limit: ${gasLimit}, ${txParams.gasPrice ? 'set' : 'estimated'} gas price: ${ethers.formatUnits(gasPrice, 'gwei')} gwei, required ETH: ${ethers.formatEther(requiredETH)}`
+            message: estimate.gasLimit && estimate.gasPrice
+              ? `Transaction ${txParams.gasLimit ? 'set' : 'estimated'} gas limit: ${estimate.gasLimit}, estimated gas price: ${ethers.formatUnits(estimate.gasPrice, 'gwei')} gwei, required ${estimate.nativeUnit}: ${estimate.formattedRequired}`
+              : `Estimated maximum transaction cost: ${estimate.formattedRequired} ${estimate.nativeUnit}`
           }
         })
-      if (signerBalance < requiredETH) {
+
+      if (estimate.signerBalance < estimate.requiredBalance) {
         this.events.emitEvent({
         type: 'debug_info',
           level: 'warn',
           data: {
             actionName: actionName,
-            message: `Insufficient funds: signer has ${ethers.formatEther(signerBalance)} ETH but estimated cost is ${ethers.formatEther(requiredETH)} ETH`
+            message: `Insufficient funds: signer has ${estimate.formattedBalance} ${estimate.nativeUnit} but estimated cost is ${estimate.formattedRequired} ${estimate.nativeUnit}`
           }
         })
         return false

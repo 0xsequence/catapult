@@ -11,6 +11,7 @@ import { setVerbosity } from '../index'
 interface RunOptions {
   project: string
   privateKey?: string
+  keypair?: string
   network?: string
   rpcUrl?: string
   dotenv?: string
@@ -29,6 +30,7 @@ export function makeRunCommand(): Command {
     .description('Run deployment jobs on specified networks')
     .argument('[jobs...]', 'Specific job names or patterns to run (and their dependencies). Supports wildcards like "sequence/*" or "job?". If not provided, all jobs are run.')
     .option('-k, --private-key <key>', 'Signer private key. Can also be set via PRIVATE_KEY env var.')
+    .option('--keypair <path>', 'Solana JSON keypair path. Can also be set via SOLANA_KEYPAIR env var.')
     .option('-n, --network <selectors>', 'Comma-separated network selectors (by chain ID or name). If not provided, runs on all configured networks.')
     .option('--rpc-url <url>', 'Custom RPC URL to run on. The system will automatically detect chainId and network information. This overrides networks.yaml configuration.')
     .option('--etherscan-api-key <key>', 'Etherscan API key for contract verification. Can also be set via ETHERSCAN_API_KEY env var.')
@@ -52,8 +54,9 @@ export function makeRunCommand(): Command {
       setVerbosity(options.verbose as 0 | 1 | 2 | 3)
       
       const privateKey: string | undefined = options.privateKey || process.env.PRIVATE_KEY
-      if (!privateKey && !options.rpcUrl) {
-        throw new Error('A private key must be provided via the --private-key option or the PRIVATE_KEY environment variable, or an --rpc-url must be specified to attempt an implicit sender.')
+      const keypairPath: string | undefined = options.keypair || process.env.SOLANA_KEYPAIR
+      if (!privateKey && !keypairPath && !options.rpcUrl) {
+        throw new Error('Provide --private-key/PRIVATE_KEY for EVM or Tron, --keypair/SOLANA_KEYPAIR for SVM, or --rpc-url to attempt an implicit EVM sender.')
       }
 
       const etherscanApiKey = options.etherscanApiKey || process.env.ETHERSCAN_API_KEY
@@ -84,6 +87,9 @@ export function makeRunCommand(): Command {
             name: detectedNetwork.name || knownNetwork?.name || `custom-${detectedNetwork.chainId}`,
             chainId: detectedNetwork.chainId!,
             rpcUrl: options.rpcUrl,
+            platform: knownNetwork?.platform || detectedNetwork.platform || 'evm',
+            networkId: detectedNetwork.networkId || knownNetwork?.networkId,
+            genesisHash: detectedNetwork.genesisHash || knownNetwork?.genesisHash,
             // Optional fields with defaults
             supports: detectedNetwork.supports || knownNetwork?.supports || [],
             gasLimit: detectedNetwork.gasLimit || knownNetwork?.gasLimit,
@@ -109,6 +115,7 @@ export function makeRunCommand(): Command {
       const deployerOptions: DeployerOptions = {
         projectRoot,
         privateKey,
+        keypairPath,
         networks,
         runJobs: jobs.length > 0 ? jobs : undefined,
         runOnNetworks: selectedChainIds,

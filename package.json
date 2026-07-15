@@ -1,7 +1,7 @@
 {
   "name": "@0xsequence/catapult",
   "version": "1.5.0",
-  "description": "Ethereum contract deployment CLI tool",
+  "description": "Multi-chain deployment CLI for EVM, Tron, and Solana/SVM",
   "main": "dist/index.js",
   "bin": {
     "catapult": "dist/index.js"
@@ -27,6 +27,8 @@
     "cli",
     "smart-contracts",
     "blockchain",
+    "solana",
+    "tron",
     "typescript"
   ],
   "author": "Sequence (Agusx1211)",
@@ -57,15 +59,24 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
+    "@sqds/multisig": "2.1.4",
+    "@solana/web3.js": "1.98.0",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
     "dotenv": "^16.3.0",
     "ethers": "^6.15.0",
-    "solc": "^0.8.30",
     "ox": "^0.8.5",
+    "rpc-websockets": "9.2.0",
+    "solc": "^0.8.30",
+    "tronweb": "^6.4.0",
     "yaml": "^2.8.0"
   },
   "engines": {
     "node": ">=16.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "rpc-websockets": "9.2.0"
+    }
   }
 }

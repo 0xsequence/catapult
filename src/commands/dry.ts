@@ -5,6 +5,7 @@ import { loadNetworks } from '../lib/network-loader'
 import { DependencyGraph } from '../lib/core/graph'
 import { projectOption, noStdOption, verbosityOption } from './common'
 import { validateContractReferences, extractUsedContractReferences } from '../lib/validation/contract-references'
+import { extractUsedProgramReferences, validateProgramReferences } from '../lib/validation/program-references'
 import { setVerbosity } from '../index'
 import { resolveSelectedChainIds } from '../lib/network-selection'
 import { Template } from '../lib/types'
@@ -75,6 +76,7 @@ export function makeDryRunCommand(): Command {
       
       console.log(chalk.blue('\nContract Repository:'))
       console.log(chalk.green(`   - Found ${loader.contractRepository.getAll().length} unique contracts.`))
+      console.log(chalk.green(`   - Found ${loader.programRepository.getAll().length} SVM program artifacts.`))
       
       // Check for ambiguous references that are actually being used
       const usedRefs = await extractUsedContractReferences(loader)
@@ -90,6 +92,20 @@ export function makeDryRunCommand(): Command {
         throw new Error(`Found ${usedAmbiguousRefs.length} ambiguous contract reference(s) being used. Please use more specific references to resolve ambiguity.`)
       }
       console.log(chalk.green('   - All used contract references are unambiguous.'))
+
+      const usedProgramRefs = extractUsedProgramReferences(loader)
+      const usedProgramNames = usedProgramRefs.map(ref => ref.reference)
+      const usedAmbiguousPrograms = loader.programRepository
+        .getAmbiguousReferences()
+        .filter(ref => usedProgramNames.includes(ref))
+      if (usedAmbiguousPrograms.length > 0) {
+        console.log(chalk.red('\n   - Found ambiguous SVM program references being used:'))
+        for (const ref of usedAmbiguousPrograms) {
+          console.log(chalk.red(`     ✗ "${ref}" could refer to multiple programs`))
+        }
+        throw new Error(`Found ${usedAmbiguousPrograms.length} ambiguous SVM program reference(s) being used. Please use more specific references.`)
+      }
+      console.log(chalk.green('   - All used SVM program references are unambiguous.'))
       
       // Validate that all Contract() references point to existing contracts
       console.log(chalk.blue('\nValidating contract references...'))
@@ -102,6 +118,16 @@ export function makeDryRunCommand(): Command {
         throw new Error(`Found ${missingRefs.length} missing contract reference(s). Please ensure all referenced contracts exist.`)
       }
       console.log(chalk.green('   - All contract references are valid.'))
+
+      const missingPrograms = validateProgramReferences(loader)
+      if (missingPrograms.length > 0) {
+        console.log(chalk.red('\n   - Found missing SVM program references:'))
+        for (const ref of missingPrograms) {
+          console.log(chalk.red(`     ✗ ${ref.reference} in ${ref.location}`))
+        }
+        throw new Error(`Found ${missingPrograms.length} missing SVM program reference(s). Ensure the .so artifacts are discoverable.`)
+      }
+      console.log(chalk.green('   - All SVM program references are valid.'))
 
       // Validate constant references exist
       console.log(chalk.blue('\nValidating constant references...'))

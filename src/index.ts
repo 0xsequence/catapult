@@ -44,7 +44,7 @@ async function main() {
     // Configure the main program
     program
       .name('catapult')
-      .description('Ethereum contract deployment CLI tool')
+      .description('Multi-chain deployment CLI for EVM, Tron, and Solana/SVM')
       .version(packageJson.version)
 
     // Setup all commands
@@ -64,4 +64,4 @@ async function main() {
   }
 }
 
-main() 
+main()

@@ -1,12 +1,16 @@
 import { ethers } from 'ethers'
 import { Network } from '../types'
 import { ContractRepository } from '../contracts/repository'
-import { DigestSigner, toDigestSigner } from './signer'
+import { DigestSigner } from './signer'
+import { ChainAdapter, createChainAdapter, EvmAdapter } from '../chains'
+import { SvmProgramRepository } from '../programs/repository'
 
 export class ExecutionContext {
- public readonly provider: ethers.JsonRpcProvider
- public readonly signer: DigestSigner | Promise<DigestSigner> // Allow Promise for implicit signer
+ public readonly adapter: ChainAdapter
+ public readonly provider?: ethers.JsonRpcProvider
+ public readonly signer?: DigestSigner | Promise<DigestSigner> // Allow Promise for implicit signer
  public readonly contractRepository: ContractRepository
+ public readonly programRepository: SvmProgramRepository
  private outputs: Map<string, any> = new Map()
  private network: Network
  private etherscanApiKey?: string
@@ -22,27 +26,21 @@ export class ExecutionContext {
    privateKey: string | undefined, // Make privateKey optional
    contractRepository: ContractRepository,
    etherscanApiKey?: string,
-   topLevelConstants?: Map<string, any>
+   topLevelConstants?: Map<string, any>,
+   programRepository: SvmProgramRepository = new SvmProgramRepository(),
+   keypairPath?: string
  ) {
    this.network = network
-   this.provider = new ethers.JsonRpcProvider(network.rpcUrl)
+   this.adapter = createChainAdapter(network, privateKey, keypairPath)
+   if (this.adapter instanceof EvmAdapter) {
+     this.provider = this.adapter.provider
+     this.signer = this.adapter.signer
+   }
    this.contractRepository = contractRepository
+   this.programRepository = programRepository
    this.etherscanApiKey = etherscanApiKey
    if (topLevelConstants) {
      this.topLevelConstants = new Map(topLevelConstants)
-   }
-
-   // Determine the signer
-   if (privateKey) {
-     // Wrap in NonceManager for nonce management, then in a DigestSigner so
-     // sign-digest/message/typed-data actions can reach the underlying key.
-     this.signer = toDigestSigner(new ethers.NonceManager(new ethers.Wallet(privateKey, this.provider)))
-   } else if (network.rpcUrl) {
-     // If no private key, but RPC URL is provided, get a signer from the provider.
-     // This returns a Promise that we need to resolve on first use.
-     this.signer = this.provider.getSigner().then(signer => toDigestSigner(new ethers.NonceManager(signer))) // Keep as Promise
-   } else {
-     throw new Error('A private key must be provided or an RPC URL must be configured to obtain a signer for the network.')
    }
  }
 
@@ -52,6 +50,15 @@ export class ExecutionContext {
  public async getResolvedSigner(): Promise<DigestSigner> {
    if (this.resolvedSigner) {
      return this.resolvedSigner
+   }
+
+   if (this.adapter instanceof EvmAdapter) {
+     this.resolvedSigner = await this.adapter.getResolvedSigner()
+     return this.resolvedSigner
+   }
+
+   if (!this.signer) {
+     throw new Error(`Platform "${this.adapter.platform}" does not support EVM-style signing actions.`)
    }
 
    if (this.signer instanceof Promise) {
@@ -73,6 +80,10 @@ export class ExecutionContext {
 
   public getContractRepository(): ContractRepository {
     return this.contractRepository
+  }
+
+  public getProgramRepository(): SvmProgramRepository {
+    return this.programRepository
   }
 
   // To store results like `{{sequence-v1.factory.address}}`
@@ -120,9 +131,7 @@ export class ExecutionContext {
   public async dispose(): Promise<void> {
     try {
       // Destroy the provider to close any open connections
-      if ((this.provider as any).destroy) {
-        await (this.provider as any).destroy()
-      }
+      await this.adapter.dispose()
     } catch (error) {
       // Ignore errors during cleanup
     }

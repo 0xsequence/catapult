@@ -20,7 +20,8 @@ export async function detectNetworkFromRpc(rpcUrl: string): Promise<Partial<Netw
     return {
       name: network.name,
       chainId: Number(network.chainId),
-      rpcUrl: rpcUrl
+      rpcUrl: rpcUrl,
+      platform: 'evm'
     }
   } catch (error) {
     // Failed to detect network

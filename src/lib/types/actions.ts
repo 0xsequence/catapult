@@ -1,6 +1,7 @@
 import { AddressValue, BytesValue, Uint256Value, Value } from './values'
 import { Contract } from './contracts'
 import { Condition } from './conditions'
+import { SvmProgram } from './programs'
 
 // --- Primitive Actions ---
 // These are the basic building blocks that interact with the blockchain.
@@ -45,6 +46,7 @@ export interface CreateContractAction {
     data: BytesValue; // The contract bytecode (creation code)
     value?: Uint256Value; // ETH to send with the contract creation
     gasMultiplier?: number; // Optional gas multiplier
+    abi?: Value<any[]>; // Optional ABI, used by platforms that need constructor metadata
   };
 }
 
@@ -112,6 +114,129 @@ export interface SignTypedDataAction {
   };
 }
 
+export interface SvmAccountMetaArgument {
+  address: string
+  isSigner?: boolean
+  isWritable?: boolean
+}
+
+export interface SvmInstructionArgument {
+  programId: string
+  accounts?: SvmAccountMetaArgument[]
+  /** 0x-prefixed hex, base64:<data>, or a byte array. */
+  data?: string | number[]
+}
+
+export interface SvmTransferAction {
+  type: 'svm-transfer';
+  arguments: {
+    to: AddressValue;
+    lamports: Value<string | number>;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+    simulate?: Value<boolean>;
+  };
+}
+
+export interface SvmSendInstructionsAction {
+  type: 'svm-send-instructions';
+  arguments: {
+    instructions: Value<SvmInstructionArgument[]>;
+    signerKeypairs?: Value<string[]>;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+    simulate?: Value<boolean>;
+  };
+}
+
+export interface SvmDeployProgramAction {
+  type: 'svm-deploy-program';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    programKeypair: Value<string>;
+    maxDataLength?: Value<string | number>;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmUpgradeProgramAction {
+  type: 'svm-upgrade-program';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    programId: AddressValue;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmReserveProgramAction {
+  type: 'svm-reserve-program';
+  arguments: {
+    stub: Value<SvmProgram | string>;
+    finalAuthority: AddressValue;
+    programKeypair?: Value<string>;
+    maxDataLength: Value<string | number>;
+    maxAttempts?: Value<string | number>;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmWriteBufferAction {
+  type: 'svm-write-buffer';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    finalAuthority: AddressValue;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmPrepareUpgradeAction {
+  type: 'svm-prepare-upgrade';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    programId: AddressValue;
+    bufferAddress: AddressValue;
+  };
+}
+
+export interface SvmSquadsProposeUpgradeAction {
+  type: 'svm-squads-propose-upgrade';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    programId: AddressValue;
+    bufferAddress: AddressValue;
+    multisig: AddressValue;
+    vaultIndex?: Value<string | number>;
+    memo?: Value<string>;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmSquadsExecuteAction {
+  type: 'svm-squads-execute';
+  arguments: {
+    multisig: AddressValue;
+    transactionIndex: Value<string | number>;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmVerifyProgramAction {
+  type: 'svm-verify-program';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    programId: AddressValue;
+    expectedAuthority?: AddressValue;
+    immutable?: Value<boolean>;
+    requireVisible?: Value<boolean>;
+  };
+}
+
 // A union of all primitive action types.
 export type PrimitiveAction =
   | SendTransactionAction
@@ -124,7 +249,17 @@ export type PrimitiveAction =
   | AssertAction
   | SignDigestAction
   | SignMessageAction
-  | SignTypedDataAction;
+  | SignTypedDataAction
+  | SvmTransferAction
+  | SvmSendInstructionsAction
+  | SvmDeployProgramAction
+  | SvmUpgradeProgramAction
+  | SvmReserveProgramAction
+  | SvmWriteBufferAction
+  | SvmPrepareUpgradeAction
+  | SvmSquadsProposeUpgradeAction
+  | SvmSquadsExecuteAction
+  | SvmVerifyProgramAction;
 
 const primitiveActionTypes = [
   'send-transaction',
@@ -138,6 +273,16 @@ const primitiveActionTypes = [
   'sign-digest',
   'sign-message',
   'sign-typed-data',
+  'svm-transfer',
+  'svm-send-instructions',
+  'svm-deploy-program',
+  'svm-upgrade-program',
+  'svm-reserve-program',
+  'svm-write-buffer',
+  'svm-prepare-upgrade',
+  'svm-squads-propose-upgrade',
+  'svm-squads-execute',
+  'svm-verify-program',
 ] as const;
 
 /**
