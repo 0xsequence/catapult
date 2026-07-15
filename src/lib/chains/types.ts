@@ -133,6 +133,19 @@ export interface SvmProgramDeploymentRequest extends SvmTransactionOptions {
   maxDataLength?: number
 }
 
+export interface SvmProgramReservationRequest extends SvmTransactionOptions {
+  stubBytes: Uint8Array
+  finalAuthority: string
+  programKeypairPath?: string
+  maxDataLength: number
+  maxAttempts?: number
+}
+
+export interface SvmProgramBufferRequest extends SvmTransactionOptions {
+  programBytes: Uint8Array
+  finalAuthority: string
+}
+
 export interface SvmProgramUpgradeRequest extends SvmTransactionOptions {
   programBytes: Uint8Array
   programId: string
@@ -144,6 +157,66 @@ export interface SvmProgramDeploymentResult {
   bufferAddress: string
   signatures: string[]
   slot?: number
+  authority?: string | null
+  artifactHash?: string
+  attempts?: number
+}
+
+export interface SvmProgramBufferResult {
+  bufferAddress: string
+  authority: string
+  artifactHash: string
+  byteLength: number
+  signatures: string[]
+  slot?: number
+}
+
+export interface SvmPreparedUpgradeResult {
+  programId: string
+  programDataAddress: string
+  bufferAddress: string
+  authority: string
+  artifactHash: string
+  byteLength: number
+  instructions: SvmInstructionRequest[]
+}
+
+export interface SvmSquadsProposalRequest extends SvmTransactionOptions {
+  multisigAddress: string
+  vaultIndex: number
+  instructions: SvmInstructionRequest[]
+  memo?: string
+}
+
+export interface SvmSquadsProposalResult extends SvmTransactionResult {
+  multisigAddress: string
+  vaultAddress: string
+  transactionAddress: string
+  proposalAddress: string
+  transactionIndex: string
+}
+
+export interface SvmSquadsExecutionRequest extends SvmTransactionOptions {
+  multisigAddress: string
+  transactionIndex: bigint
+}
+
+export interface SvmProgramVerificationRequest {
+  programBytes: Uint8Array
+  programId: string
+  expectedAuthority?: string | null
+  requireVisible?: boolean
+}
+
+export interface SvmProgramVerificationResult {
+  programId: string
+  programDataAddress: string
+  authority: string | null
+  artifactHash: string
+  byteLength: number
+  deploymentSlot: number
+  currentSlot: number
+  visible: boolean
 }
 
 export interface SvmChainAdapter extends BaseChainAdapter {
@@ -157,7 +230,13 @@ export interface SvmChainAdapter extends BaseChainAdapter {
   sendInstructions(instructions: SvmInstructionRequest[], options?: SvmTransactionOptions): Promise<SvmTransactionResult>
   transfer(to: string, lamports: bigint, options?: SvmTransactionOptions): Promise<SvmTransactionResult>
   deployProgram(request: SvmProgramDeploymentRequest): Promise<SvmProgramDeploymentResult>
+  reserveProgram(request: SvmProgramReservationRequest): Promise<SvmProgramDeploymentResult>
+  writeProgramBuffer(request: SvmProgramBufferRequest): Promise<SvmProgramBufferResult>
   upgradeProgram(request: SvmProgramUpgradeRequest): Promise<SvmProgramDeploymentResult>
+  prepareUpgrade(programBytes: Uint8Array, programId: string, bufferAddress: string): Promise<SvmPreparedUpgradeResult>
+  createSquadsProposal(request: SvmSquadsProposalRequest): Promise<SvmSquadsProposalResult>
+  executeSquadsTransaction(request: SvmSquadsExecutionRequest): Promise<SvmTransactionResult>
+  verifyProgram(request: SvmProgramVerificationRequest): Promise<SvmProgramVerificationResult>
 }
 
 export type ChainAdapter = EvmLikeChainAdapter | SvmChainAdapter

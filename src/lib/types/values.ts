@@ -224,6 +224,14 @@ export interface SvmAssociatedTokenAddressValue {
   };
 }
 
+export interface SvmSquadsVaultValue {
+  type: 'svm-squads-vault';
+  arguments: {
+    multisig: AddressValue;
+    vaultIndex?: Value<string | number>;
+  };
+}
+
 /**
  * A union of all possible value-resolver objects.
  */
@@ -247,7 +255,8 @@ export type ValueResolver =
   | SvmAccountValue
   | SvmProgramExistsValue
   | SvmPdaValue
-  | SvmAssociatedTokenAddressValue;
+  | SvmAssociatedTokenAddressValue
+  | SvmSquadsVaultValue;
 
 /**
  * A generic value type that can be a primitive literal (string, number, boolean),

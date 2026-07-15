@@ -1,5 +1,6 @@
 import { ethers } from 'ethers'
 import { PublicKey } from '@solana/web3.js'
+import { getVaultPda } from '@sqds/multisig'
 import {
   Value,
   ValueResolver as ValueResolverObject,
@@ -23,6 +24,7 @@ import {
   SvmPdaSeed,
   SvmPdaValue,
   SvmProgramExistsValue,
+  SvmSquadsVaultValue,
 } from '../types'
 import { ExecutionContext } from './context'
 import { isBigNumberish, isBytesLike } from '../utils/assertion'
@@ -249,6 +251,8 @@ export class ValueResolver {
         return this.resolveSvmPda(resolvedArgs as SvmPdaValue['arguments'], context)
       case 'svm-ata':
         return this.resolveSvmAta(resolvedArgs as SvmAssociatedTokenAddressValue['arguments'], context)
+      case 'svm-squads-vault':
+        return this.resolveSvmSquadsVault(resolvedArgs as SvmSquadsVaultValue['arguments'], context)
       default:
         throw new Error(`Unknown value resolver type: ${(obj as any).type}`)
     }
@@ -843,6 +847,16 @@ export class ValueResolver {
       String(args.mint),
       args.tokenProgramId === undefined ? undefined : String(args.tokenProgramId)
     )
+  }
+
+  private resolveSvmSquadsVault(args: SvmSquadsVaultValue['arguments'], context: ExecutionContext): string {
+    const adapter = this.requireSvmAdapter('svm-squads-vault', context)
+    const multisig = new PublicKey(adapter.normalizeAddress(String(args.multisig)))
+    const vaultIndex = args.vaultIndex === undefined ? 0 : Number(args.vaultIndex)
+    if (!Number.isSafeInteger(vaultIndex) || vaultIndex < 0 || vaultIndex > 255) {
+      throw new Error('svm-squads-vault: vaultIndex must be an integer between 0 and 255.')
+    }
+    return getVaultPda({ multisigPda: multisig, index: vaultIndex })[0].toBase58()
   }
 
   private decodeSvmSeed(seed: SvmPdaSeed, index: number): Uint8Array {

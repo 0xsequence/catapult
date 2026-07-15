@@ -1268,6 +1268,141 @@ export class ExecutionEngine {
         if (action.name && !hasCustomOutput) this.storeSvmProgramOutputs(action.name, result, context)
         break
       }
+      case 'svm-reserve-program': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const stub = await this.resolver.resolve<SvmProgram | string>(action.arguments.stub, context, scope)
+        const stubBytes = await this.readSvmProgram(stub, actionName, context)
+        const finalAuthority = await this.resolver.resolve<string>(action.arguments.finalAuthority, context, scope)
+        const maxDataLengthValue = await this.resolver.resolve<string | number>(action.arguments.maxDataLength, context, scope)
+        const maxDataLength = this.parseSvmSafeInteger(maxDataLengthValue, actionName, 'maxDataLength')
+        const maxAttemptsValue = action.arguments.maxAttempts === undefined
+          ? undefined
+          : await this.resolver.resolve<string | number>(action.arguments.maxAttempts, context, scope)
+        const programKeypair = action.arguments.programKeypair === undefined
+          ? undefined
+          : await this.resolver.resolve<string>(action.arguments.programKeypair, context, scope)
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const result = await adapter.reserveProgram({
+          ...options,
+          stubBytes,
+          finalAuthority,
+          maxDataLength,
+          maxAttempts: maxAttemptsValue === undefined
+            ? undefined
+            : this.parseSvmSafeInteger(maxAttemptsValue, actionName, 'maxAttempts'),
+          programKeypairPath: programKeypair === undefined
+            ? undefined
+            : this.resolveActionPath(programKeypair, context),
+        })
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `SVM program address reserved at ${result.programId}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmProgramOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-write-buffer': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const finalAuthority = await this.resolver.resolve<string>(action.arguments.finalAuthority, context, scope)
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const result = await adapter.writeProgramBuffer({ ...options, programBytes, finalAuthority })
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `SVM program buffer sealed at ${result.bufferAddress}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmBufferOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-prepare-upgrade': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const programId = await this.resolver.resolve<string>(action.arguments.programId, context, scope)
+        const bufferAddress = await this.resolver.resolve<string>(action.arguments.bufferAddress, context, scope)
+        const result = await adapter.prepareUpgrade(programBytes, programId, bufferAddress)
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `Prepared governance upgrade for ${result.programId}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmPreparedUpgradeOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-squads-propose-upgrade': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const programId = await this.resolver.resolve<string>(action.arguments.programId, context, scope)
+        const bufferAddress = await this.resolver.resolve<string>(action.arguments.bufferAddress, context, scope)
+        const multisigAddress = await this.resolver.resolve<string>(action.arguments.multisig, context, scope)
+        const vaultIndexValue = action.arguments.vaultIndex === undefined
+          ? 0
+          : await this.resolver.resolve<string | number>(action.arguments.vaultIndex, context, scope)
+        const vaultIndex = this.parseSvmSafeInteger(vaultIndexValue, actionName, 'vaultIndex')
+        const memo = action.arguments.memo === undefined
+          ? undefined
+          : await this.resolver.resolve<string>(action.arguments.memo, context, scope)
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const prepared = await adapter.prepareUpgrade(programBytes, programId, bufferAddress)
+        const result = await adapter.createSquadsProposal({
+          ...options,
+          multisigAddress,
+          vaultIndex,
+          instructions: prepared.instructions,
+          memo,
+        })
+        this.emitSvmTransactionResult(actionName, result)
+        if (action.name && !hasCustomOutput) {
+          this.storeSvmPreparedUpgradeOutputs(action.name, prepared, context)
+          this.storeSvmSquadsProposalOutputs(action.name, result, context)
+        }
+        break
+      }
+      case 'svm-squads-execute': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const multisigAddress = await this.resolver.resolve<string>(action.arguments.multisig, context, scope)
+        const transactionIndexValue = await this.resolver.resolve<string | number>(action.arguments.transactionIndex, context, scope)
+        const transactionIndex = this.parseSvmBigInt(transactionIndexValue, actionName, 'transactionIndex')
+        const options = await this.resolveSvmTransactionOptions(actionName, action.arguments, context, scope)
+        const result = await adapter.executeSquadsTransaction({ ...options, multisigAddress, transactionIndex })
+        this.emitSvmTransactionResult(actionName, result)
+        if (action.name && !hasCustomOutput) this.storeSvmTransactionOutputs(action.name, result, context)
+        break
+      }
+      case 'svm-verify-program': {
+        const adapter = this.requireSvmAdapter(actionName, action.type, context)
+        const program = await this.resolver.resolve<SvmProgram | string>(action.arguments.program, context, scope)
+        const programBytes = await this.readSvmProgram(program, actionName, context)
+        const programId = await this.resolver.resolve<string>(action.arguments.programId, context, scope)
+        const immutable = action.arguments.immutable === undefined
+          ? false
+          : await this.resolver.resolve<boolean>(action.arguments.immutable, context, scope)
+        if (typeof immutable !== 'boolean') throw new Error(`Action "${actionName}": immutable must resolve to a boolean.`)
+        if (immutable && action.arguments.expectedAuthority !== undefined) {
+          throw new Error(`Action "${actionName}": expectedAuthority and immutable cannot both be set.`)
+        }
+        const expectedAuthority = immutable
+          ? null
+          : (action.arguments.expectedAuthority === undefined
+              ? undefined
+              : await this.resolver.resolve<string>(action.arguments.expectedAuthority, context, scope))
+        const requireVisible = action.arguments.requireVisible === undefined
+          ? true
+          : await this.resolver.resolve<boolean>(action.arguments.requireVisible, context, scope)
+        if (typeof requireVisible !== 'boolean') throw new Error(`Action "${actionName}": requireVisible must resolve to a boolean.`)
+        const result = await adapter.verifyProgram({ programBytes, programId, expectedAuthority, requireVisible })
+        this.events.emitEvent({
+          type: 'action_completed',
+          level: 'info',
+          data: { actionName, result: `Verified SVM program ${result.programId} at slot ${result.deploymentSlot}` }
+        })
+        if (action.name && !hasCustomOutput) this.storeSvmVerificationOutputs(action.name, result, context)
+        break
+      }
       default:
         throw new Error(`Unknown or unimplemented primitive action type: ${(action as any).type}`)
     }
@@ -1433,6 +1568,51 @@ export class ExecutionEngine {
     context.setOutput(`${actionName}.bufferAddress`, result.bufferAddress)
     context.setOutput(`${actionName}.signatures`, result.signatures)
     context.setOutput(`${actionName}.slot`, result.slot ?? null)
+    context.setOutput(`${actionName}.authority`, result.authority ?? null)
+    context.setOutput(`${actionName}.artifactHash`, result.artifactHash ?? null)
+    context.setOutput(`${actionName}.attempts`, result.attempts ?? null)
+  }
+
+  private storeSvmBufferOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.address`, result.bufferAddress)
+    context.setOutput(`${actionName}.bufferAddress`, result.bufferAddress)
+    context.setOutput(`${actionName}.authority`, result.authority)
+    context.setOutput(`${actionName}.artifactHash`, result.artifactHash)
+    context.setOutput(`${actionName}.byteLength`, result.byteLength)
+    context.setOutput(`${actionName}.signatures`, result.signatures)
+    context.setOutput(`${actionName}.slot`, result.slot ?? null)
+  }
+
+  private storeSvmPreparedUpgradeOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.programId`, result.programId)
+    context.setOutput(`${actionName}.programDataAddress`, result.programDataAddress)
+    context.setOutput(`${actionName}.bufferAddress`, result.bufferAddress)
+    context.setOutput(`${actionName}.authority`, result.authority)
+    context.setOutput(`${actionName}.artifactHash`, result.artifactHash)
+    context.setOutput(`${actionName}.byteLength`, result.byteLength)
+    context.setOutput(`${actionName}.instructions`, result.instructions)
+  }
+
+  private storeSvmSquadsProposalOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.signature`, result.signature ?? null)
+    context.setOutput(`${actionName}.slot`, result.slot ?? null)
+    context.setOutput(`${actionName}.multisigAddress`, result.multisigAddress)
+    context.setOutput(`${actionName}.vaultAddress`, result.vaultAddress)
+    context.setOutput(`${actionName}.transactionAddress`, result.transactionAddress)
+    context.setOutput(`${actionName}.proposalAddress`, result.proposalAddress)
+    context.setOutput(`${actionName}.transactionIndex`, result.transactionIndex)
+  }
+
+  private storeSvmVerificationOutputs(actionName: string, result: any, context: ExecutionContext): void {
+    context.setOutput(`${actionName}.verified`, true)
+    context.setOutput(`${actionName}.programId`, result.programId)
+    context.setOutput(`${actionName}.programDataAddress`, result.programDataAddress)
+    context.setOutput(`${actionName}.authority`, result.authority)
+    context.setOutput(`${actionName}.artifactHash`, result.artifactHash)
+    context.setOutput(`${actionName}.byteLength`, result.byteLength)
+    context.setOutput(`${actionName}.deploymentSlot`, result.deploymentSlot)
+    context.setOutput(`${actionName}.currentSlot`, result.currentSlot)
+    context.setOutput(`${actionName}.visible`, result.visible)
   }
 
   private validateAbi(value: unknown, actionName: string): unknown[] {

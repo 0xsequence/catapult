@@ -1,4 +1,6 @@
 import * as fs from 'fs/promises'
+import { createHash } from 'crypto'
+import * as multisig from '@sqds/multisig'
 import {
   Commitment,
   ComputeBudgetProgram,
@@ -13,6 +15,7 @@ import {
   SYSVAR_RENT_PUBKEY,
   Transaction,
   TransactionInstruction,
+  TransactionMessage,
 } from '@solana/web3.js'
 import { Network } from '../types/network'
 import {
@@ -21,6 +24,15 @@ import {
   SvmInstructionRequest,
   SvmProgramDeploymentRequest,
   SvmProgramDeploymentResult,
+  SvmProgramBufferRequest,
+  SvmProgramBufferResult,
+  SvmProgramReservationRequest,
+  SvmProgramVerificationRequest,
+  SvmProgramVerificationResult,
+  SvmPreparedUpgradeResult,
+  SvmSquadsExecutionRequest,
+  SvmSquadsProposalRequest,
+  SvmSquadsProposalResult,
   SvmProgramUpgradeRequest,
   SvmTransactionOptions,
   SvmTransactionResult,
@@ -34,6 +46,9 @@ const BUFFER_METADATA_SIZE = 37
 const PROGRAM_ACCOUNT_SIZE = 36
 const PROGRAM_DATA_METADATA_SIZE = 45
 const DEFAULT_PROGRAM_CHUNK_SIZE = 900
+const PROGRAM_STATE_TAG = 2
+const PROGRAM_DATA_STATE_TAG = 3
+const BUFFER_STATE_TAG = 1
 
 type SvmAdapterDependencies = {
   connection?: Connection
@@ -186,15 +201,7 @@ export class SvmAdapter implements SvmChainAdapter {
       throw new Error('svm-send-instructions requires at least one instruction.')
     }
     const signers = await Promise.all((options.signerKeypairPaths || []).map(file => this.readKeypair(file)))
-    const web3Instructions = instructions.map(instruction => new TransactionInstruction({
-      programId: new PublicKey(this.normalizeAddress(instruction.programId)),
-      keys: (instruction.accounts || []).map(account => ({
-        pubkey: new PublicKey(this.normalizeAddress(account.address)),
-        isSigner: account.isSigner === true,
-        isWritable: account.isWritable === true,
-      })),
-      data: this.decodeInstructionData(instruction.data),
-    }))
+    const web3Instructions = instructions.map(instruction => this.toWeb3Instruction(instruction))
     return this.sendWeb3Instructions(web3Instructions, signers, options)
   }
 
@@ -249,6 +256,277 @@ export class SvmAdapter implements SvmChainAdapter {
       bufferAddress: uploaded.buffer.publicKey.toBase58(),
       signatures: [...uploaded.signatures, deployed.signature],
       slot: deployed.slot,
+    }
+  }
+
+  public async reserveProgram(request: SvmProgramReservationRequest): Promise<SvmProgramDeploymentResult> {
+    this.validateProgramBytes(request.stubBytes)
+    await this.assertGenesisHash()
+    const transactionOptions: SvmTransactionOptions = { ...request, simulate: false }
+    const payer = await this.getSigner()
+    const finalAuthority = new PublicKey(this.normalizeAddress(request.finalAuthority))
+    if (!Number.isSafeInteger(request.maxDataLength) || request.maxDataLength < request.stubBytes.length) {
+      throw new Error('SVM reservation maxDataLength must be a safe integer at least as large as the stub binary.')
+    }
+    const maxAttempts = request.programKeypairPath ? 1 : (request.maxAttempts ?? 3)
+    if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 20) {
+      throw new Error('SVM reservation maxAttempts must be an integer between 1 and 20.')
+    }
+
+    // The temporary authority is never persisted. It can upload and deploy the
+    // inert stub, but the successful transaction immediately hands authority to
+    // governance before any committed state is observable.
+    const bootstrapAuthority = Keypair.generate()
+    const uploaded = await this.createAndWriteBuffer(request.stubBytes, transactionOptions, bootstrapAuthority)
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Generate the target only after the generic stub buffer has been uploaded,
+      // so the counterfactual ProgramData address is not disclosed by buffer data.
+      const program = request.programKeypairPath
+        ? await this.readKeypair(request.programKeypairPath)
+        : Keypair.generate()
+      const [programDataAddress] = PublicKey.findProgramAddressSync(
+        [program.publicKey.toBuffer()],
+        SVM_UPGRADEABLE_LOADER_ID
+      )
+      if (await this.freshProgramAddressOccupied(program.publicKey, programDataAddress)) {
+        if (request.programKeypairPath) {
+          throw new Error(`SVM reservation address ${program.publicKey.toBase58()} or its ProgramData PDA is already occupied.`)
+        }
+        continue
+      }
+
+      const programLamports = await this.connection.getMinimumBalanceForRentExemption(PROGRAM_ACCOUNT_SIZE)
+      const createProgram = SystemProgram.createAccount({
+        fromPubkey: payer.publicKey,
+        newAccountPubkey: program.publicKey,
+        lamports: programLamports,
+        space: PROGRAM_ACCOUNT_SIZE,
+        programId: SVM_UPGRADEABLE_LOADER_ID,
+      })
+      const deployInstruction = this.createDeployInstruction({
+        payer: payer.publicKey,
+        program: program.publicKey,
+        programData: programDataAddress,
+        buffer: uploaded.buffer.publicKey,
+        authority: bootstrapAuthority.publicKey,
+        maxDataLength: request.maxDataLength,
+      })
+      const transferAuthority = this.createSetAuthorityInstruction(
+        programDataAddress,
+        bootstrapAuthority.publicKey,
+        finalAuthority
+      )
+
+      try {
+        const deployed = await this.sendWeb3Instructions(
+          [createProgram, deployInstruction, transferAuthority],
+          [program, bootstrapAuthority],
+          transactionOptions
+        ) as SendResult
+        return {
+          programId: program.publicKey.toBase58(),
+          programDataAddress: programDataAddress.toBase58(),
+          bufferAddress: uploaded.buffer.publicKey.toBase58(),
+          signatures: [...uploaded.signatures, deployed.signature],
+          slot: deployed.slot,
+          authority: finalAuthority.toBase58(),
+          artifactHash: this.sha256(request.stubBytes),
+          attempts: attempt,
+        }
+      } catch (error) {
+        const occupied = await this.freshProgramAddressOccupied(program.publicKey, programDataAddress)
+        if (!request.programKeypairPath && occupied && attempt < maxAttempts) continue
+        throw error
+      }
+    }
+
+    throw new Error(`Unable to reserve an undusted SVM program address after ${maxAttempts} attempts.`)
+  }
+
+  public async writeProgramBuffer(request: SvmProgramBufferRequest): Promise<SvmProgramBufferResult> {
+    this.validateProgramBytes(request.programBytes)
+    await this.assertGenesisHash()
+    const transactionOptions: SvmTransactionOptions = { ...request, simulate: false }
+    const finalAuthority = new PublicKey(this.normalizeAddress(request.finalAuthority))
+    const uploadAuthority = Keypair.generate()
+    const uploaded = await this.createAndWriteBuffer(request.programBytes, transactionOptions, uploadAuthority)
+    const transferred = await this.sendWeb3Instructions([
+      this.createSetAuthorityInstruction(uploaded.buffer.publicKey, uploadAuthority.publicKey, finalAuthority)
+    ], [uploadAuthority], transactionOptions) as SendResult
+    const buffer = await this.loadBufferState(uploaded.buffer.publicKey)
+    if (!buffer.authority?.equals(finalAuthority) || !buffer.payload.equals(Buffer.from(request.programBytes))) {
+      throw new Error('SVM buffer verification failed after transferring authority.')
+    }
+    return {
+      bufferAddress: uploaded.buffer.publicKey.toBase58(),
+      authority: finalAuthority.toBase58(),
+      artifactHash: this.sha256(request.programBytes),
+      byteLength: request.programBytes.length,
+      signatures: [...uploaded.signatures, transferred.signature],
+      slot: transferred.slot,
+    }
+  }
+
+  public async prepareUpgrade(
+    programBytes: Uint8Array,
+    programId: string,
+    bufferAddress: string
+  ): Promise<SvmPreparedUpgradeResult> {
+    this.validateProgramBytes(programBytes)
+    await this.assertGenesisHash()
+    const program = new PublicKey(this.normalizeAddress(programId))
+    const bufferKey = new PublicKey(this.normalizeAddress(bufferAddress))
+    const state = await this.loadProgramState(program)
+    const buffer = await this.loadBufferState(bufferKey)
+    if (!state.authority) throw new Error(`SVM program ${program.toBase58()} is immutable.`)
+    if (!buffer.authority?.equals(state.authority)) {
+      throw new Error('SVM buffer authority does not match the program upgrade authority.')
+    }
+    if (!buffer.payload.equals(Buffer.from(programBytes))) {
+      throw new Error('SVM buffer bytes do not exactly match the requested program artifact.')
+    }
+    if (programBytes.length > state.capacity) {
+      throw new Error(`SVM program requires ${programBytes.length} bytes but ProgramData capacity is ${state.capacity}; reserve more capacity or approve an extension first.`)
+    }
+    const instruction: SvmInstructionRequest = {
+      programId: SVM_UPGRADEABLE_LOADER_ID.toBase58(),
+      accounts: [
+        { address: state.programDataAddress.toBase58(), isWritable: true },
+        { address: program.toBase58(), isWritable: true },
+        { address: bufferKey.toBase58(), isWritable: true },
+        { address: state.authority.toBase58(), isWritable: true },
+        { address: SYSVAR_RENT_PUBKEY.toBase58() },
+        { address: SYSVAR_CLOCK_PUBKEY.toBase58() },
+        { address: state.authority.toBase58(), isSigner: true },
+      ],
+      data: this.encodeU32(3),
+    }
+    return {
+      programId: program.toBase58(),
+      programDataAddress: state.programDataAddress.toBase58(),
+      bufferAddress: bufferKey.toBase58(),
+      authority: state.authority.toBase58(),
+      artifactHash: this.sha256(programBytes),
+      byteLength: programBytes.length,
+      instructions: [instruction],
+    }
+  }
+
+  public async createSquadsProposal(request: SvmSquadsProposalRequest): Promise<SvmSquadsProposalResult> {
+    await this.assertGenesisHash()
+    const payer = await this.getSigner()
+    const multisigAddress = new PublicKey(this.normalizeAddress(request.multisigAddress))
+    if (!Number.isSafeInteger(request.vaultIndex) || request.vaultIndex < 0 || request.vaultIndex > 255) {
+      throw new Error('Squads vaultIndex must be an integer between 0 and 255.')
+    }
+    const multisigAccount = await multisig.accounts.Multisig.fromAccountAddress(
+      this.connection,
+      multisigAddress,
+      this.commitment
+    )
+    const transactionIndex = BigInt(multisigAccount.transactionIndex.toString()) + 1n
+    const [vaultAddress] = multisig.getVaultPda({ multisigPda: multisigAddress, index: request.vaultIndex })
+    const [transactionAddress] = multisig.getTransactionPda({ multisigPda: multisigAddress, index: transactionIndex })
+    const [proposalAddress] = multisig.getProposalPda({ multisigPda: multisigAddress, transactionIndex })
+    const requiredSigners = request.instructions.flatMap(instruction =>
+      (instruction.accounts || [])
+        .filter(account => account.isSigner)
+        .map(account => new PublicKey(this.normalizeAddress(account.address)))
+    )
+    if (requiredSigners.length === 0 || requiredSigners.some(address => !address.equals(vaultAddress))) {
+      throw new Error(
+        `Every signer required by a Squads vault transaction must be the derived vault ${vaultAddress.toBase58()}.`
+      )
+    }
+    const latest = await this.connection.getLatestBlockhash(this.commitment)
+    const transactionMessage = new TransactionMessage({
+      payerKey: vaultAddress,
+      recentBlockhash: latest.blockhash,
+      instructions: request.instructions.map(instruction => this.toWeb3Instruction(instruction)),
+    })
+    const createTransaction = multisig.instructions.vaultTransactionCreate({
+      multisigPda: multisigAddress,
+      transactionIndex,
+      creator: payer.publicKey,
+      rentPayer: payer.publicKey,
+      vaultIndex: request.vaultIndex,
+      ephemeralSigners: 0,
+      transactionMessage,
+      memo: request.memo,
+    })
+    const createProposal = multisig.instructions.proposalCreate({
+      multisigPda: multisigAddress,
+      transactionIndex,
+      creator: payer.publicKey,
+      rentPayer: payer.publicKey,
+    })
+    const result = await this.sendWeb3Instructions(
+      [createTransaction, createProposal],
+      [],
+      { ...request, simulate: false }
+    ) as SendResult
+    return {
+      ...result,
+      multisigAddress: multisigAddress.toBase58(),
+      vaultAddress: vaultAddress.toBase58(),
+      transactionAddress: transactionAddress.toBase58(),
+      proposalAddress: proposalAddress.toBase58(),
+      transactionIndex: transactionIndex.toString(),
+    }
+  }
+
+  public async executeSquadsTransaction(request: SvmSquadsExecutionRequest): Promise<SvmTransactionResult> {
+    await this.assertGenesisHash()
+    const payer = await this.getSigner()
+    const multisigAddress = new PublicKey(this.normalizeAddress(request.multisigAddress))
+    const executable = await multisig.instructions.vaultTransactionExecute({
+      connection: this.connection,
+      multisigPda: multisigAddress,
+      transactionIndex: request.transactionIndex,
+      member: payer.publicKey,
+    })
+    if (executable.lookupTableAccounts.length > 0) {
+      throw new Error('Squads transactions using address lookup tables are not supported by the current SVM adapter.')
+    }
+    return this.sendWeb3Instructions([executable.instruction], [], { ...request, simulate: false })
+  }
+
+  public async verifyProgram(request: SvmProgramVerificationRequest): Promise<SvmProgramVerificationResult> {
+    this.validateProgramBytes(request.programBytes)
+    await this.assertGenesisHash()
+    const program = new PublicKey(this.normalizeAddress(request.programId))
+    const state = await this.loadProgramState(program)
+    const expected = Buffer.from(request.programBytes)
+    if (!state.payload.subarray(0, expected.length).equals(expected)) {
+      throw new Error(`SVM ProgramData bytes do not match artifact ${this.sha256(request.programBytes)}.`)
+    }
+    if (state.payload.subarray(expected.length).some(byte => byte !== 0)) {
+      throw new Error('SVM ProgramData contains unexpected non-zero bytes after the artifact.')
+    }
+    if (request.expectedAuthority !== undefined) {
+      const expectedAuthority = request.expectedAuthority === null
+        ? null
+        : new PublicKey(this.normalizeAddress(request.expectedAuthority))
+      if ((expectedAuthority === null) !== (state.authority === null)
+        || (expectedAuthority && state.authority && !expectedAuthority.equals(state.authority))) {
+        throw new Error(`SVM upgrade authority mismatch: expected ${expectedAuthority?.toBase58() ?? 'None'}, got ${state.authority?.toBase58() ?? 'None'}.`)
+      }
+    }
+    const currentSlot = await this.connection.getSlot(this.commitment)
+    const visible = currentSlot > state.deploymentSlot
+    if (request.requireVisible !== false && !visible) {
+      throw new Error(`SVM program deployed at slot ${state.deploymentSlot} is not visible until a later slot (current ${currentSlot}).`)
+    }
+    return {
+      programId: program.toBase58(),
+      programDataAddress: state.programDataAddress.toBase58(),
+      authority: state.authority?.toBase58() ?? null,
+      artifactHash: this.sha256(request.programBytes),
+      byteLength: request.programBytes.length,
+      deploymentSlot: state.deploymentSlot,
+      currentSlot,
+      visible,
     }
   }
 
@@ -322,9 +600,11 @@ export class SvmAdapter implements SvmChainAdapter {
 
   private async createAndWriteBuffer(
     programBytes: Uint8Array,
-    options: SvmTransactionOptions
-  ): Promise<{ buffer: Keypair; signatures: string[] }> {
+    options: SvmTransactionOptions,
+    authority?: Signer
+  ): Promise<{ buffer: Keypair; signatures: string[]; slot?: number }> {
     const payer = await this.getSigner()
+    const bufferAuthority = authority || payer
     const buffer = Keypair.generate()
     const size = BUFFER_METADATA_SIZE + programBytes.length
     const lamports = await this.connection.getMinimumBalanceForRentExemption(size)
@@ -332,7 +612,7 @@ export class SvmAdapter implements SvmChainAdapter {
       programId: SVM_UPGRADEABLE_LOADER_ID,
       keys: [
         { pubkey: buffer.publicKey, isSigner: false, isWritable: true },
-        { pubkey: payer.publicKey, isSigner: false, isWritable: false },
+        { pubkey: bufferAuthority.publicKey, isSigner: false, isWritable: false },
       ],
       data: this.encodeU32(0),
     })
@@ -347,23 +627,77 @@ export class SvmAdapter implements SvmChainAdapter {
       initialize,
     ], [buffer], options) as SendResult
     const signatures = [created.signature]
+    let slot = created.slot
 
     for (let offset = 0; offset < programBytes.length; offset += this.programChunkSize) {
       const bytes = programBytes.slice(offset, offset + this.programChunkSize)
       const written = await this.sendWeb3Instructions([
         new TransactionInstruction({
           programId: SVM_UPGRADEABLE_LOADER_ID,
-          keys: [
-            { pubkey: buffer.publicKey, isSigner: false, isWritable: true },
-            { pubkey: payer.publicKey, isSigner: true, isWritable: false },
-          ],
-          data: this.encodeWrite(offset, bytes),
-        })
-      ], [], options) as SendResult
+            keys: [
+              { pubkey: buffer.publicKey, isSigner: false, isWritable: true },
+              { pubkey: bufferAuthority.publicKey, isSigner: true, isWritable: false },
+            ],
+            data: this.encodeWrite(offset, bytes),
+          })
+      ], [bufferAuthority], options) as SendResult
       signatures.push(written.signature)
+      slot = written.slot
     }
 
-    return { buffer, signatures }
+    return { buffer, signatures, slot }
+  }
+
+  private createDeployInstruction(input: {
+    payer: PublicKey
+    program: PublicKey
+    programData: PublicKey
+    buffer: PublicKey
+    authority: PublicKey
+    maxDataLength: number
+  }): TransactionInstruction {
+    return new TransactionInstruction({
+      programId: SVM_UPGRADEABLE_LOADER_ID,
+      keys: [
+        { pubkey: input.payer, isSigner: true, isWritable: true },
+        { pubkey: input.programData, isSigner: false, isWritable: true },
+        { pubkey: input.program, isSigner: false, isWritable: true },
+        { pubkey: input.buffer, isSigner: false, isWritable: true },
+        { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
+        { pubkey: SYSVAR_CLOCK_PUBKEY, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+        { pubkey: input.authority, isSigner: true, isWritable: false },
+      ],
+      data: this.encodeDeployWithMaxDataLength(input.maxDataLength),
+    })
+  }
+
+  private createSetAuthorityInstruction(
+    account: PublicKey,
+    currentAuthority: PublicKey,
+    newAuthority: PublicKey | null
+  ): TransactionInstruction {
+    return new TransactionInstruction({
+      programId: SVM_UPGRADEABLE_LOADER_ID,
+      keys: [
+        { pubkey: account, isSigner: false, isWritable: true },
+        { pubkey: currentAuthority, isSigner: true, isWritable: false },
+        ...(newAuthority ? [{ pubkey: newAuthority, isSigner: false, isWritable: false }] : []),
+      ],
+      data: this.encodeU32(4),
+    })
+  }
+
+  private toWeb3Instruction(instruction: SvmInstructionRequest): TransactionInstruction {
+    return new TransactionInstruction({
+      programId: new PublicKey(this.normalizeAddress(instruction.programId)),
+      keys: (instruction.accounts || []).map(account => ({
+        pubkey: new PublicKey(this.normalizeAddress(account.address)),
+        isSigner: account.isSigner === true,
+        isWritable: account.isWritable === true,
+      })),
+      data: this.decodeInstructionData(instruction.data),
+    })
   }
 
   private async sendWeb3Instructions(
@@ -424,6 +758,76 @@ export class SvmAdapter implements SvmChainAdapter {
       simulated: false,
       raw: confirmation,
     }
+  }
+
+  private async freshProgramAddressOccupied(program: PublicKey, programData: PublicKey): Promise<boolean> {
+    const [programInfo, programDataInfo] = await Promise.all([
+      this.connection.getAccountInfo(program, this.commitment),
+      this.connection.getAccountInfo(programData, this.commitment),
+    ])
+    return programInfo !== null || programDataInfo !== null
+  }
+
+  private async loadBufferState(buffer: PublicKey): Promise<{ authority: PublicKey | null; payload: Buffer }> {
+    const account = await this.connection.getAccountInfo(buffer, this.commitment)
+    if (!account || !account.owner.equals(SVM_UPGRADEABLE_LOADER_ID)) {
+      throw new Error(`SVM buffer ${buffer.toBase58()} is missing or not owned by Loader-v3.`)
+    }
+    const data = Buffer.from(account.data)
+    if (data.length < BUFFER_METADATA_SIZE || data.readUInt32LE(0) !== BUFFER_STATE_TAG) {
+      throw new Error(`SVM account ${buffer.toBase58()} is not an initialized Loader-v3 buffer.`)
+    }
+    const option = data[4]
+    if (option !== 0 && option !== 1) throw new Error('SVM buffer has an invalid authority encoding.')
+    const authority = option === 1 ? new PublicKey(data.subarray(5, 37)) : null
+    return { authority, payload: data.subarray(BUFFER_METADATA_SIZE) }
+  }
+
+  private async loadProgramState(program: PublicKey): Promise<{
+    programDataAddress: PublicKey
+    authority: PublicKey | null
+    payload: Buffer
+    capacity: number
+    deploymentSlot: number
+  }> {
+    const programAccount = await this.connection.getAccountInfo(program, this.commitment)
+    if (!programAccount?.executable || !programAccount.owner.equals(SVM_UPGRADEABLE_LOADER_ID)) {
+      throw new Error(`SVM program ${program.toBase58()} is missing or not executable under Loader-v3.`)
+    }
+    const programData = Buffer.from(programAccount.data)
+    if (programData.length < PROGRAM_ACCOUNT_SIZE || programData.readUInt32LE(0) !== PROGRAM_STATE_TAG) {
+      throw new Error(`SVM program ${program.toBase58()} has invalid Loader-v3 state.`)
+    }
+    const linkedProgramData = new PublicKey(programData.subarray(4, 36))
+    const [derivedProgramData] = PublicKey.findProgramAddressSync([program.toBuffer()], SVM_UPGRADEABLE_LOADER_ID)
+    if (!linkedProgramData.equals(derivedProgramData)) {
+      throw new Error(`SVM program ${program.toBase58()} points to a non-canonical ProgramData account.`)
+    }
+    const programDataAccount = await this.connection.getAccountInfo(derivedProgramData, this.commitment)
+    if (!programDataAccount || !programDataAccount.owner.equals(SVM_UPGRADEABLE_LOADER_ID)) {
+      throw new Error(`ProgramData account ${derivedProgramData.toBase58()} is missing or has the wrong owner.`)
+    }
+    const data = Buffer.from(programDataAccount.data)
+    if (data.length < PROGRAM_DATA_METADATA_SIZE || data.readUInt32LE(0) !== PROGRAM_DATA_STATE_TAG) {
+      throw new Error(`ProgramData account ${derivedProgramData.toBase58()} has invalid Loader-v3 state.`)
+    }
+    const rawSlot = data.readBigUInt64LE(4)
+    if (rawSlot > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('SVM deployment slot exceeds the safe integer range.')
+    const option = data[12]
+    if (option !== 0 && option !== 1) throw new Error('SVM ProgramData has an invalid authority encoding.')
+    const authority = option === 1 ? new PublicKey(data.subarray(13, 45)) : null
+    const payload = data.subarray(PROGRAM_DATA_METADATA_SIZE)
+    return {
+      programDataAddress: derivedProgramData,
+      authority,
+      payload,
+      capacity: payload.length,
+      deploymentSlot: Number(rawSlot),
+    }
+  }
+
+  private sha256(bytes: Uint8Array): string {
+    return createHash('sha256').update(bytes).digest('hex')
   }
 
   private async getSigner(): Promise<Keypair> {

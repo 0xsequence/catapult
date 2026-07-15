@@ -1,9 +1,12 @@
-import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js'
+import * as multisig from '@sqds/multisig'
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from '@solana/web3.js'
 import * as fs from 'fs/promises'
 import * as os from 'os'
 import * as path from 'path'
 import { Network } from '../../types'
-import { SvmAdapter } from '../svm'
+import { SVM_UPGRADEABLE_LOADER_ID, SvmAdapter } from '../svm'
+
+const ELF = Uint8Array.from([0x7f, 0x45, 0x4c, 0x46])
 
 function makeNetwork(overrides: Partial<Network> = {}): Network {
   return {
@@ -32,6 +35,7 @@ function makeAdapter(network: Network = makeNetwork()) {
     getGenesisHash: jest.fn().mockResolvedValue('test-genesis'),
     getLatestBlockhash: jest.fn().mockResolvedValue({ blockhash, lastValidBlockHeight: 123 }),
     getMinimumBalanceForRentExemption: jest.fn().mockResolvedValue(1_000_000),
+    getSlot: jest.fn().mockResolvedValue(43),
     simulateTransaction: jest.fn().mockResolvedValue({
       context: { slot: 41 },
       value: { err: null, logs: ['Program log: ok'], unitsConsumed: 321 },
@@ -47,6 +51,52 @@ function makeAdapter(network: Network = makeNetwork()) {
     signer,
   })
   return { adapter, owner, rpc, signer }
+}
+
+function loaderAccount(data: Buffer, executable = false) {
+  return {
+    data,
+    executable,
+    lamports: 1_000_000,
+    owner: SVM_UPGRADEABLE_LOADER_ID,
+    rentEpoch: 0,
+  }
+}
+
+function bufferData(authority: PublicKey, bytes: Uint8Array): Buffer {
+  const data = Buffer.alloc(37 + bytes.length)
+  data.writeUInt32LE(1, 0)
+  data[4] = 1
+  authority.toBuffer().copy(data, 5)
+  Buffer.from(bytes).copy(data, 37)
+  return data
+}
+
+function programState(
+  program: PublicKey,
+  authority: PublicKey | null,
+  bytes: Uint8Array,
+  capacity = bytes.length,
+  deploymentSlot = 40
+) {
+  const [programDataAddress] = PublicKey.findProgramAddressSync(
+    [program.toBuffer()],
+    SVM_UPGRADEABLE_LOADER_ID
+  )
+  const programData = Buffer.alloc(36)
+  programData.writeUInt32LE(2, 0)
+  programDataAddress.toBuffer().copy(programData, 4)
+  const deployed = Buffer.alloc(45 + capacity)
+  deployed.writeUInt32LE(3, 0)
+  deployed.writeBigUInt64LE(BigInt(deploymentSlot), 4)
+  deployed[12] = authority ? 1 : 0
+  if (authority) authority.toBuffer().copy(deployed, 13)
+  Buffer.from(bytes).copy(deployed, 45)
+  return {
+    programDataAddress,
+    programAccount: loaderAccount(programData, true),
+    programDataAccount: loaderAccount(deployed),
+  }
 }
 
 describe('SvmAdapter', () => {
@@ -147,7 +197,7 @@ describe('SvmAdapter', () => {
 
     try {
       const result = await adapter.deployProgram({
-        programBytes: Uint8Array.from([0x7f, 0x45, 0x4c, 0x46]),
+        programBytes: ELF,
         programKeypairPath: keypairPath,
         simulate: true,
       })
@@ -159,6 +209,183 @@ describe('SvmAdapter', () => {
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true })
     }
+  })
+
+  it('reserves a fresh program and transfers authority atomically to governance', async () => {
+    const { adapter, rpc, signer } = makeAdapter()
+    const governance = Keypair.generate().publicKey
+    rpc.getAccountInfo.mockReset().mockResolvedValue(null)
+
+    const result = await adapter.reserveProgram({
+      stubBytes: ELF,
+      finalAuthority: governance.toBase58(),
+      maxDataLength: 1_024,
+    })
+
+    expect(result.authority).toBe(governance.toBase58())
+    expect(result.attempts).toBe(1)
+    expect(rpc.sendRawTransaction).toHaveBeenCalledTimes(3)
+    const raw = rpc.sendRawTransaction.mock.calls[2][0] as unknown as Buffer
+    const reservation = Transaction.from(Buffer.from(raw))
+    expect(reservation.instructions).toHaveLength(3)
+    expect(reservation.instructions[1].data.readUInt32LE(0)).toBe(2)
+    expect(reservation.instructions[2].data.readUInt32LE(0)).toBe(4)
+    expect(reservation.instructions[2].keys[2].pubkey.equals(governance)).toBe(true)
+    expect(reservation.instructions[1].keys[7].pubkey.equals(reservation.instructions[2].keys[1].pubkey)).toBe(true)
+    expect(reservation.instructions[2].keys[1].pubkey.equals(signer.publicKey)).toBe(false)
+  })
+
+  it('retries with a new undisclosed program address if the first address is dusted', async () => {
+    const { adapter, rpc } = makeAdapter()
+    const governance = Keypair.generate().publicKey
+    let accountRead = 0
+    rpc.getAccountInfo.mockReset().mockImplementation(async () => {
+      accountRead += 1
+      return accountRead === 3 ? loaderAccount(Buffer.alloc(0)) : null
+    })
+    rpc.sendRawTransaction
+      .mockResolvedValueOnce('buffer-created')
+      .mockResolvedValueOnce('buffer-written')
+      .mockRejectedValueOnce(new Error('account already in use'))
+      .mockResolvedValueOnce('reservation-succeeded')
+
+    const result = await adapter.reserveProgram({
+      stubBytes: ELF,
+      finalAuthority: governance.toBase58(),
+      maxDataLength: 1_024,
+      maxAttempts: 2,
+    })
+
+    expect(result.attempts).toBe(2)
+    expect(rpc.sendRawTransaction).toHaveBeenCalledTimes(4)
+  })
+
+  it('writes exact artifact bytes and seals the buffer to governance', async () => {
+    const { adapter, rpc } = makeAdapter()
+    const governance = Keypair.generate().publicKey
+    rpc.getAccountInfo.mockReset().mockResolvedValue(loaderAccount(bufferData(governance, ELF)))
+
+    const result = await adapter.writeProgramBuffer({
+      programBytes: ELF,
+      finalAuthority: governance.toBase58(),
+    })
+
+    expect(result.authority).toBe(governance.toBase58())
+    expect(result.byteLength).toBe(ELF.length)
+    expect(rpc.sendRawTransaction).toHaveBeenCalledTimes(3)
+    const raw = rpc.sendRawTransaction.mock.calls[2][0] as unknown as Buffer
+    const transfer = Transaction.from(Buffer.from(raw))
+    expect(transfer.instructions).toHaveLength(1)
+    expect(transfer.instructions[0].data.readUInt32LE(0)).toBe(4)
+    expect(transfer.instructions[0].keys[2].pubkey.equals(governance)).toBe(true)
+  })
+
+  it('prepares an upgrade only when ProgramData and buffer share the governance authority', async () => {
+    const { adapter, rpc } = makeAdapter()
+    const program = Keypair.generate().publicKey
+    const authority = Keypair.generate().publicKey
+    const buffer = Keypair.generate().publicKey
+    const state = programState(program, authority, ELF, 64)
+    rpc.getAccountInfo.mockReset().mockImplementation(async (address: PublicKey) => {
+      if (address.equals(program)) return state.programAccount
+      if (address.equals(state.programDataAddress)) return state.programDataAccount
+      if (address.equals(buffer)) return loaderAccount(bufferData(authority, ELF))
+      return null
+    })
+
+    const result = await adapter.prepareUpgrade(ELF, program.toBase58(), buffer.toBase58())
+
+    expect(result.authority).toBe(authority.toBase58())
+    expect(result.instructions[0].data).toEqual(Buffer.from([3, 0, 0, 0]))
+    expect(result.instructions[0].accounts?.filter(account => account.isSigner)).toEqual([
+      { address: authority.toBase58(), isSigner: true },
+    ])
+  })
+
+  it('rejects a Squads transaction whose required signer is not its derived vault', async () => {
+    const { adapter } = makeAdapter()
+    const multisigAddress = Keypair.generate().publicKey
+    const wrongAuthority = Keypair.generate().publicKey
+    const readMultisig = jest.spyOn(multisig.accounts.Multisig, 'fromAccountAddress')
+      .mockResolvedValue({ transactionIndex: 0n } as any)
+
+    try {
+      await expect(adapter.createSquadsProposal({
+        multisigAddress: multisigAddress.toBase58(),
+        vaultIndex: 0,
+        instructions: [{
+          programId: SVM_UPGRADEABLE_LOADER_ID.toBase58(),
+          accounts: [{ address: wrongAuthority.toBase58(), isSigner: true }],
+          data: '0x03000000',
+        }],
+      })).rejects.toThrow('Every signer required by a Squads vault transaction must be the derived vault')
+    } finally {
+      readMultisig.mockRestore()
+    }
+  })
+
+  it('creates a Squads vault transaction and proposal without casting a vote', async () => {
+    const { adapter, rpc } = makeAdapter()
+    const multisigAddress = Keypair.generate().publicKey
+    const [vaultAddress] = multisig.getVaultPda({ multisigPda: multisigAddress, index: 0 })
+    const readMultisig = jest.spyOn(multisig.accounts.Multisig, 'fromAccountAddress')
+      .mockResolvedValue({ transactionIndex: 6n } as any)
+
+    try {
+      const result = await adapter.createSquadsProposal({
+        multisigAddress: multisigAddress.toBase58(),
+        vaultIndex: 0,
+        instructions: [{
+          programId: SVM_UPGRADEABLE_LOADER_ID.toBase58(),
+          accounts: [{ address: vaultAddress.toBase58(), isSigner: true }],
+          data: '0x03000000',
+        }],
+      })
+
+      expect(result).toMatchObject({
+        multisigAddress: multisigAddress.toBase58(),
+        vaultAddress: vaultAddress.toBase58(),
+        transactionIndex: '7',
+        signature: 'test-signature',
+      })
+      expect(rpc.sendRawTransaction).toHaveBeenCalledTimes(1)
+      const raw = rpc.sendRawTransaction.mock.calls[0][0] as unknown as Buffer
+      const transaction = Transaction.from(Buffer.from(raw))
+      expect(transaction.instructions).toHaveLength(2)
+    } finally {
+      readMultisig.mockRestore()
+    }
+  })
+
+  it('verifies exact ProgramData bytes, governance authority, and later-slot visibility', async () => {
+    const { adapter, rpc } = makeAdapter()
+    const program = Keypair.generate().publicKey
+    const authority = Keypair.generate().publicKey
+    const state = programState(program, authority, ELF, 32, 40)
+    rpc.getAccountInfo.mockReset().mockImplementation(async (address: PublicKey) => {
+      if (address.equals(program)) return state.programAccount
+      if (address.equals(state.programDataAddress)) return state.programDataAccount
+      return null
+    })
+
+    await expect(adapter.verifyProgram({
+      programBytes: ELF,
+      programId: program.toBase58(),
+      expectedAuthority: authority.toBase58(),
+    })).resolves.toMatchObject({
+      programId: program.toBase58(),
+      authority: authority.toBase58(),
+      deploymentSlot: 40,
+      currentSlot: 43,
+      visible: true,
+    })
+
+    state.programDataAccount.data[45] ^= 0xff
+    await expect(adapter.verifyProgram({
+      programBytes: ELF,
+      programId: program.toBase58(),
+      expectedAuthority: authority.toBase58(),
+    })).rejects.toThrow('ProgramData bytes do not match artifact')
   })
 
   it('requires an explicit keypair only when a signing operation is requested', async () => {

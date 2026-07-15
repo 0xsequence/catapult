@@ -170,6 +170,73 @@ export interface SvmUpgradeProgramAction {
   };
 }
 
+export interface SvmReserveProgramAction {
+  type: 'svm-reserve-program';
+  arguments: {
+    stub: Value<SvmProgram | string>;
+    finalAuthority: AddressValue;
+    programKeypair?: Value<string>;
+    maxDataLength: Value<string | number>;
+    maxAttempts?: Value<string | number>;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmWriteBufferAction {
+  type: 'svm-write-buffer';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    finalAuthority: AddressValue;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmPrepareUpgradeAction {
+  type: 'svm-prepare-upgrade';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    programId: AddressValue;
+    bufferAddress: AddressValue;
+  };
+}
+
+export interface SvmSquadsProposeUpgradeAction {
+  type: 'svm-squads-propose-upgrade';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    programId: AddressValue;
+    bufferAddress: AddressValue;
+    multisig: AddressValue;
+    vaultIndex?: Value<string | number>;
+    memo?: Value<string>;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmSquadsExecuteAction {
+  type: 'svm-squads-execute';
+  arguments: {
+    multisig: AddressValue;
+    transactionIndex: Value<string | number>;
+    computeUnitLimit?: Value<number>;
+    computeUnitPriceMicroLamports?: Value<string | number>;
+  };
+}
+
+export interface SvmVerifyProgramAction {
+  type: 'svm-verify-program';
+  arguments: {
+    program: Value<SvmProgram | string>;
+    programId: AddressValue;
+    expectedAuthority?: AddressValue;
+    immutable?: Value<boolean>;
+    requireVisible?: Value<boolean>;
+  };
+}
+
 // A union of all primitive action types.
 export type PrimitiveAction =
   | SendTransactionAction
@@ -186,7 +253,13 @@ export type PrimitiveAction =
   | SvmTransferAction
   | SvmSendInstructionsAction
   | SvmDeployProgramAction
-  | SvmUpgradeProgramAction;
+  | SvmUpgradeProgramAction
+  | SvmReserveProgramAction
+  | SvmWriteBufferAction
+  | SvmPrepareUpgradeAction
+  | SvmSquadsProposeUpgradeAction
+  | SvmSquadsExecuteAction
+  | SvmVerifyProgramAction;
 
 const primitiveActionTypes = [
   'send-transaction',
@@ -204,6 +277,12 @@ const primitiveActionTypes = [
   'svm-send-instructions',
   'svm-deploy-program',
   'svm-upgrade-program',
+  'svm-reserve-program',
+  'svm-write-buffer',
+  'svm-prepare-upgrade',
+  'svm-squads-propose-upgrade',
+  'svm-squads-execute',
+  'svm-verify-program',
 ] as const;
 
 /**

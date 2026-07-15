@@ -616,7 +616,7 @@ Send one or more native instructions. Instruction data accepts `0x` hex, `base64
     simulate: false
 ```
 
-Deploy or upgrade an upgradeable-loader program. Catapult scans the project for `.so` files, so a typical Anchor artifact can be referenced by basename:
+For local development, Catapult can deploy or upgrade an upgradeable-loader program directly. These two legacy actions leave the fee-payer as upgrade authority and are not appropriate when Catapult must be authority-free. Catapult scans the project for `.so` files, so a typical Anchor artifact can be referenced by basename:
 
 ```yaml
 - name: "deploy-counter"
@@ -635,6 +635,78 @@ Deploy or upgrade an upgradeable-loader program. Catapult scans the project for 
 ```
 
 Deployment outputs include `address`/`programId`, `programDataAddress`, `bufferAddress`, `signatures`, and `slot`. Transaction outputs include `signature`, `slot`, `simulated`, `logs`, and `unitsConsumed`.
+
+#### Authority-free program reservation and Squads upgrades
+
+Production deployments can put a Squads vault in control without publishing a reusable program keypair or giving Catapult lasting authority. First derive the vault, deploy an audited generic inert stub, and atomically transfer the new ProgramData authority to that vault:
+
+```yaml
+- name: "reserve-counter"
+  type: "svm-reserve-program"
+  arguments:
+    stub: "{{Program(inert_stub)}}"
+    finalAuthority:
+      type: "svm-squads-vault"
+      arguments:
+        multisig: "{{squads-multisig}}"
+        vaultIndex: 0
+    maxDataLength: 1048576
+    maxAttempts: 5
+```
+
+Omit `programKeypair` for the safe flow. Catapult uploads the address-independent stub first, generates the program key only when it is ready to submit, and includes program creation, stub deployment, and `SetAuthority` in one transaction. If either the program address or ProgramData PDA is dusted before that transaction lands, the transaction rolls back and Catapult retries with a fresh key. The temporary bootstrap authority is generated in memory and is never persisted.
+
+Next upload the exact release artifact to a separate buffer and seal that buffer to the same vault:
+
+```yaml
+- name: "counter-buffer"
+  type: "svm-write-buffer"
+  arguments:
+    program: "{{Program(counter)}}"
+    finalAuthority:
+      type: "svm-squads-vault"
+      arguments:
+        multisig: "{{squads-multisig}}"
+        vaultIndex: 0
+```
+
+Create the Squads vault transaction and proposal. This action verifies the current ProgramData authority, buffer authority, artifact bytes, and reserved capacity before submitting anything. It creates a proposal but does not approve it or vote on it:
+
+```yaml
+- name: "propose-counter-upgrade"
+  type: "svm-squads-propose-upgrade"
+  arguments:
+    program: "{{Program(counter)}}"
+    programId: "{{reserve-counter.address}}"
+    bufferAddress: "{{counter-buffer.address}}"
+    multisig: "{{squads-multisig}}"
+    vaultIndex: 0
+    memo: "Upgrade counter to the reviewed release artifact"
+```
+
+After the Squads members approve the proposal, an executor can run it in a later Catapult invocation:
+
+```yaml
+- name: "execute-counter-upgrade"
+  type: "svm-squads-execute"
+  arguments:
+    multisig: "{{squads-multisig}}"
+    transactionIndex: "{{approved-transaction-index}}"
+
+- name: "verify-counter"
+  type: "svm-verify-program"
+  depends_on: ["execute-counter-upgrade"]
+  arguments:
+    program: "{{Program(counter)}}"
+    programId: "{{counter-program-id}}"
+    expectedAuthority:
+      type: "svm-squads-vault"
+      arguments:
+        multisig: "{{squads-multisig}}"
+        vaultIndex: 0
+```
+
+`svm-prepare-upgrade` performs the same read-only preflight and exposes the Loader-v3 upgrade instruction without creating a Squads proposal. Proposal outputs include `vaultAddress`, `transactionAddress`, `proposalAddress`, and `transactionIndex`. Verification checks the canonical ProgramData PDA, Loader-v3 ownership, exact ELF bytes and zero padding, expected authority, and later-slot visibility.
 
 ### `send-transaction`
 Send a transaction to the blockchain:
@@ -786,6 +858,15 @@ type: "svm-ata"
 arguments:
   owner: "{{payer}}"
   mint: "{{mint}}"
+```
+
+Derive a Squads vault authority without hard-coding its PDA:
+
+```yaml
+type: "svm-squads-vault"
+arguments:
+  multisig: "{{squads-multisig}}"
+  vaultIndex: 0
 ```
 
 ### `abi-encode`
