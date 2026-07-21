@@ -1,7 +1,18 @@
-import { getAddress, keccak256, toUtf8Bytes } from 'ethers'
+import SafeApiKit from '@safe-global/api-kit'
+import {
+  getAddress,
+  getBytes,
+  Interface,
+  keccak256,
+  recoverAddress,
+  toUtf8Bytes,
+  verifyMessage,
+  ZeroAddress,
+} from 'ethers'
 import { validateBigNumberish, validateHexData } from './utils/validation'
 
 export const SAFE_TRANSACTION_SCHEMA = 'catapult.safe-transaction.v1' as const
+export const SAFE_TRANSACTION_PROPOSAL_SCHEMA = 'catapult.safe-transaction-proposal.v1' as const
 
 export type SafeOperation = 0 | 1
 
@@ -13,6 +24,223 @@ export interface SafeTransactionArtifact {
   value: string
   data: string
   operation: SafeOperation
+}
+
+export interface SafeTransactionProposal {
+  schema: typeof SAFE_TRANSACTION_PROPOSAL_SCHEMA
+  chainId: string
+  safe: string
+  safeTxHash: string
+  nonce: string
+  proposer: string
+  origin: string
+}
+
+export interface SafeTransactionServiceProposalRequest {
+  safeAddress: string
+  safeTransactionData: {
+    to: string
+    value: string
+    data: string
+    operation: SafeOperation
+    safeTxGas: string
+    baseGas: string
+    gasPrice: string
+    gasToken: string
+    refundReceiver: string
+    nonce: number
+  }
+  safeTxHash: string
+  senderAddress: string
+  senderSignature: string
+  origin?: string
+}
+
+export interface SafeTransactionServiceClient {
+  getNextNonce(safeAddress: string): Promise<string | number>
+  estimateSafeTransaction(
+    safeAddress: string,
+    transaction: { to: string; value: string; data: string; operation: SafeOperation },
+  ): Promise<{ safeTxGas: string }>
+  proposeTransaction(request: SafeTransactionServiceProposalRequest): Promise<void>
+}
+
+export interface SafeProposalProvider {
+  call(transaction: { to: string; data: string }): Promise<string>
+}
+
+export interface SafeProposalSigner {
+  getAddress(): Promise<string>
+  signDigest(digest: string): Promise<string>
+}
+
+const SAFE_INTERFACE = new Interface([
+  'function getTransactionHash(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) view returns (bytes32)',
+])
+
+function normalizeSafeNonce(value: unknown, actionName: string): number {
+  const validated = validateBigNumberish(value, actionName, 'safeNonce')
+  const nonce = BigInt(validated)
+  if (nonce > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(`Action "${actionName}": safeNonce exceeds JavaScript's safe integer range`)
+  }
+  return Number(nonce)
+}
+
+function normalizeSafeTxGas(value: unknown, actionName: string): string {
+  const validated = validateBigNumberish(value, actionName, 'safeTxGas')
+  const safeTxGas = BigInt(validated)
+  if (safeTxGas > (1n << 256n) - 1n) {
+    throw new Error(`Action "${actionName}": safeTxGas exceeds uint256`)
+  }
+  return safeTxGas.toString()
+}
+
+function replaceSignatureV(signature: string, v: number): string {
+  return `${signature.slice(0, -2)}${v.toString(16).padStart(2, '0')}`
+}
+
+function normalizeSafeSignature(
+  safeTxHash: string,
+  signature: string,
+  proposer: string,
+  actionName: string,
+): string {
+  if (!/^0x[0-9a-fA-F]{130}$/.test(signature)) {
+    throw new Error(`Action "${actionName}": Safe proposer returned an invalid 65-byte signature`)
+  }
+
+  const originalV = Number.parseInt(signature.slice(-2), 16)
+  if (![0, 1, 27, 28].includes(originalV)) {
+    throw new Error(`Action "${actionName}": Safe proposer signature has invalid v value ${originalV}`)
+  }
+  const canonicalSignature = replaceSignatureV(signature, originalV < 27 ? originalV + 27 : originalV)
+
+  try {
+    if (getAddress(recoverAddress(safeTxHash, canonicalSignature)) === proposer) {
+      return canonicalSignature
+    }
+  } catch {
+    // Try the eth_sign/personal_sign form below.
+  }
+
+  try {
+    if (getAddress(verifyMessage(getBytes(safeTxHash), canonicalSignature)) === proposer) {
+      const canonicalV = Number.parseInt(canonicalSignature.slice(-2), 16)
+      return replaceSignatureV(canonicalSignature, canonicalV + 4)
+    }
+  } catch {
+    // Fall through to a single actionable error.
+  }
+
+  throw new Error(`Action "${actionName}": Safe proposer signature does not match ${proposer}`)
+}
+
+function createSafeTransactionServiceClient(args: {
+  chainId: number
+  apiKey?: string
+  txServiceUrl?: string
+}): SafeTransactionServiceClient {
+  const apiKit = new SafeApiKit({
+    chainId: BigInt(args.chainId),
+    ...(args.apiKey === undefined ? {} : { apiKey: args.apiKey }),
+    ...(args.txServiceUrl === undefined ? {} : { txServiceUrl: args.txServiceUrl }),
+  })
+
+  return {
+    getNextNonce: (safeAddress) => apiKit.getNextNonce(safeAddress),
+    estimateSafeTransaction: (safeAddress, transaction) =>
+      apiKit.estimateSafeTransaction(safeAddress, transaction),
+    proposeTransaction: (request) => apiKit.proposeTransaction(
+      request as Parameters<SafeApiKit['proposeTransaction']>[0]
+    ),
+  }
+}
+
+export async function proposeSafeTransaction(args: {
+  actionName: string
+  artifact: SafeTransactionArtifact
+  provider: SafeProposalProvider
+  signer: SafeProposalSigner
+  apiKey?: string
+  txServiceUrl?: string
+  nonce?: unknown
+  origin?: string
+  service?: SafeTransactionServiceClient
+}): Promise<SafeTransactionProposal> {
+  const chainId = Number(args.artifact.chainId)
+  const service = args.service ?? createSafeTransactionServiceClient({
+    chainId,
+    apiKey: args.apiKey,
+    txServiceUrl: args.txServiceUrl,
+  })
+  const [rawNonce, estimate] = await Promise.all([
+    args.nonce ?? service.getNextNonce(args.artifact.safe),
+    service.estimateSafeTransaction(args.artifact.safe, {
+      to: args.artifact.to,
+      value: args.artifact.value,
+      data: args.artifact.data,
+      operation: args.artifact.operation,
+    }),
+  ])
+  const nonce = normalizeSafeNonce(rawNonce, args.actionName)
+  const safeTxGas = normalizeSafeTxGas(estimate.safeTxGas, args.actionName)
+  const origin = args.origin ?? 'Catapult'
+
+  const safeTransactionData: SafeTransactionServiceProposalRequest['safeTransactionData'] = {
+    to: args.artifact.to,
+    value: args.artifact.value,
+    data: args.artifact.data,
+    operation: args.artifact.operation,
+    safeTxGas,
+    baseGas: '0',
+    gasPrice: '0',
+    gasToken: ZeroAddress,
+    refundReceiver: ZeroAddress,
+    nonce,
+  }
+
+  const hashCall = SAFE_INTERFACE.encodeFunctionData('getTransactionHash', [
+    safeTransactionData.to,
+    safeTransactionData.value,
+    safeTransactionData.data,
+    safeTransactionData.operation,
+    safeTransactionData.safeTxGas,
+    safeTransactionData.baseGas,
+    safeTransactionData.gasPrice,
+    safeTransactionData.gasToken,
+    safeTransactionData.refundReceiver,
+    safeTransactionData.nonce,
+  ])
+  const encodedHash = await args.provider.call({ to: args.artifact.safe, data: hashCall })
+  const [safeTxHashValue] = SAFE_INTERFACE.decodeFunctionResult('getTransactionHash', encodedHash)
+  const safeTxHash = String(safeTxHashValue)
+  const proposer = getAddress(await args.signer.getAddress())
+  const senderSignature = normalizeSafeSignature(
+    safeTxHash,
+    await args.signer.signDigest(safeTxHash),
+    proposer,
+    args.actionName,
+  )
+
+  await service.proposeTransaction({
+    safeAddress: args.artifact.safe,
+    safeTransactionData,
+    safeTxHash,
+    senderAddress: proposer,
+    senderSignature,
+    origin,
+  })
+
+  return {
+    schema: SAFE_TRANSACTION_PROPOSAL_SCHEMA,
+    chainId: args.artifact.chainId,
+    safe: args.artifact.safe,
+    safeTxHash,
+    nonce: String(nonce),
+    proposer,
+    origin,
+  }
 }
 
 export interface SafeTransactionBuilderTransaction {

@@ -1,9 +1,12 @@
+import { getBytes, Interface, Signature, Wallet } from 'ethers'
 import {
   calculateSafeTransactionBuilderChecksum,
   createSafeTransactionArtifact,
   createSafeTransactionBuilderBatch,
   extractSafeTransactionsFromJobOutput,
+  proposeSafeTransaction,
   SAFE_TRANSACTION_SCHEMA,
+  SAFE_TRANSACTION_PROPOSAL_SCHEMA,
   SafeTransactionBuilderBatch,
 } from '../safe'
 
@@ -31,6 +34,140 @@ describe('Safe transaction artifacts', () => {
       data: '0x1234',
       operation: 0,
     })
+  })
+
+  it('signs and proposes a complete Safe transaction with the next pending nonce', async () => {
+    const safeTxHash = `0x${'ab'.repeat(32)}`
+    const proposerWallet = new Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80')
+    const signature = Signature.from(proposerWallet.signingKey.sign(safeTxHash)).serialized
+    const safeInterface = new Interface([
+      'function getTransactionHash(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) view returns (bytes32)',
+    ])
+    const provider = {
+      call: jest.fn().mockResolvedValue(
+        safeInterface.encodeFunctionResult('getTransactionHash', [safeTxHash])
+      ),
+    }
+    const signer = {
+      getAddress: jest.fn().mockResolvedValue(proposerWallet.address),
+      signDigest: jest.fn().mockResolvedValue(signature),
+    }
+    const service = {
+      getNextNonce: jest.fn().mockResolvedValue('7'),
+      estimateSafeTransaction: jest.fn().mockResolvedValue({ safeTxGas: '123' }),
+      proposeTransaction: jest.fn().mockResolvedValue(undefined),
+    }
+
+    const proposal = await proposeSafeTransaction({
+      actionName: 'upgrade',
+      artifact,
+      provider,
+      signer,
+      origin: 'Catapult test',
+      service,
+    })
+
+    expect(service.getNextNonce).toHaveBeenCalledWith(safe)
+    expect(service.estimateSafeTransaction).toHaveBeenCalledWith(safe, {
+      to,
+      value: '0',
+      data: '0x1234',
+      operation: 0,
+    })
+    expect(signer.signDigest).toHaveBeenCalledWith(safeTxHash)
+    expect(service.proposeTransaction).toHaveBeenCalledWith({
+      safeAddress: safe,
+      safeTransactionData: {
+        to,
+        value: '0',
+        data: '0x1234',
+        operation: 0,
+        safeTxGas: '123',
+        baseGas: '0',
+        gasPrice: '0',
+        gasToken: '0x0000000000000000000000000000000000000000',
+        refundReceiver: '0x0000000000000000000000000000000000000000',
+        nonce: 7,
+      },
+      safeTxHash,
+      senderAddress: proposerWallet.address,
+      senderSignature: signature,
+      origin: 'Catapult test',
+    })
+    expect(proposal).toEqual({
+      schema: SAFE_TRANSACTION_PROPOSAL_SCHEMA,
+      chainId: '1',
+      safe,
+      safeTxHash,
+      nonce: '7',
+      proposer: proposerWallet.address,
+      origin: 'Catapult test',
+    })
+  })
+
+  it('uses an explicit Safe nonce without querying the Transaction Service', async () => {
+    const safeTxHash = `0x${'ab'.repeat(32)}`
+    const proposerWallet = new Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80')
+    const safeInterface = new Interface([
+      'function getTransactionHash(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) view returns (bytes32)',
+    ])
+    const service = {
+      getNextNonce: jest.fn(),
+      estimateSafeTransaction: jest.fn().mockResolvedValue({ safeTxGas: '123' }),
+      proposeTransaction: jest.fn().mockResolvedValue(undefined),
+    }
+
+    const proposal = await proposeSafeTransaction({
+      actionName: 'upgrade',
+      artifact,
+      nonce: '12',
+      provider: {
+        call: jest.fn().mockResolvedValue(
+          safeInterface.encodeFunctionResult('getTransactionHash', [safeTxHash])
+        ),
+      },
+      signer: {
+        getAddress: jest.fn().mockResolvedValue(proposerWallet.address),
+        signDigest: jest.fn().mockResolvedValue(
+          Signature.from(proposerWallet.signingKey.sign(safeTxHash)).serialized
+        ),
+      },
+      service,
+    })
+
+    expect(service.getNextNonce).not.toHaveBeenCalled()
+    expect(proposal.nonce).toBe('12')
+  })
+
+  it('converts a personal_sign signature to Safe eth_sign encoding', async () => {
+    const safeTxHash = `0x${'ab'.repeat(32)}`
+    const proposerWallet = new Wallet('0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80')
+    const safeInterface = new Interface([
+      'function getTransactionHash(address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce) view returns (bytes32)',
+    ])
+    const service = {
+      getNextNonce: jest.fn().mockResolvedValue('7'),
+      estimateSafeTransaction: jest.fn().mockResolvedValue({ safeTxGas: '123' }),
+      proposeTransaction: jest.fn().mockResolvedValue(undefined),
+    }
+
+    await proposeSafeTransaction({
+      actionName: 'upgrade',
+      artifact,
+      provider: {
+        call: jest.fn().mockResolvedValue(
+          safeInterface.encodeFunctionResult('getTransactionHash', [safeTxHash])
+        ),
+      },
+      signer: {
+        getAddress: jest.fn().mockResolvedValue(proposerWallet.address),
+        signDigest: jest.fn().mockResolvedValue(await proposerWallet.signMessage(getBytes(safeTxHash))),
+      },
+      service,
+    })
+
+    const submittedSignature = service.proposeTransaction.mock.calls[0][0].senderSignature
+    expect([31, 32]).toContain(Number.parseInt(submittedSignature.slice(-2), 16))
   })
 
   it('creates an importable Safe Transaction Builder batch', () => {

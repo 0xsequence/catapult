@@ -38,6 +38,15 @@ export interface DeployerOptions {
   /** Optional Etherscan API key for contract verification. */
   etherscanApiKey?: string
 
+  /** Optional Safe API key used only by safe-transaction actions with propose: true. */
+  safeApiKey?: string
+
+  /** Optional custom Safe Transaction Service URL. */
+  safeTxServiceUrl?: string
+
+  /** Optional dedicated owner/delegate key used only for Safe proposals. */
+  safeProposerPrivateKey?: string
+
   /** Optional: Stop execution as soon as any job fails. Defaults to false. */
   failEarly?: boolean
 
@@ -161,7 +170,10 @@ export class Deployer {
         eventEmitter: this.events,
         verificationRegistry,
         noPostCheckConditions: this.noPostCheckConditions,
-        ignoreVerifyErrors: this.options.ignoreVerifyErrors ?? false
+        ignoreVerifyErrors: this.options.ignoreVerifyErrors ?? false,
+        safeApiKey: this.options.safeApiKey,
+        safeTxServiceUrl: this.options.safeTxServiceUrl,
+        safeProposerPrivateKey: this.options.safeProposerPrivateKey,
       })
 
       // Track if any jobs have failed

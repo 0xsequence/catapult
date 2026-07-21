@@ -16,6 +16,9 @@ interface RunOptions {
   dotenv?: string
   std: boolean
   etherscanApiKey?: string
+  safeApiKey?: string
+  safeTxServiceUrl?: string
+  safeProposerPrivateKey?: string
   verbose: number
   failEarly: boolean
   noPostCheckConditions: boolean
@@ -32,6 +35,9 @@ export function makeRunCommand(): Command {
     .option('-n, --network <selectors>', 'Comma-separated network selectors (by chain ID or name). If not provided, runs on all configured networks.')
     .option('--rpc-url <url>', 'Custom RPC URL to run on. The system will automatically detect chainId and network information. This overrides networks.yaml configuration.')
     .option('--etherscan-api-key <key>', 'Etherscan API key for contract verification. Can also be set via ETHERSCAN_API_KEY env var.')
+    .option('--safe-api-key <key>', 'Safe API key for optional Safe transaction proposals. Can also be set via SAFE_API_KEY or SAFE_TRANSACTION_SERVICE_API_KEY.')
+    .option('--safe-tx-service-url <url>', 'Custom Safe Transaction Service URL. Can also be set via SAFE_TX_SERVICE_URL.')
+    .option('--safe-proposer-private-key <key>', 'Dedicated Safe proposal signer. Can also be set via SAFE_PROPOSER_PRIVATE_KEY; defaults to the run signer.')
     .option('--fail-early', 'Stop execution as soon as any job fails. Default: false', false)
     .option('--no-post-check-conditions', 'Skip post-execution check of skip conditions. Default: false (post-check enabled)', false)
     .option('--flat-output', 'Write output files in a single flat directory instead of mirroring the jobs directory structure. Default: false', false)
@@ -57,6 +63,9 @@ export function makeRunCommand(): Command {
       }
 
       const etherscanApiKey = options.etherscanApiKey || process.env.ETHERSCAN_API_KEY
+      const safeApiKey = options.safeApiKey || process.env.SAFE_API_KEY || process.env.SAFE_TRANSACTION_SERVICE_API_KEY
+      const safeTxServiceUrl = options.safeTxServiceUrl || process.env.SAFE_TX_SERVICE_URL
+      const safeProposerPrivateKey = options.safeProposerPrivateKey || process.env.SAFE_PROPOSER_PRIVATE_KEY
 
       const projectRoot = options.project
       
@@ -113,6 +122,9 @@ export function makeRunCommand(): Command {
         runJobs: jobs.length > 0 ? jobs : undefined,
         runOnNetworks: selectedChainIds,
         etherscanApiKey,
+        safeApiKey,
+        safeTxServiceUrl,
+        safeProposerPrivateKey,
         failEarly: options.failEarly,
         noPostCheckConditions: options.noPostCheckConditions,
         showSummary: options.summary !== false,

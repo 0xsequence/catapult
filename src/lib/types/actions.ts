@@ -39,10 +39,7 @@ export interface StaticAction {
   };
 }
 
-/**
- * Builds an unsigned Safe transaction artifact. This action never signs,
- * proposes, or broadcasts the transaction.
- */
+/** Builds a Safe transaction artifact and optionally proposes it off-chain. */
 export interface SafeTransactionAction {
   type: 'safe-transaction';
   arguments: {
@@ -58,6 +55,12 @@ export interface SafeTransactionAction {
     operation?: Value<string | number>;
     /** Simulate the inner CALL with eth_call before emitting it. Defaults to true. */
     simulate?: BooleanValue;
+    /** Propose the transaction to the Safe Transaction Service. Defaults to false. */
+    propose?: BooleanValue;
+    /** Safe nonce override. By default, the Transaction Service selects the next pending nonce. */
+    safeNonce?: Uint256Value;
+    /** Origin label stored with the Safe proposal. Defaults to "Catapult". */
+    origin?: Value<string>;
   };
 }
 

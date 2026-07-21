@@ -13,13 +13,16 @@ import {
 import { Contract } from '../types/contracts'
 import { ExecutionContext } from './context'
 import { ValueResolver, ResolutionScope } from './resolver'
+import { toDigestSigner } from './signer'
 import { validateAddress, validateHexData, validateBigNumberish, validateRawTransaction } from '../utils/validation'
 import { DeploymentEventEmitter, deploymentEvents } from '../events'
 import { createDefaultVerificationRegistry, VerificationPlatformRegistry } from '../verification/etherscan'
 import { BuildInfo } from '../types/buildinfo'
 import { ethers } from 'ethers'
 import type { TypedDataField } from 'ethers'
-import { createSafeTransactionArtifact } from '../safe'
+import { createSafeTransactionArtifact, proposeSafeTransaction, SafeTransactionProposal } from '../safe'
+
+export type SafeTransactionProposer = typeof proposeSafeTransaction
 
 export type EngineOptions = {
   eventEmitter?: DeploymentEventEmitter
@@ -27,6 +30,10 @@ export type EngineOptions = {
   noPostCheckConditions?: boolean
   allowMultipleNicksMethodTests?: boolean
   ignoreVerifyErrors?: boolean
+  safeApiKey?: string
+  safeTxServiceUrl?: string
+  safeProposerPrivateKey?: string
+  safeTransactionProposer?: SafeTransactionProposer
 }
 
 /**
@@ -42,6 +49,10 @@ export class ExecutionEngine {
   private readonly noPostCheckConditions: boolean
   private readonly allowMultipleNicksMethodTests: boolean
   private readonly ignoreVerifyErrors: boolean
+  private readonly safeApiKey?: string
+  private readonly safeTxServiceUrl?: string
+  private readonly safeProposerPrivateKey?: string
+  private readonly safeTransactionProposer: SafeTransactionProposer
   private nicksMethodResult: boolean | undefined
   private verificationWarnings: Array<{
     actionName: string
@@ -61,6 +72,10 @@ export class ExecutionEngine {
     this.noPostCheckConditions = options?.noPostCheckConditions ?? false
     this.allowMultipleNicksMethodTests = options?.allowMultipleNicksMethodTests ?? false
     this.ignoreVerifyErrors = options?.ignoreVerifyErrors ?? false
+    this.safeApiKey = options?.safeApiKey
+    this.safeTxServiceUrl = options?.safeTxServiceUrl
+    this.safeProposerPrivateKey = options?.safeProposerPrivateKey
+    this.safeTransactionProposer = options?.safeTransactionProposer ?? proposeSafeTransaction
   }
 
   /**
@@ -791,7 +806,7 @@ export class ExecutionEngine {
           throw new Error('Action "safe-transaction": name is required so the artifact can be referenced')
         }
 
-        const [resolvedSafe, resolvedTo, resolvedValue, resolvedData, resolvedOperation, resolvedSimulate] = await Promise.all([
+        const [resolvedSafe, resolvedTo, resolvedValue, resolvedData, resolvedOperation, resolvedSimulate, resolvedPropose] = await Promise.all([
           this.resolver.resolve(safeAction.arguments.safe, context, scope),
           this.resolver.resolve(safeAction.arguments.to, context, scope),
           safeAction.arguments.value === undefined
@@ -806,10 +821,16 @@ export class ExecutionEngine {
           safeAction.arguments.simulate === undefined
             ? Promise.resolve(true)
             : this.resolver.resolve(safeAction.arguments.simulate, context, scope),
+          safeAction.arguments.propose === undefined
+            ? Promise.resolve(false)
+            : this.resolver.resolve(safeAction.arguments.propose, context, scope),
         ])
 
         if (typeof resolvedSimulate !== 'boolean') {
           throw new Error(`Action "${actionName}": simulate must resolve to a boolean`)
+        }
+        if (typeof resolvedPropose !== 'boolean') {
+          throw new Error(`Action "${actionName}": propose must resolve to a boolean`)
         }
 
         const network = context.getNetwork()
@@ -840,6 +861,41 @@ export class ExecutionEngine {
           })
         }
 
+        let proposal: SafeTransactionProposal | undefined
+        if (resolvedPropose) {
+          if (!this.safeApiKey && !this.safeTxServiceUrl) {
+            throw new Error(
+              `Action "${actionName}": propose requires --safe-api-key/SAFE_API_KEY or --safe-tx-service-url/SAFE_TX_SERVICE_URL`
+            )
+          }
+
+          const [resolvedSafeNonce, resolvedOrigin] = await Promise.all([
+            safeAction.arguments.safeNonce === undefined
+              ? Promise.resolve(undefined)
+              : this.resolver.resolve(safeAction.arguments.safeNonce, context, scope),
+            safeAction.arguments.origin === undefined
+              ? Promise.resolve('Catapult')
+              : this.resolver.resolve(safeAction.arguments.origin, context, scope),
+          ])
+          if (typeof resolvedOrigin !== 'string' || resolvedOrigin.length === 0) {
+            throw new Error(`Action "${actionName}": origin must resolve to a non-empty string`)
+          }
+
+          const signer = this.safeProposerPrivateKey
+            ? toDigestSigner(new ethers.Wallet(this.safeProposerPrivateKey, context.provider))
+            : await context.getResolvedSigner()
+          proposal = await this.safeTransactionProposer({
+            actionName,
+            artifact,
+            provider: context.provider,
+            signer,
+            apiKey: this.safeApiKey,
+            txServiceUrl: this.safeTxServiceUrl,
+            nonce: resolvedSafeNonce,
+            origin: resolvedOrigin,
+          })
+        }
+
         if (!hasCustomOutput) {
           // The object is the stable Catapult contract. Flat aliases keep existing
           // output consumers compatible while they migrate to safeTransaction.
@@ -849,6 +905,12 @@ export class ExecutionEngine {
           context.setOutput(`${action.name}.safeTxData`, artifact.data)
           context.setOutput(`${action.name}.safeTxOperation`, artifact.operation)
           context.setOutput(`${action.name}.executorMultisig`, artifact.safe)
+          if (proposal) {
+            context.setOutput(`${action.name}.safeTransactionProposal`, proposal)
+            context.setOutput(`${action.name}.safeTxHash`, proposal.safeTxHash)
+            context.setOutput(`${action.name}.safeTxNonce`, proposal.nonce)
+            context.setOutput(`${action.name}.safeTxProposer`, proposal.proposer)
+          }
         }
         break
       }
