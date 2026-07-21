@@ -499,6 +499,14 @@ Utilities:
 ```bash
 # Convert chain ID to network name
 catapult utils chain-id-to-name 42161 -p ./my-project
+
+# Export a Safe transaction artifact for Safe Transaction Builder
+catapult utils safe-batch ./output --chain-id 1 --output safe-batch.json
+
+# Multiple transactions require an explicit order
+catapult utils safe-batch ./output --chain-id 1 \
+  --transaction upgrade-job/deploy upgrade-job/upgrade \
+  --output safe-batch.json
 ```
 
 Etherscan helpers:
@@ -584,6 +592,36 @@ Example with complex data:
 ```
 
 This makes `config.value.endpoint`, `config.value.timeout`, and `config.value.enabled` available for use in subsequent actions.
+
+### `safe-transaction`
+
+Build an unsigned Safe transaction artifact without signing, proposing, or broadcasting it:
+
+```yaml
+- name: "upgrade"
+  type: "safe-transaction"
+  arguments:
+    safe: "{{admin-safe}}"
+    to: "{{proxy-admin}}"
+    value: "0"
+    data:
+      type: "abi-encode"
+      arguments:
+        signature: "upgradeAndCall(address,address,bytes)"
+        values:
+          - "{{proxy}}"
+          - "{{deployment.implementation.address}}"
+          - "0x"
+    operation: 0
+    simulate: true
+  output: true
+```
+
+`safe`, `to`, `value`, and `data` support normal Catapult values and resolvers. `value` defaults to `0`, `data` defaults to `0x`, `operation` defaults to `CALL` (`0`), and `simulate` defaults to `true`.
+
+For `CALL`, simulation performs a read-only `eth_call` from the Safe address directly to the target. This checks the inner call's calldata, target-contract authorization, value, and current-state behavior. It does not run `Safe.execTransaction`, so it does not validate Safe signatures, threshold, nonce, guards, or refund settings. `DELEGATECALL` (`1`) artifacts require `simulate: false` because an inner delegatecall cannot be reproduced with a direct `eth_call`.
+
+The action writes a versioned `name.safeTransaction` object to Catapult output. It also emits `name.safeTxTo`, `name.safeTxValue`, `name.safeTxData`, `name.safeTxOperation`, and `name.executorMultisig` for compatibility with existing payload consumers. Use `catapult utils safe-batch` to turn one or more `CALL` artifacts into checksummed Safe Transaction Builder JSON. When multiple artifacts exist, pass `--transaction job/action ...` in the required batch order.
 
 ### `create-contract`
 Create a contract by sending its creation bytecode (and optional value):

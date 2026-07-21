@@ -5,6 +5,7 @@ import {
   JobAction,
   isPrimitiveActionType,
   Condition,
+  SafeTransactionAction,
   SignDigestAction,
   SignMessageAction,
   SignTypedDataAction
@@ -18,6 +19,7 @@ import { createDefaultVerificationRegistry, VerificationPlatformRegistry } from 
 import { BuildInfo } from '../types/buildinfo'
 import { ethers } from 'ethers'
 import type { TypedDataField } from 'ethers'
+import { createSafeTransactionArtifact } from '../safe'
 
 export type EngineOptions = {
   eventEmitter?: DeploymentEventEmitter
@@ -780,6 +782,73 @@ export class ExecutionEngine {
         
         if (action.name && !hasCustomOutput) {
           context.setOutput(`${action.name}.value`, resolvedValue)
+        }
+        break
+      }
+      case 'safe-transaction': {
+        const safeAction = action as SafeTransactionAction
+        if (!action.name) {
+          throw new Error('Action "safe-transaction": name is required so the artifact can be referenced')
+        }
+
+        const [resolvedSafe, resolvedTo, resolvedValue, resolvedData, resolvedOperation, resolvedSimulate] = await Promise.all([
+          this.resolver.resolve(safeAction.arguments.safe, context, scope),
+          this.resolver.resolve(safeAction.arguments.to, context, scope),
+          safeAction.arguments.value === undefined
+            ? Promise.resolve(0)
+            : this.resolver.resolve(safeAction.arguments.value, context, scope),
+          safeAction.arguments.data === undefined
+            ? Promise.resolve('0x')
+            : this.resolver.resolve(safeAction.arguments.data, context, scope),
+          safeAction.arguments.operation === undefined
+            ? Promise.resolve(0)
+            : this.resolver.resolve(safeAction.arguments.operation, context, scope),
+          safeAction.arguments.simulate === undefined
+            ? Promise.resolve(true)
+            : this.resolver.resolve(safeAction.arguments.simulate, context, scope),
+        ])
+
+        if (typeof resolvedSimulate !== 'boolean') {
+          throw new Error(`Action "${actionName}": simulate must resolve to a boolean`)
+        }
+
+        const network = context.getNetwork()
+        const platform = (network as typeof network & { platform?: string }).platform
+        if (platform !== undefined && platform !== 'evm') {
+          throw new Error(`Action "${actionName}": safe-transaction is only supported on EVM networks`)
+        }
+
+        const artifact = createSafeTransactionArtifact({
+          actionName,
+          chainId: network.chainId,
+          safe: resolvedSafe,
+          to: resolvedTo,
+          value: resolvedValue,
+          data: resolvedData,
+          operation: resolvedOperation,
+        })
+
+        if (resolvedSimulate) {
+          if (artifact.operation !== 0) {
+            throw new Error(`Action "${actionName}": DELEGATECALL cannot be simulated as an inner Safe call; set simulate to false`)
+          }
+          await context.provider.call({
+            from: artifact.safe,
+            to: artifact.to,
+            value: BigInt(artifact.value),
+            data: artifact.data,
+          })
+        }
+
+        if (!hasCustomOutput) {
+          // The object is the stable Catapult contract. Flat aliases keep existing
+          // output consumers compatible while they migrate to safeTransaction.
+          context.setOutput(`${action.name}.safeTransaction`, artifact)
+          context.setOutput(`${action.name}.safeTxTo`, artifact.to)
+          context.setOutput(`${action.name}.safeTxValue`, artifact.value)
+          context.setOutput(`${action.name}.safeTxData`, artifact.data)
+          context.setOutput(`${action.name}.safeTxOperation`, artifact.operation)
+          context.setOutput(`${action.name}.executorMultisig`, artifact.safe)
         }
         break
       }

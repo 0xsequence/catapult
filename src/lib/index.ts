@@ -13,5 +13,8 @@ export * from './deployer'
 // Export provenance helpers
 export * from './provenance'
 
+// Export Safe transaction artifact helpers
+export * from './safe'
+
 // This will be the main entry point for the lib
 // Additional functionality will be added here as the lib grows
