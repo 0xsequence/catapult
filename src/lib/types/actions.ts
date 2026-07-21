@@ -1,4 +1,4 @@
-import { AddressValue, BytesValue, Uint256Value, Value } from './values'
+import { AddressValue, BooleanValue, BytesValue, Uint256Value, Value } from './values'
 import { Contract } from './contracts'
 import { Condition } from './conditions'
 
@@ -36,6 +36,31 @@ export interface StaticAction {
   type: 'static';
   arguments: {
     value: Value<any>;
+  };
+}
+
+/** Builds a Safe transaction artifact and optionally proposes it off-chain. */
+export interface SafeTransactionAction {
+  type: 'safe-transaction';
+  arguments: {
+    /** Safe that will execute the transaction. */
+    safe: AddressValue;
+    /** Address called by the Safe. */
+    to: AddressValue;
+    /** Native-token value in wei. Defaults to zero. */
+    value?: Uint256Value;
+    /** Calldata for the call. Defaults to 0x. */
+    data?: BytesValue;
+    /** Safe operation: CALL (0) or DELEGATECALL (1). Defaults to CALL. */
+    operation?: Value<string | number>;
+    /** Simulate the inner CALL with eth_call before emitting it. Defaults to true. */
+    simulate?: BooleanValue;
+    /** Propose the transaction to the Safe Transaction Service. Defaults to false. */
+    propose?: BooleanValue;
+    /** Safe nonce override. By default, the Transaction Service selects the next pending nonce. */
+    safeNonce?: Uint256Value;
+    /** Origin label stored with the Safe proposal. Defaults to "Catapult". */
+    origin?: Value<string>;
   };
 }
 
@@ -118,6 +143,7 @@ export type PrimitiveAction =
   | SendSignedTransactionAction
   | VerifyContractAction
   | StaticAction
+  | SafeTransactionAction
   | CreateContractAction
   | TestNicksMethodAction
   | JsonRequestAction
@@ -131,6 +157,7 @@ const primitiveActionTypes = [
   'send-signed-transaction',
   'verify-contract',
   'static',
+  'safe-transaction',
   'create-contract',
   'test-nicks-method',
   'json-request',

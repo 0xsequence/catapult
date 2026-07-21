@@ -5,10 +5,71 @@ import * as path from 'path'
 import { projectOption, verbosityOption } from './common'
 import { loadNetworks } from '../lib/network-loader'
 import { setVerbosity } from '../index'
+import {
+  createSafeTransactionBuilderBatch,
+  extractSafeTransactionsFromJobOutput,
+  ExtractedSafeTransaction,
+} from '../lib/safe'
 
 interface UtilsOptions {
   project: string
   verbose: number
+}
+
+interface SafeBatchOptions {
+  chainId: string
+  safe?: string
+  transaction?: string[]
+  name: string
+  description?: string
+  output?: string
+}
+
+function findJsonFiles(inputPath: string): string[] {
+  const absolutePath = path.resolve(inputPath)
+  if (!fs.existsSync(absolutePath)) throw new Error(`Output path not found: ${absolutePath}`)
+
+  const stat = fs.statSync(absolutePath)
+  if (stat.isFile()) {
+    if (!absolutePath.toLowerCase().endsWith('.json')) {
+      throw new Error(`Output file must be JSON: ${absolutePath}`)
+    }
+    return [absolutePath]
+  }
+  if (!stat.isDirectory()) throw new Error(`Output path is not a file or directory: ${absolutePath}`)
+
+  const files: string[] = []
+  const walk = (directory: string) => {
+    for (const entry of fs.readdirSync(directory).sort()) {
+      const fullPath = path.join(directory, entry)
+      const entryStat = fs.statSync(fullPath)
+      if (entryStat.isDirectory()) walk(fullPath)
+      else if (entryStat.isFile() && entry.toLowerCase().endsWith('.json')) files.push(fullPath)
+    }
+  }
+  walk(absolutePath)
+  return files
+}
+
+function selectSafeTransactions(
+  transactions: ExtractedSafeTransaction[],
+  selectors?: string[],
+): ExtractedSafeTransaction[] {
+  if (!selectors || selectors.length === 0) {
+    if (transactions.length === 1) return transactions
+    const available = transactions.map(({ selector }) => selector).join(', ')
+    throw new Error(`Found ${transactions.length} Safe transactions. Pass --transaction in execution order. Available: ${available}`)
+  }
+
+  const seen = new Set<string>()
+  return selectors.map((selector) => {
+    if (seen.has(selector)) throw new Error(`Safe transaction selected more than once: ${selector}`)
+    seen.add(selector)
+    const matches = transactions.filter((transaction) => transaction.selector === selector)
+    if (matches.length === 0) throw new Error(`Safe transaction not found: ${selector}`)
+    if (matches.length > 1) throw new Error(`Safe transaction selector is ambiguous: ${selector}`)
+    return matches[0]
+  })
 }
 
 export function makeUtilsCommand(): Command {
@@ -210,6 +271,63 @@ export function makeUtilsCommand(): Command {
     })
 
   utils.addCommand(genTable)
+
+  const safeBatch = new Command('safe-batch')
+    .description('Export first-class Safe transaction outputs as a Safe Transaction Builder JSON file')
+    .argument('<output-path>', 'Catapult job output JSON file or directory')
+    .requiredOption('--chain-id <chain-id>', 'Chain ID to export')
+    .option('--safe <address>', 'Only export transactions for this Safe address')
+    .option('--transaction <selector...>', 'Transactions in batch order, as job/action selectors')
+    .option('--name <name>', 'Batch name', 'Catapult Safe transactions')
+    .option('--description <description>', 'Batch description')
+    .option('-o, --output <file>', 'Write to a file instead of stdout')
+    .action(async (outputPath: string, options: SafeBatchOptions) => {
+      try {
+        if (!/^\d+$/.test(options.chainId)) throw new Error(`Invalid chain ID: ${options.chainId}`)
+
+        const transactions: ExtractedSafeTransaction[] = []
+        for (const file of findJsonFiles(outputPath)) {
+          let document: unknown
+          try {
+            document = JSON.parse(fs.readFileSync(file, 'utf8'))
+          } catch (error) {
+            throw new Error(`Failed to parse ${file}: ${error instanceof Error ? error.message : String(error)}`)
+          }
+          transactions.push(...extractSafeTransactionsFromJobOutput(document, options.chainId))
+        }
+
+        if (transactions.length === 0) {
+          throw new Error(`No Safe transactions found for chain ID ${options.chainId}`)
+        }
+
+        const candidates = options.safe
+          ? transactions.filter(({ artifact }) => artifact.safe.toLowerCase() === options.safe!.toLowerCase())
+          : transactions
+        if (candidates.length === 0) {
+          throw new Error(`No Safe transactions found for ${options.safe} on chain ID ${options.chainId}`)
+        }
+        const selected = selectSafeTransactions(candidates, options.transaction)
+
+        const batch = createSafeTransactionBuilderBatch(
+          selected.map(({ artifact }) => artifact),
+          { name: options.name, description: options.description },
+        )
+        const serialized = `${JSON.stringify(batch, null, 2)}\n`
+
+        if (options.output) {
+          const destination = path.resolve(options.output)
+          fs.writeFileSync(destination, serialized)
+          console.log(destination)
+        } else {
+          process.stdout.write(serialized)
+        }
+      } catch (error) {
+        console.error(chalk.red('Error exporting Safe batch:'), error instanceof Error ? error.message : String(error))
+        process.exit(1)
+      }
+    })
+
+  utils.addCommand(safeBatch)
 
   return utils
 }

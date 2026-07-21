@@ -391,6 +391,9 @@ Common options (run):
 - `--rpc-url <url>`: Run against a single custom RPC; chain ID is auto-detected. If `networks.yaml` defines that chain, Catapult merges yaml settings (name, `supports`, `gasLimit`, `testnet`, `evmVersion`, `params`) while using your RPC URL.
 - `-k, --private-key <key>`: EOA private key (or set `PRIVATE_KEY`)
 - `--etherscan-api-key <key>`: Etherscan API key (or set `ETHERSCAN_API_KEY`)
+- `--safe-api-key <key>`: Safe API key for actions with `propose: true` (or set `SAFE_API_KEY` / `SAFE_TRANSACTION_SERVICE_API_KEY`)
+- `--safe-tx-service-url <url>`: Custom Safe Transaction Service URL (or set `SAFE_TX_SERVICE_URL`)
+- `--safe-proposer-private-key <key>`: Dedicated Safe owner/delegate key (or set `SAFE_PROPOSER_PRIVATE_KEY`; defaults to the run signer)
 - `--fail-early`: Stop as soon as any job fails
 - `--ignore-verify-errors`: Convert verification errors to warnings and show complete report at end (instead of exiting with error code)
 - `--no-post-check-conditions`: Skip post-execution evaluation of skip conditions
@@ -499,6 +502,14 @@ Utilities:
 ```bash
 # Convert chain ID to network name
 catapult utils chain-id-to-name 42161 -p ./my-project
+
+# Export a Safe transaction artifact for Safe Transaction Builder
+catapult utils safe-batch ./output --chain-id 1 --output safe-batch.json
+
+# Multiple transactions require an explicit order
+catapult utils safe-batch ./output --chain-id 1 \
+  --transaction upgrade-job/deploy upgrade-job/upgrade \
+  --output safe-batch.json
 ```
 
 Etherscan helpers:
@@ -584,6 +595,56 @@ Example with complex data:
 ```
 
 This makes `config.value.endpoint`, `config.value.timeout`, and `config.value.enabled` available for use in subsequent actions.
+
+### `safe-transaction`
+
+Build a Safe transaction artifact without signing, proposing, or broadcasting it by default:
+
+```yaml
+- name: "upgrade"
+  type: "safe-transaction"
+  arguments:
+    safe: "{{admin-safe}}"
+    to: "{{proxy-admin}}"
+    value: "0"
+    data:
+      type: "abi-encode"
+      arguments:
+        signature: "upgradeAndCall(address,address,bytes)"
+        values:
+          - "{{proxy}}"
+          - "{{deployment.implementation.address}}"
+          - "0x"
+    operation: 0
+    simulate: true
+    propose: false
+  output: true
+```
+
+`safe`, `to`, `value`, and `data` support normal Catapult values and resolvers. `value` defaults to `0`, `data` defaults to `0x`, `operation` defaults to `CALL` (`0`), `simulate` defaults to `true`, and `propose` defaults to `false`.
+
+For `CALL`, simulation performs a read-only `eth_call` from the Safe address directly to the target. This checks the inner call's calldata, target-contract authorization, value, and current-state behavior. It does not run `Safe.execTransaction`, so it does not validate Safe signatures, threshold, nonce, guards, or refund settings. `DELEGATECALL` (`1`) artifacts require `simulate: false` because an inner delegatecall cannot be reproduced with a direct `eth_call`.
+
+The action writes a versioned `name.safeTransaction` object to Catapult output. It also emits `name.safeTxTo`, `name.safeTxValue`, `name.safeTxData`, `name.safeTxOperation`, and `name.executorMultisig` for compatibility with existing payload consumers. Use `catapult utils safe-batch` to turn one or more `CALL` artifacts into checksummed Safe Transaction Builder JSON. When multiple artifacts exist, pass `--transaction job/action ...` in the required batch order.
+
+Set `propose: true` to sign the Safe transaction hash with Catapult's existing run signer and submit it to the Safe Transaction Service:
+
+```yaml
+- name: "upgrade"
+  type: "safe-transaction"
+  arguments:
+    safe: "{{admin-safe}}"
+    to: "{{proxy-admin}}"
+    data: "{{upgrade-calldata}}"
+    propose: true
+    origin: "Release automation"
+    # safeNonce: 42 # Optional. Defaults to the next nonce after pending proposals.
+  output: true
+```
+
+For Safe's hosted service, provide `SAFE_API_KEY` (or `--safe-api-key`). For a self-hosted service, provide `SAFE_TX_SERVICE_URL` (or `--safe-tx-service-url`); an API key remains optional unless that service requires one. The run signer must be a Safe owner or a registered Safe Transaction Service delegate. To keep deployment and proposal authority separate, set `SAFE_PROPOSER_PRIVATE_KEY` to a dedicated registered delegate key; otherwise Catapult uses the normal run signer.
+
+Proposal is off-chain: it makes the transaction visible to Safe owners but does not execute it. Catapult asks the Transaction Service to estimate `safeTxGas`, uses zero refund parameters, reads the Safe's canonical transaction hash on-chain, signs that hash, and submits it with the selected nonce. A successful proposal emits `name.safeTransactionProposal`, `name.safeTxHash`, `name.safeTxNonce`, and `name.safeTxProposer`. The existing unsigned artifact is still emitted.
 
 ### `create-contract`
 Create a contract by sending its creation bytecode (and optional value):
@@ -1209,13 +1270,16 @@ Output layout and selection:
 
 - `PRIVATE_KEY`: Signer private key (alternative to `--private-key`)
 - `ETHERSCAN_API_KEY`: API key for Etherscan v2 verification (alternative to `--etherscan-api-key`)
+- `SAFE_API_KEY` or `SAFE_TRANSACTION_SERVICE_API_KEY`: Safe API key for optional proposals
+- `SAFE_TX_SERVICE_URL`: Custom Safe Transaction Service URL
+- `SAFE_PROPOSER_PRIVATE_KEY`: Dedicated Safe owner/delegate key used only for proposals
 
 You can load environment variables from a file using `--dotenv <path>` on the `run` command (defaults to `.env` in the current directory when provided).
 
 ## Development
 
 ### Prerequisites
-- Node.js >= 16.0.0
+- Node.js >= 22.0.0
 - npm or yarn
 
 ### Setup

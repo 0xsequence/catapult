@@ -57,15 +57,16 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
+    "@safe-global/api-kit": "^5.0.1",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
     "dotenv": "^16.3.0",
     "ethers": "^6.15.0",
-    "solc": "^0.8.30",
     "ox": "^0.8.5",
+    "solc": "^0.8.30",
     "yaml": "^2.8.0"
   },
   "engines": {
-    "node": ">=16.0.0"
+    "node": ">=22.0.0"
   }
 }
