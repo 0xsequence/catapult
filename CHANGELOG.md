@@ -15,5 +15,6 @@
 ### Changed
 
 - Update CI and package tooling to Node.js 22 and pnpm 10.
+- Refresh production and development dependencies to patched releases within their existing major versions.
 
 See [#22](https://github.com/0xsequence/catapult/pull/22) and [#24](https://github.com/0xsequence/catapult/pull/24) for the complete changes.
