@@ -1,6 +1,6 @@
 {
   "name": "@0xsequence/catapult",
-  "version": "1.5.0",
+  "version": "2.0.0",
   "description": "Ethereum contract deployment CLI tool",
   "main": "dist/index.js",
   "bin": {
@@ -10,7 +10,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && cp -r src/lib/std dist/lib/",
+    "build": "npm run clean && tsc && cp -r src/lib/std dist/lib/",
     "dev": "ts-node src/index.ts",
     "start": "node dist/index.js",
     "start:dev": "npm run build && npm run start",
@@ -43,28 +43,28 @@
     "access": "public"
   },
   "devDependencies": {
-    "@types/chai": "^5.2.2",
+    "@types/chai": "^5.2.3",
     "@types/jest": "^29.5.14",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^20.10.0",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@typescript-eslint/parser": "^8.0.0",
-    "chai": "^5.2.1",
-    "eslint": "^9.0.0",
+    "@types/node": "^20.19.43",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
+    "@typescript-eslint/parser": "^8.65.0",
+    "chai": "^5.3.3",
+    "eslint": "^9.39.5",
     "jest": "^29.7.0",
-    "ts-jest": "^29.1.0",
-    "ts-node": "^10.9.0",
-    "typescript": "^5.3.0"
+    "ts-jest": "^29.4.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@safe-global/api-kit": "^5.0.1",
     "chalk": "^4.1.2",
     "commander": "^11.1.0",
-    "dotenv": "^16.3.0",
-    "ethers": "^6.15.0",
-    "ox": "^0.8.5",
-    "solc": "^0.8.30",
-    "yaml": "^2.8.0"
+    "dotenv": "^16.6.1",
+    "ethers": "^6.17.0",
+    "ox": "^0.8.9",
+    "solc": "^0.8.36",
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">=22.0.0"
