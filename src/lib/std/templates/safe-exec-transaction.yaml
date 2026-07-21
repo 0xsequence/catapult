@@ -1,0 +1,112 @@
+# Broadcasts a fully-signed Gnosis Safe transaction on-chain ("Shape 1" relay).
+#
+# Instead of stopping at "here is the calldata, paste it into the Safe UI", this
+# template assembles and sends the Safe's execTransaction itself: it packs the
+# owner signatures the Safe already gathered into execTransaction and broadcasts
+# the outer transaction with the configured EOA as the relayer.
+#
+# The packed owner signatures are passed in as the `signatures` argument. Where
+# they come from is the caller's choice; the two common sources are:
+#
+#  - A pre-collected file (offline / air-gapped signing). The blob lives in its
+#    own gitignorable file, read with the `read-file` resolver:
+#
+#        signatures:
+#          type: "read-file"
+#          arguments: { path: "signatures.hex", encoding: "hex" }
+#
+#  - The Safe Transaction Service (the common hosted flow). The service returns a
+#    top-level pre-packed `signatures` field for a given SafeTxHash. Fetch it with
+#    `json-request` + `read-json`, building the URL with `concat` (a `{{ref}}` is
+#    only interpolated when it is the ENTIRE value, not embedded in a string):
+#
+#        # elsewhere in the job:
+#        - name: "fetch-safe-tx"
+#          type: "json-request"
+#          arguments:
+#            url:
+#              type: "concat"
+#              arguments:
+#                values:
+#                  - "{{txServiceUrl}}"                    # e.g. https://safe-transaction-mainnet.safe.global/api
+#                  - "/v1/multisig-transactions/"
+#                  - "{{safeTxHash}}"
+#                  - "/"
+#        # then pass:
+#        signatures:
+#          type: "read-json"
+#          arguments: { json: "{{fetch-safe-tx.response}}", path: "signatures" }
+#
+# This template only assembles and broadcasts. It intentionally does NOT impose a
+# post-execution skip condition, because the "desired state" of a Safe relay is
+# the effect of the INNER call, which only the caller knows. Wrap the calling job
+# with `skip_if` observing that on-chain effect (e.g. `owner() == newOwner`) to get
+# idempotent, re-runnable convergence.
+name: "safe-exec-transaction"
+type: "template"
+description: "Assemble and broadcast a fully-signed Gnosis Safe execTransaction (Shape 1 relay)"
+
+arguments:
+  safe:
+    type: "address"
+    description: "Address of the Gnosis Safe that will execute the transaction"
+  to:
+    type: "address"
+    description: "Target of the inner Safe transaction"
+  data:
+    type: "bytes"
+    description: "Calldata of the inner Safe transaction"
+  value:
+    type: "uint256"
+    description: "Native value of the inner Safe transaction (default 0)"
+  operation:
+    type: "uint8"
+    description: "Safe operation: 0 = CALL, 1 = DELEGATECALL (default 0)"
+  safeTxGas:
+    type: "uint256"
+    description: "safeTxGas parameter of the Safe transaction (default 0)"
+  baseGas:
+    type: "uint256"
+    description: "baseGas parameter of the Safe transaction (default 0)"
+  gasPrice:
+    type: "uint256"
+    description: "gasPrice parameter of the Safe transaction (default 0)"
+  gasToken:
+    type: "address"
+    description: "gasToken parameter (default 0x0, i.e. native token)"
+  refundReceiver:
+    type: "address"
+    description: "refundReceiver parameter (default 0x0)"
+  signatures:
+    type: "bytes"
+    description: "Packed owner signatures for the Safe transaction (see header for how to source them)"
+
+actions:
+  - name: "relay"
+    type: "send-transaction"
+    arguments:
+      to: "{{safe}}"
+      value: "0"
+      data:
+        type: "abi-encode"
+        arguments:
+          signature: "execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)"
+          values:
+            - "{{to}}"
+            - "{{value}}"
+            - "{{data}}"
+            - "{{operation}}"
+            - "{{safeTxGas}}"
+            - "{{baseGas}}"
+            - "{{gasPrice}}"
+            - "{{gasToken}}"
+            - "{{refundReceiver}}"
+            - "{{signatures}}"
+
+returns:
+  hash:
+    type: "bytes32"
+    description: "Transaction hash of the broadcast execTransaction"
+
+outputs:
+  hash: "{{relay.hash}}"

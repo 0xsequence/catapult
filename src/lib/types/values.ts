@@ -187,6 +187,48 @@ export interface SliceBytesValue {
 }
 
 /**
+ * Reads the raw contents of a file from disk as a value.
+ *
+ * The path is resolved relative to the directory of the job/template that uses
+ * it (the current context path), never the process working directory, and is
+ * confined to the project root: absolute paths and any `..` segment that would
+ * escape the project are rejected. This is the intended home for large, opaque,
+ * per-execution operational blobs (e.g. packed multisig signatures) that do not
+ * belong in `constants` and are not typed build artifacts.
+ */
+export interface ReadFileValue {
+  type: 'read-file';
+  arguments: {
+    /** Path to the file, relative to the current job/template directory. */
+    path: Value<string>;
+    /**
+     * How to interpret the file contents (default: "utf8"):
+     *  - "utf8": return the text as-is (trailing newline trimmed).
+     *  - "hex":  return the text as a validated, 0x-prefixed lowercase hex string.
+     *  - "json": parse the text as JSON and return the resulting value.
+     */
+    encoding?: Value<'utf8' | 'hex' | 'json'>;
+  };
+}
+
+/**
+ * Concatenates its parts into a single string after resolving each one.
+ *
+ * This is the explicit alternative to whole-string interpolation: it lets a
+ * value embed references inside a longer string (URLs, paths) without the
+ * resolver having to guess whether a stray `{{` in a literal is a reference.
+ * Each part is resolved and coerced to a string; the results are joined by an
+ * optional `separator` (default: "", i.e. direct concatenation).
+ */
+export interface ConcatValue {
+  type: 'concat';
+  arguments: {
+    values: Value<any>[];
+    separator?: Value<string>;
+  };
+}
+
+/**
  * A union of all possible value-resolver objects.
  */
 export type ValueResolver =
@@ -205,7 +247,9 @@ export type ValueResolver =
   | ReadJsonValue
   | ResolveJsonValue
   | ValueEmptyValue
-  | SliceBytesValue;
+  | SliceBytesValue
+  | ReadFileValue
+  | ConcatValue;
 
 /**
  * A generic value type that can be a primitive literal (string, number, boolean),

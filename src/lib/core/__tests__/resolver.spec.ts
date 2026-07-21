@@ -1,8 +1,11 @@
 import { ethers } from 'ethers'
 import { ValueResolver } from '../resolver'
 import { ExecutionContext } from '../context'
-import { BasicArithmeticValue, Network, ReadBalanceValue, GetStorageAtValue, ComputeSlotValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, AbiPackValue, CallValue, ContractExistsValue, ComputeCreateValue, SliceBytesValue } from '../../types'
+import { BasicArithmeticValue, Network, ReadBalanceValue, GetStorageAtValue, ComputeSlotValue, ComputeCreate2Value, ConstructorEncodeValue, AbiEncodeValue, AbiPackValue, CallValue, ContractExistsValue, ComputeCreateValue, SliceBytesValue, ReadFileValue, ConcatValue } from '../../types'
 import { ContractRepository } from '../../contracts/repository'
+import * as fs from 'fs'
+import * as os from 'os'
+import * as path from 'path'
 
 describe('ValueResolver', () => {
   let resolver: ValueResolver
@@ -2073,6 +2076,216 @@ describe('ValueResolver', () => {
 
       const result = await resolver.resolve(value, context)
       expect(result).toBe('0x010203')
+    })
+  })
+
+  describe('read-file', () => {
+    let projectRoot: string
+    let fileContext: ExecutionContext
+
+    beforeEach(async () => {
+      // A self-contained project dir with a "jobs" subfolder acting as the
+      // context path (as if a job YAML lived there).
+      projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'catapult-read-file-'))
+      fs.mkdirSync(path.join(projectRoot, 'jobs'))
+
+      const mockPrivateKey = '0x0000000000000000000000000000000000000000000000000000000000000001'
+      fileContext = new ExecutionContext(
+        mockNetwork,
+        mockPrivateKey,
+        mockRegistry,
+        undefined,
+        undefined,
+        projectRoot,
+      )
+      // Pretend the resolving job/template lives at jobs/deploy.yaml
+      fileContext.setContextPath(path.join(projectRoot, 'jobs', 'deploy.yaml'))
+    })
+
+    afterEach(async () => {
+      if (fileContext) {
+        try {
+          await fileContext.dispose()
+        } catch (error) {
+          // Ignore cleanup errors
+        }
+      }
+      fs.rmSync(projectRoot, { recursive: true, force: true })
+    })
+
+    it('should read a file relative to the job directory as utf8 and trim trailing newline', async () => {
+      fs.writeFileSync(path.join(projectRoot, 'jobs', 'note.txt'), 'hello world\n')
+      const value: ReadFileValue = {
+        type: 'read-file',
+        arguments: { path: 'note.txt' },
+      }
+      const result = await resolver.resolve(value, fileContext)
+      expect(result).toBe('hello world')
+    })
+
+    it('should resolve paths relative to the job dir, not the project root', async () => {
+      // Same relative name in two places; the one next to the job must win.
+      fs.writeFileSync(path.join(projectRoot, 'data.txt'), 'root')
+      fs.writeFileSync(path.join(projectRoot, 'jobs', 'data.txt'), 'job')
+      const value: ReadFileValue = {
+        type: 'read-file',
+        arguments: { path: 'data.txt' },
+      }
+      const result = await resolver.resolve(value, fileContext)
+      expect(result).toBe('job')
+    })
+
+    it('should read a file as normalized 0x-prefixed hex', async () => {
+      fs.writeFileSync(path.join(projectRoot, 'jobs', 'sig.hex'), '0xDEADBEEF\n')
+      const value: ReadFileValue = {
+        type: 'read-file',
+        arguments: { path: 'sig.hex', encoding: 'hex' },
+      }
+      const result = await resolver.resolve(value, fileContext)
+      expect(result).toBe('0xdeadbeef')
+    })
+
+    it('should accept hex without a 0x prefix', async () => {
+      fs.writeFileSync(path.join(projectRoot, 'jobs', 'sig.hex'), 'aabbcc')
+      const value: ReadFileValue = {
+        type: 'read-file',
+        arguments: { path: 'sig.hex', encoding: 'hex' },
+      }
+      const result = await resolver.resolve(value, fileContext)
+      expect(result).toBe('0xaabbcc')
+    })
+
+    it('should reject odd-length or non-hex contents when encoding is hex', async () => {
+      fs.writeFileSync(path.join(projectRoot, 'jobs', 'bad.hex'), '0xabc')
+      const value: ReadFileValue = {
+        type: 'read-file',
+        arguments: { path: 'bad.hex', encoding: 'hex' },
+      }
+      await expect(resolver.resolve(value, fileContext)).rejects.toThrow(/not valid hex/)
+    })
+
+    it('should parse a file as JSON', async () => {
+      fs.writeFileSync(path.join(projectRoot, 'jobs', 'data.json'), JSON.stringify({ a: 1, b: [2, 3] }))
+      const value: ReadFileValue = {
+        type: 'read-file',
+        arguments: { path: 'data.json', encoding: 'json' },
+      }
+      const result = await resolver.resolve<{ a: number; b: number[] }>(value, fileContext)
+      expect(result).toEqual({ a: 1, b: [2, 3] })
+    })
+
+    it('should reference a nested value from a JSON file via read-json', async () => {
+      fs.writeFileSync(path.join(projectRoot, 'jobs', 'safe.json'), JSON.stringify({ signatures: '0x1234' }))
+      const value = {
+        type: 'read-json',
+        arguments: {
+          json: { type: 'read-file', arguments: { path: 'safe.json', encoding: 'json' } },
+          path: 'signatures',
+        },
+      }
+      const result = await resolver.resolve(value as any, fileContext)
+      expect(result).toBe('0x1234')
+    })
+
+    it('should reject absolute paths', async () => {
+      const value: ReadFileValue = {
+        type: 'read-file',
+        arguments: { path: path.join(projectRoot, 'jobs', 'note.txt') },
+      }
+      await expect(resolver.resolve(value, fileContext)).rejects.toThrow(/absolute paths are not allowed/)
+    })
+
+    it('should refuse to read outside the project root via ..', async () => {
+      // Create a file one level above the project root and try to reach it.
+      const outside = path.join(projectRoot, '..', 'outside-secret.txt')
+      fs.writeFileSync(outside, 'top secret')
+      try {
+        const value: ReadFileValue = {
+          type: 'read-file',
+          arguments: { path: '../../outside-secret.txt' },
+        }
+        await expect(resolver.resolve(value, fileContext)).rejects.toThrow(/outside the project root/)
+      } finally {
+        fs.rmSync(outside, { force: true })
+      }
+    })
+
+    it('should surface a clear error for a missing file', async () => {
+      const value: ReadFileValue = {
+        type: 'read-file',
+        arguments: { path: 'does-not-exist.txt' },
+      }
+      await expect(resolver.resolve(value, fileContext)).rejects.toThrow(/failed to read/)
+    })
+
+    it('should reject an unknown encoding', async () => {
+      fs.writeFileSync(path.join(projectRoot, 'jobs', 'note.txt'), 'x')
+      const value = {
+        type: 'read-file',
+        arguments: { path: 'note.txt', encoding: 'base64' },
+      }
+      await expect(resolver.resolve(value as any, fileContext)).rejects.toThrow(/unknown encoding/)
+    })
+  })
+
+  describe('concat', () => {
+    it('should join string parts with no separator by default', async () => {
+      const value: ConcatValue = {
+        type: 'concat',
+        arguments: { values: ['a', 'b', 'c'] },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('abc')
+    })
+
+    it('should join with a separator', async () => {
+      const value: ConcatValue = {
+        type: 'concat',
+        arguments: { values: ['a', 'b', 'c'], separator: '/' },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('a/b/c')
+    })
+
+    it('should coerce numbers and booleans to strings', async () => {
+      const value: ConcatValue = {
+        type: 'concat',
+        arguments: { values: ['id-', 42, '-', true] },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('id-42-true')
+    })
+
+    it('should resolve nested references and build a templated URL', async () => {
+      context.setOutput('tx.hash', '0xabc123')
+      const value: ConcatValue = {
+        type: 'concat',
+        arguments: {
+          values: [
+            'https://safe.example.com/multisig-transactions/',
+            '{{tx.hash}}',
+            '/confirmations',
+          ],
+        },
+      }
+      const result = await resolver.resolve(value, context)
+      expect(result).toBe('https://safe.example.com/multisig-transactions/0xabc123/confirmations')
+    })
+
+    it('should reject object parts', async () => {
+      const value: ConcatValue = {
+        type: 'concat',
+        arguments: { values: ['a', { foo: 'bar' } as any] },
+      }
+      await expect(resolver.resolve(value, context)).rejects.toThrow(/cannot concatenate an object/)
+    })
+
+    it('should reject null or undefined parts', async () => {
+      const value: ConcatValue = {
+        type: 'concat',
+        arguments: { values: ['a', null as any] },
+      }
+      await expect(resolver.resolve(value, context)).rejects.toThrow(/null or undefined/)
     })
   })
 

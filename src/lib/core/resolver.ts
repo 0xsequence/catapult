@@ -17,9 +17,13 @@ import {
   ReadJsonValue,
   ValueEmptyValue,
   SliceBytesValue,
+  ReadFileValue,
+  ConcatValue,
 } from '../types'
 import { ExecutionContext } from './context'
 import { isAddress, isBigNumberish, isBytesLike } from '../utils/assertion'
+import * as fs from 'fs'
+import * as path from 'path'
 
 /**
  * A scope for resolving local variables, such as template arguments.
@@ -219,6 +223,10 @@ export class ValueResolver {
         return this.resolveValueEmpty(resolvedArgs as ValueEmptyValue['arguments'])
       case 'slice-bytes':
         return this.resolveSliceBytes(resolvedArgs as SliceBytesValue['arguments'])
+      case 'read-file':
+        return this.resolveReadFile(resolvedArgs as ReadFileValue['arguments'], context)
+      case 'concat':
+        return this.resolveConcat(resolvedArgs as ConcatValue['arguments'])
       default:
         throw new Error(`Unknown value resolver type: ${(obj as any).type}`)
     }
@@ -849,6 +857,104 @@ export class ValueResolver {
     }
 
     return normalized
+  }
+
+  /**
+   * Reads a file relative to the current job/template directory and returns its
+   * contents according to the requested encoding. The resolved path is confined
+   * to the project root so a job can never read arbitrary files on the host.
+   * @private
+   */
+  private resolveReadFile(args: ReadFileValue['arguments'], context: ExecutionContext): any {
+    const { path: filePath, encoding } = args
+
+    if (typeof filePath !== 'string' || filePath.length === 0) {
+      throw new Error('read-file: "path" is required and must be a non-empty string')
+    }
+
+    if (path.isAbsolute(filePath)) {
+      throw new Error(`read-file: absolute paths are not allowed ("${filePath}"); use a path relative to the job directory`)
+    }
+
+    const enc = (encoding as string) ?? 'utf8'
+    if (enc !== 'utf8' && enc !== 'hex' && enc !== 'json') {
+      throw new Error(`read-file: unknown encoding "${enc}" (expected "utf8", "hex", or "json")`)
+    }
+
+    // Base directory: the directory of the job/template that referenced the file.
+    // getContextPath() is the YAML file path; fall back to the project root, then cwd.
+    const contextPath = context.getContextPath()
+    const baseDir = contextPath ? path.dirname(contextPath) : (context.getProjectRoot() ?? process.cwd())
+    const resolvedPath = path.resolve(baseDir, filePath)
+
+    // Confine reads to the project root when it is known. This prevents `../`
+    // traversal from escaping the project (e.g. reading host secrets).
+    const projectRoot = context.getProjectRoot()
+    if (projectRoot) {
+      const normalizedRoot = path.resolve(projectRoot)
+      const rel = path.relative(normalizedRoot, resolvedPath)
+      if (rel.startsWith('..') || path.isAbsolute(rel)) {
+        throw new Error(`read-file: refusing to read "${filePath}" — it resolves outside the project root`)
+      }
+    }
+
+    let contents: string
+    try {
+      contents = fs.readFileSync(resolvedPath, 'utf8')
+    } catch (error) {
+      throw new Error(`read-file: failed to read "${filePath}" (resolved to ${resolvedPath}): ${error instanceof Error ? error.message : String(error)}`)
+    }
+
+    switch (enc) {
+      case 'utf8':
+        // Trim a single trailing newline so a file's contents compare cleanly
+        // against inline strings (editors and `echo` append one by convention).
+        return contents.replace(/\r?\n$/, '')
+      case 'hex': {
+        const trimmed = contents.trim()
+        const body = trimmed.startsWith('0x') || trimmed.startsWith('0X') ? trimmed.slice(2) : trimmed
+        if (body.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(body)) {
+          throw new Error(`read-file: "${filePath}" is not valid hex`)
+        }
+        return `0x${body.toLowerCase()}`
+      }
+      case 'json':
+        try {
+          return JSON.parse(contents)
+        } catch (error) {
+          throw new Error(`read-file: "${filePath}" is not valid JSON: ${error instanceof Error ? error.message : String(error)}`)
+        }
+    }
+  }
+
+  /**
+   * Joins the resolved parts into a single string, separated by an optional
+   * separator. This is the explicit form of string templating; it avoids the
+   * ambiguity of interpolating `{{...}}` inside arbitrary literals.
+   * @private
+   */
+  private resolveConcat(args: ConcatValue['arguments']): string {
+    const { values, separator } = args
+
+    if (!Array.isArray(values)) {
+      throw new Error('concat: "values" must be an array')
+    }
+
+    if (separator !== undefined && typeof separator !== 'string') {
+      throw new Error('concat: "separator" must be a string')
+    }
+
+    const parts = values.map(v => {
+      if (v === null || v === undefined) {
+        throw new Error('concat: cannot concatenate a null or undefined value')
+      }
+      if (typeof v === 'object') {
+        throw new Error(`concat: cannot concatenate an object value (${JSON.stringify(v)}); resolve it to a string first`)
+      }
+      return String(v)
+    })
+
+    return parts.join(separator ?? '')
   }
 
   /**

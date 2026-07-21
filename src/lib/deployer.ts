@@ -213,7 +213,8 @@ export class Deployer {
               this.options.privateKey,
               this.loader.contractRepository,
               this.options.etherscanApiKey,
-              this.loader.constants
+              this.loader.constants,
+              this.options.projectRoot
             )
             // Set job-level constants if present (guard for mocked contexts in tests)
             if (typeof (context as unknown as { setJobConstants?: (constants: unknown) => void }).setJobConstants === 'function') {
