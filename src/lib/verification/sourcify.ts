@@ -1,5 +1,24 @@
 import { Network } from '../types/network'
-import { VerificationPlatform, VerificationRequest, VerificationResult } from './etherscan'
+import { VerificationPlatform, VerificationRequest, VerificationResult, getFullCompilerVersion } from './etherscan'
+
+const SOURCIFY_API_BASE = 'https://sourcify.dev/server'
+
+type SourcifyMatch = 'match' | 'exact_match' | null
+
+interface SourcifyContractResponse {
+  match: SourcifyMatch
+}
+
+interface SourcifyVerifyJobResponse {
+  isJobCompleted: boolean
+  contract?: {
+    match: SourcifyMatch
+  }
+  error?: {
+    message: string
+    customCode?: string
+  }
+}
 
 export class SourcifyVerificationPlatform implements VerificationPlatform {
   readonly name = 'sourcify'
@@ -21,25 +40,20 @@ export class SourcifyVerificationPlatform implements VerificationPlatform {
   async isContractAlreadyVerified(address: string, network: Network): Promise<boolean> {
     try {
       const response = await fetch(
-        `https://sourcify.dev/server/check-by-addresses?addresses=${address}&chainIds=${network.chainId}`,
+        `${SOURCIFY_API_BASE}/v2/contract/${network.chainId}/${address}?fields=match`,
         {
           method: 'GET',
           signal: AbortSignal.timeout(15000), // 15 second timeout
         }
       )
 
-      if (!response.ok) {
+      // A 404 means the contract has no verified match on Sourcify
+      if (response.status === 404 || !response.ok) {
         return false
       }
 
-      const data = await response.json()
-      
-      // Check if the contract is verified (perfect or partial match)
-      return Array.isArray(data) && data.some(item => 
-        item.address?.toLowerCase() === address.toLowerCase() &&
-        item.chainId === network.chainId.toString() &&
-        (item.status === 'perfect' || item.status === 'partial')
-      )
+      const data = await response.json() as SourcifyContractResponse
+      return data.match === 'match' || data.match === 'exact_match'
     } catch (error) {
       // If we can't determine the verification status, assume it's not verified
       console.warn(`Failed to check Sourcify verification status for ${address}: ${error instanceof Error ? error.message : String(error)}`)
@@ -60,32 +74,30 @@ export class SourcifyVerificationPlatform implements VerificationPlatform {
       }
     }
 
-    try {
-      // Extract metadata and source files
-      const { metadata, sourceFiles } = await this.createVerificationData(contract, buildInfo)
-
-      // Use web standard FormData instead of node form-data package
-      const formData = new FormData()
-
-      formData.append('address', address)
-      formData.append('chain', network.chainId.toString())
-      
-      // Upload files individually to Sourcify
-      // First add the metadata.json
-      const metadataJson = JSON.stringify(metadata, null, 2)
-      const metadataBlob = new Blob([metadataJson], { type: 'application/json' })
-      formData.append('files', metadataBlob, 'metadata.json')
-      
-      // Add each source file individually
-      for (const [sourcePath, sourceContent] of sourceFiles) {
-        const sourceBlob = new Blob([sourceContent], { type: 'text/plain' })
-        formData.append('files', sourceBlob, sourcePath)
+    if (!contract.sourceName || !contract.contractName) {
+      return {
+        success: false,
+        message: 'Sourcify verification failed: contract is missing sourceName/contractName'
       }
+    }
 
-      const response = await fetch('https://sourcify.dev/server/verify', {
+    try {
+      const compilerVersion = getFullCompilerVersion(buildInfo)
+      const contractIdentifier = `${contract.sourceName}:${contract.contractName}`
+
+      const response = await fetch(`${SOURCIFY_API_BASE}/v2/verify/${network.chainId}/${address}`, {
         method: 'POST',
-        body: formData,
-        signal: AbortSignal.timeout(60000), // 60 second timeout for verification
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stdJsonInput: {
+            language: buildInfo.input.language,
+            sources: buildInfo.input.sources,
+            settings: buildInfo.input.settings
+          },
+          compilerVersion,
+          contractIdentifier
+        }),
+        signal: AbortSignal.timeout(60000), // 60 second timeout for submission
       })
 
       if (!response.ok) {
@@ -96,17 +108,13 @@ export class SourcifyVerificationPlatform implements VerificationPlatform {
           // ignore
         }
 
-        // Treat partial verification conflicts as a non-error notice
+        // Treat "already verified" conflicts as a non-error notice
         if (response.status === 409) {
           const lower = `${response.statusText} ${responseText}`.toLowerCase()
-          if (
-            lower.includes('already partially verified') ||
-            lower.includes('partial match') ||
-            lower.includes('partial')
-          ) {
+          if (lower.includes('already') || lower.includes('partial')) {
             return {
               success: true,
-              message: 'Contract already partially verified on Sourcify (no further action needed)',
+              message: 'Contract already verified on Sourcify (no further action needed)',
               isAlreadyVerified: true
             }
           }
@@ -122,51 +130,8 @@ export class SourcifyVerificationPlatform implements VerificationPlatform {
         }
       }
 
-      const result = await response.json() as any
-      
-      // Check for different response formats
-      if (result.result && Array.isArray(result.result)) {
-        // Array response format - check if any items have perfect/partial status
-        const perfectMatch = result.result.find((item: any) => item.status === 'perfect')
-        const partialMatch = result.result.find((item: any) => item.status === 'partial')
-        
-        if (perfectMatch || partialMatch) {
-          const matchType = perfectMatch ? 'perfect' : 'partial'
-          return {
-            success: true,
-            message: `Contract verified successfully on Sourcify (${matchType} match)`
-          }
-        }
-        
-        return {
-          success: false,
-          message: 'Sourcify verification failed - no perfect or partial match found'
-        }
-      } else if (result.status) {
-        // Single object response format
-        if (result.status === 'perfect' || result.status === 'partial') {
-          return {
-            success: true,
-            message: `Contract verified successfully on Sourcify (status: ${result.status})`
-          }
-        } else if (result.status === 'error') {
-          return {
-            success: false,
-            message: result.message || 'Sourcify verification failed with unknown error'
-          }
-        } else {
-          return {
-            success: false,
-            message: `Sourcify verification failed with status: ${result.status}`
-          }
-        }
-      } else {
-        // Unknown response format
-        return {
-          success: false,
-          message: `Sourcify verification failed - unexpected response format: ${JSON.stringify(result)}`
-        }
-      }
+      const { verificationId } = await response.json() as { verificationId: string }
+      return await this.waitForVerificationJob(verificationId)
     } catch (error) {
       return {
         success: false,
@@ -175,74 +140,60 @@ export class SourcifyVerificationPlatform implements VerificationPlatform {
     }
   }
 
-  private async createVerificationData(contract: any, buildInfo: any): Promise<{
-    metadata: any,
-    sourceFiles: Array<[string, string]>
-  }> {
-    // Extract source files from the build info
-    const sourceFiles: Array<[string, string]> = []
-    for (const [sourcePath, sourceInfo] of Object.entries(buildInfo.input.sources) as [string, any][]) {
-      if (sourceInfo.content) {
-        sourceFiles.push([sourcePath, sourceInfo.content])
-      }
-    }
+  // Sourcify v2 verification is asynchronous - it hands back a job id that must be polled
+  private async waitForVerificationJob(
+    verificationId: string,
+    timeoutMs = 120000,
+    pollIntervalMs = 2500
+  ): Promise<VerificationResult> {
+    const startTime = Date.now()
 
-    // Try to find metadata from the contract's artifact if available
-    let metadata = null
-    
-    // First, try to get metadata from the contract's artifact file  
-    try {
-      // Look for artifact file in contract sources (convert Set to Array)
-      const sources = Array.from(contract._sources) as string[]
-      const artifactPath = sources.find((source) => 
-        source.includes('/artifacts/') && source.endsWith('.json') && !source.includes('/build-info/')
-      )
-      
-      if (artifactPath) {
-        const fs = await import('fs/promises')
-        const artifactContent = await fs.readFile(artifactPath, 'utf-8')
-        const artifact = JSON.parse(artifactContent)
-        
-        // Use rawMetadata if available (it's a JSON string)
-        if (artifact.rawMetadata) {
-          metadata = JSON.parse(artifact.rawMetadata)
-        } else if (artifact.metadata) {
-          metadata = artifact.metadata
+    while (Date.now() - startTime < timeoutMs) {
+      const response = await fetch(`${SOURCIFY_API_BASE}/v2/verify/${verificationId}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(15000),
+      })
+
+      if (!response.ok) {
+        return {
+          success: false,
+          message: `Sourcify job status check failed: HTTP ${response.status}: ${response.statusText}`
         }
       }
-    } catch (error) {
-      console.warn(`Failed to load artifact metadata: ${error instanceof Error ? error.message : String(error)}`)
-    }
 
-    // Fallback: look for metadata in the build info output
-    if (!metadata && buildInfo.output?.contracts?.[contract.sourceName]?.[contract.contractName]?.metadata) {
-      const metadataField = buildInfo.output.contracts[contract.sourceName][contract.contractName].metadata
-      metadata = typeof metadataField === 'string' ? JSON.parse(metadataField) : metadataField
-    }
+      const job = await response.json() as SourcifyVerifyJobResponse
 
-    // Last resort fallback: create basic metadata from the input
-    if (!metadata) {
-      metadata = {
-        compiler: {
-          version: buildInfo.solcLongVersion || buildInfo.solcVersion
-        },
-        language: buildInfo.input.language,
-        output: {
-          abi: buildInfo.output?.contracts?.[contract.sourceName]?.[contract.contractName]?.abi || [],
-          devdoc: { kind: 'dev', methods: {}, version: 1 },
-          userdoc: { kind: 'user', methods: {}, version: 1 }
-        },
-        settings: buildInfo.input.settings,
-        sources: buildInfo.input.sources,
-        version: 1
+      if (job.isJobCompleted) {
+        const match = job.contract?.match
+        if (match === 'match' || match === 'exact_match') {
+          return {
+            success: true,
+            message: `Contract verified successfully on Sourcify (${match})`
+          }
+        }
+
+        // Sourcify reports this when the contract already has an exact match on record and
+        // the newly submitted sources didn't improve on it - treat as already-verified, not a failure
+        if (job.error?.customCode === 'already_verified' || job.error?.message?.toLowerCase().includes('already verified')) {
+          return {
+            success: true,
+            message: job.error.message,
+            isAlreadyVerified: true
+          }
+        }
+
+        return {
+          success: false,
+          message: job.error?.message || 'Sourcify verification failed - no match found'
+        }
       }
+
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
     }
 
-    // Validation: ensure metadata has compilation target
-    if (!metadata?.settings?.compilationTarget) {
-      console.warn('Warning: Metadata missing compilation target')
+    return {
+      success: false,
+      message: `Sourcify verification timed out after ${timeoutMs / 1000} seconds waiting for job ${verificationId}`
     }
-
-    return { metadata, sourceFiles }
   }
 }
