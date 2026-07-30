@@ -79,7 +79,7 @@ function isAlreadyVerifiedError(message: string): boolean {
 /**
  * Extracts the full compiler version with commit hash from contract metadata
  */
-function getFullCompilerVersion(buildInfo: BuildInfo): string {
+export function getFullCompilerVersion(buildInfo: BuildInfo): string {
   // Try to extract from any contract's metadata
   for (const [sourceName, contracts] of Object.entries(buildInfo.output.contracts)) {
     for (const [contractName, contract] of Object.entries(contracts)) {

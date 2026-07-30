@@ -48,16 +48,11 @@ describe('Sourcify Verification Platform', () => {
   })
 
   describe('isContractAlreadyVerified', () => {
-    it('should return true for verified contract', async () => {
-      const mockResponse = [{
-        address: '0x1234567890123456789012345678901234567890',
-        chainId: '1',
-        status: 'perfect'
-      }]
-
+    it('should return true for an exact match', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: jest.fn().mockResolvedValue(mockResponse)
+        status: 200,
+        json: jest.fn().mockResolvedValue({ match: 'exact_match' })
       })
 
       const result = await platform.isContractAlreadyVerified(
@@ -67,7 +62,7 @@ describe('Sourcify Verification Platform', () => {
 
       expect(result).toBe(true)
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://sourcify.dev/server/check-by-addresses?addresses=0x1234567890123456789012345678901234567890&chainIds=1',
+        'https://sourcify.dev/server/v2/contract/1/0x1234567890123456789012345678901234567890?fields=match',
         expect.objectContaining({
           method: 'GET',
           signal: expect.any(AbortSignal)
@@ -75,12 +70,26 @@ describe('Sourcify Verification Platform', () => {
       )
     })
 
-    it('should return false for non-verified contract', async () => {
-      const mockResponse: any[] = []
-
+    it('should return true for a partial match', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: jest.fn().mockResolvedValue(mockResponse)
+        status: 200,
+        json: jest.fn().mockResolvedValue({ match: 'match' })
+      })
+
+      const result = await platform.isContractAlreadyVerified(
+        '0x1234567890123456789012345678901234567890',
+        mockNetwork
+      )
+
+      expect(result).toBe(true)
+    })
+
+    it('should return false for a non-verified contract (404)', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found'
       })
 
       const result = await platform.isContractAlreadyVerified(
@@ -131,7 +140,7 @@ describe('Sourcify Verification Platform', () => {
           contractName: 'MyToken',
           buildInfoId: 'test-build-info',
           compiler: { version: '0.8.19' },
-          _sources: new Set(['contracts/MyToken.sol', '/path/to/build-info/test.json'])
+          _sources: new Set(['contracts/MyToken.sol'])
         },
         buildInfo: {
           _format: 'hh-sol-build-info-1' as const,
@@ -163,11 +172,8 @@ describe('Sourcify Verification Platform', () => {
       // Mock already verified check
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: jest.fn().mockResolvedValue([{
-          address: '0x1234567890123456789012345678901234567890',
-          chainId: '1',
-          status: 'perfect'
-        }])
+        status: 200,
+        json: jest.fn().mockResolvedValue({ match: 'exact_match' })
       })
 
       const result = await platform.verifyContract(mockRequest)
@@ -177,18 +183,25 @@ describe('Sourcify Verification Platform', () => {
       expect(result.message).toContain('already verified')
     })
 
-    it('should submit verification successfully', async () => {
+    it('should submit verification and poll the job until completion', async () => {
       // Mock not verified check
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: jest.fn().mockResolvedValue([])
+        status: 404
       })
 
-      // Mock successful verification
+      // Mock successful submission (202 Accepted)
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ verificationId: 'job-1' })
+      })
+
+      // Mock job poll - completed with an exact match
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: jest.fn().mockResolvedValue({
-          status: 'perfect'
+          isJobCompleted: true,
+          contract: { match: 'exact_match' }
         })
       })
 
@@ -196,21 +209,97 @@ describe('Sourcify Verification Platform', () => {
 
       expect(result.success).toBe(true)
       expect(result.message).toContain('verified successfully')
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        2,
+        'https://sourcify.dev/server/v2/verify/1/0x1234567890123456789012345678901234567890',
+        expect.objectContaining({
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+      const submittedBody = JSON.parse(mockFetch.mock.calls[1][1].body)
+      expect(submittedBody).toEqual({
+        stdJsonInput: {
+          language: 'Solidity',
+          sources: mockRequest.buildInfo.input.sources,
+          settings: mockRequest.buildInfo.input.settings
+        },
+        compilerVersion: '0.8.19+commit.7dd6d404',
+        contractIdentifier: 'contracts/MyToken.sol:MyToken'
+      })
+      expect(mockFetch).toHaveBeenNthCalledWith(
+        3,
+        'https://sourcify.dev/server/v2/verify/job-1',
+        expect.objectContaining({ method: 'GET' })
+      )
     })
 
-    it('should handle verification failure', async () => {
-      // Mock not verified check
+    it('should prefer the full commit-hash compiler version from contract metadata over a short solcLongVersion (Foundry-style build-info)', async () => {
+      // Foundry/ethers-rs build-info reports solcLongVersion without a commit hash
+      mockRequest.buildInfo.solcVersion = '0.8.30'
+      mockRequest.buildInfo.solcLongVersion = '0.8.30'
+      mockRequest.buildInfo.output.contracts = {
+        'contracts/MyToken.sol': {
+          MyToken: { metadata: JSON.stringify({ compiler: { version: '0.8.30+commit.73712a01' } }) }
+        }
+      }
+
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 404 })
       mockFetch.mockResolvedValueOnce({
         ok: true,
-        json: jest.fn().mockResolvedValue([])
+        json: jest.fn().mockResolvedValue({ verificationId: 'job-1' })
       })
-
-      // Mock failed verification
       mockFetch.mockResolvedValueOnce({
         ok: true,
         json: jest.fn().mockResolvedValue({
-          status: 'error',
-          message: 'Compilation failed'
+          isJobCompleted: true,
+          contract: { match: 'exact_match' }
+        })
+      })
+
+      await platform.verifyContract(mockRequest)
+
+      const submittedBody = JSON.parse(mockFetch.mock.calls[1][1].body)
+      expect(submittedBody.compilerVersion).toBe('0.8.30+commit.73712a01')
+    })
+
+    it('should treat an "already_verified" job error as success, not failure', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 404 })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ verificationId: 'job-1' })
+      })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          isJobCompleted: true,
+          contract: { match: null },
+          error: {
+            customCode: 'already_verified',
+            message: "The contract is already verified and the job didn't yield a better match."
+          }
+        })
+      })
+
+      const result = await platform.verifyContract(mockRequest)
+
+      expect(result.success).toBe(true)
+      expect(result.isAlreadyVerified).toBe(true)
+      expect(result.message).toContain('already verified')
+    })
+
+    it('should handle a job that completes with no match', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 404 })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ verificationId: 'job-1' })
+      })
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: jest.fn().mockResolvedValue({
+          isJobCompleted: true,
+          contract: { match: null },
+          error: { message: 'Compilation failed' }
         })
       })
 
@@ -220,18 +309,13 @@ describe('Sourcify Verification Platform', () => {
       expect(result.message).toContain('Compilation failed')
     })
 
-    it('should handle HTTP errors during verification', async () => {
-      // Mock not verified check
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue([])
-      })
-
-      // Mock HTTP error
+    it('should handle HTTP errors during submission', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 404 })
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 500,
-        statusText: 'Internal Server Error'
+        statusText: 'Internal Server Error',
+        text: jest.fn().mockResolvedValue('')
       })
 
       const result = await platform.verifyContract(mockRequest)
@@ -240,25 +324,14 @@ describe('Sourcify Verification Platform', () => {
       expect(result.message).toContain('API request failed')
     })
 
-    it('should treat 409 partial already verified as success (notice)', async () => {
-      // Mock not verified check
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue([])
-      })
-
-      // Mock 409 Conflict with partial match message
+    it('should treat a 409 "already verified" conflict as success', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 404 })
       mockFetch.mockResolvedValueOnce({
         ok: false,
         status: 409,
         statusText: 'Conflict',
         text: jest.fn().mockResolvedValue(
-          JSON.stringify({
-            error:
-              'The contract 0x... on chainId 1 is already partially verified. The provided new source code also yielded a partial match and will not be stored unless it\'s a full match',
-            message:
-              'The contract 0x... on chainId 1 is already partially verified. The provided new source code also yielded a partial match and will not be stored unless it\'s a full match'
-          })
+          JSON.stringify({ message: 'The contract is already verified' })
         )
       })
 
@@ -266,23 +339,26 @@ describe('Sourcify Verification Platform', () => {
 
       expect(result.success).toBe(true)
       expect(result.isAlreadyVerified).toBe(true)
-      expect(result.message.toLowerCase()).toContain('partially verified')
     })
 
     it('should handle network errors during verification', async () => {
-      // Mock not verified check
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue([])
-      })
-
-      // Mock network error
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 404 })
       mockFetch.mockRejectedValueOnce(new Error('Network timeout'))
 
       const result = await platform.verifyContract(mockRequest)
 
       expect(result.success).toBe(false)
       expect(result.message).toContain('Network timeout')
+    })
+
+    it('should fail fast when contract is missing source/contract name', async () => {
+      mockFetch.mockResolvedValueOnce({ ok: true, status: 404 })
+      mockRequest.contract.sourceName = undefined
+
+      const result = await platform.verifyContract(mockRequest)
+
+      expect(result.success).toBe(false)
+      expect(result.message).toContain('missing sourceName/contractName')
     })
   })
 })
