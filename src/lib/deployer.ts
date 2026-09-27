@@ -7,6 +7,7 @@ import { ExecutionEngine } from './core/engine'
 import { createDefaultVerificationRegistry } from './verification/etherscan'
 import { ExecutionContext } from './core/context'
 import { Network, Job } from './types'
+import { getNetworkExcludedJobs, jobPatternToRegex } from './network-job-filters'
 import { DeploymentEventEmitter, deploymentEvents } from './events'
 import type { RunSummaryEvent } from './events'
 
@@ -181,6 +182,11 @@ export class Deployer {
       // Emit signer info once per network (chainId)
       const signerInfoPrintedForChain = new Set<number>()
 
+      const allJobNames = Array.from(this.loader.jobs.keys())
+      const networkExcludedJobs = new Map<number, Set<string>>(
+        targetNetworks.map(n => [n.chainId, getNetworkExcludedJobs(n, allJobNames, graph)])
+      )
+
       for (const network of targetNetworks) {
         this.events.emitEvent({
           type: 'network_started',
@@ -198,7 +204,7 @@ export class Deployer {
             this.results.set(job.name, { job, outputs: new Map() })
           }
 
-          if (this.shouldSkipJobOnNetwork(job, network)) {
+          if (networkExcludedJobs.get(network.chainId)!.has(jobName) || this.shouldSkipJobOnNetwork(job, network)) {
             this.events.emitEvent({
               type: 'job_skipped',
               level: 'warn',
@@ -523,14 +529,6 @@ export class Deployer {
       const allJobNames = Array.from(this.loader.jobs.keys())
 
       const isPattern = (s: string): boolean => /[*?]/.test(s)
-      const escapeRegex = (s: string): string => s.replace(/[-\\^$+?.()|[\]{}*?]/g, '\\$&')
-      const patternToRegex = (pattern: string): RegExp => {
-        // Escape regex metacharacters, then translate wildcard tokens
-        const escaped = escapeRegex(pattern)
-          .replace(/\\\*/g, '.*')  // escaped '*' -> '.*'
-          .replace(/\\\?/g, '.')   // escaped '?' -> '.'
-        return new RegExp(`^${escaped}$`)
-      }
 
       const expanded: string[] = []
       const seen = new Set<string>()
@@ -548,7 +546,7 @@ export class Deployer {
           continue
         }
 
-        const re = patternToRegex(p)
+        const re = jobPatternToRegex(p)
         const matches = allJobNames.filter(name => re.test(name))
         if (matches.length === 0) {
           throw new Error(`Job pattern "${p}" did not match any jobs in project.`)

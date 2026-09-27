@@ -3,6 +3,10 @@ import * as path from 'path'
 import { parse as parseYaml } from 'yaml'
 import { Network } from './types'
 
+function isStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.every((item: unknown) => typeof item === 'string')
+}
+
 function isValidNetwork(obj: unknown): obj is Network {
   return (
     typeof obj === 'object' &&
@@ -23,6 +27,9 @@ function isValidNetwork(obj: unknown): obj is Network {
     (!('testnet' in obj) || typeof (obj as Record<string, unknown>).testnet === 'boolean') &&
     // evmVersion field is optional and should be a string if present
     (!('evmVersion' in obj) || typeof (obj as Record<string, unknown>).evmVersion === 'string') &&
+    // onlyJobs and skipJobs are optional arrays of job name patterns
+    (!('onlyJobs' in obj) || isStringArray((obj as Record<string, unknown>).onlyJobs)) &&
+    (!('skipJobs' in obj) || isStringArray((obj as Record<string, unknown>).skipJobs)) &&
     // params field is optional and must be a plain object if present
     (!('params' in obj) || (
       typeof (obj as Record<string, unknown>).params === 'object' &&

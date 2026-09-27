@@ -259,6 +259,22 @@ describe('Deployer', () => {
         expect(usedNetwork.chainId).toBe(1)
       })
 
+      it('should skip jobs excluded by network job filters', async () => {
+        const options: DeployerOptions = {
+          ...deployerOptions,
+          networks: [mockNetwork1, { ...mockNetwork2, skipJobs: ['job2'] }]
+        }
+
+        const deployer = new Deployer(options)
+        await deployer.run()
+
+        const job2Networks = mockEngine.executeJob.mock.calls
+          .map((call, index) => ({ job: call[0].name, chainId: MockExecutionContext.mock.calls[index][0].chainId }))
+          .filter(c => c.job === 'job2')
+          .map(c => c.chainId)
+        expect(job2Networks).toEqual([1])
+      })
+
       it('should create correct output files in flat mode', async () => {
         const deployer = new Deployer({ ...deployerOptions, flatOutput: true })
         await deployer.run()
