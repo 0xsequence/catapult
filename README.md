@@ -256,7 +256,7 @@ A network can restrict or exclude jobs by name in `networks.yaml`. Patterns supp
 Rules:
 - If `onlyJobs` is set, jobs it matches run along with their transitive dependencies; every other job is skipped on that network.
 - `skipJobs` then skips every job it matches, including dependencies pulled in by `onlyJobs`.
-- A pattern that matches no job is an error, so a typo cannot silently allow or skip nothing.
+- A pattern that matches no job matches nothing. With no `onlyJobs` matches, every job is skipped on that network.
 - Network job filters combine with the per-job filters above: a job runs only if both allow it.
 
 #### Minimum EVM version per job

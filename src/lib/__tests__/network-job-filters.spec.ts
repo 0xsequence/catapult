@@ -50,10 +50,8 @@ describe('getNetworkExcludedJobs', () => {
     expect(excluded).toEqual(new Set(['sequence-v3', 'builder-factories', 'multicall3']))
   })
 
-  it('throws when a pattern matches no job', () => {
-    expect(() => getNetworkExcludedJobs(network({ onlyJobs: ['trials-*'] }), jobNames, graph))
-      .toThrow('Network "monad" (chainId: 143) onlyJobs pattern "trials-*" did not match any jobs in project.')
-    expect(() => getNetworkExcludedJobs(network({ skipJobs: ['missing'] }), jobNames, graph))
-      .toThrow('skipJobs pattern "missing"')
+  it('ignores patterns that match no job', () => {
+    expect(getNetworkExcludedJobs(network({ onlyJobs: ['missing-*'] }), jobNames, graph)).toEqual(new Set(jobNames))
+    expect(getNetworkExcludedJobs(network({ skipJobs: ['missing'] }), jobNames, graph)).toEqual(new Set())
   })
 })
