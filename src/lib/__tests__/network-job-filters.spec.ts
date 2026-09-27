@@ -50,6 +50,16 @@ describe('getNetworkExcludedJobs', () => {
     expect(excluded).toEqual(new Set(['sequence-v3', 'builder-factories', 'multicall3']))
   })
 
+  it('runs only an onlyJobs job when skipJobs removes its dependency', () => {
+    const jobs = ['job-a', 'job-b']
+    const abGraph = {
+      getDependencies: (jobName: string) => new Set(jobName === 'job-a' ? ['job-b'] : []),
+    } as unknown as DependencyGraph
+
+    const excluded = getNetworkExcludedJobs(network({ onlyJobs: ['job-a'], skipJobs: ['job-b'] }), jobs, abGraph)
+    expect(jobs.filter(name => !excluded.has(name))).toEqual(['job-a'])
+  })
+
   it('ignores patterns that match no job', () => {
     expect(getNetworkExcludedJobs(network({ onlyJobs: ['missing-*'] }), jobNames, graph)).toEqual(new Set(jobNames))
     expect(getNetworkExcludedJobs(network({ skipJobs: ['missing'] }), jobNames, graph)).toEqual(new Set())

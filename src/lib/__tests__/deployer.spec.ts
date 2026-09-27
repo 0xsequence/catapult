@@ -275,6 +275,23 @@ describe('Deployer', () => {
         expect(job2Networks).toEqual([1])
       })
 
+      it('should run an onlyJobs job without its skipJobs dependency', async () => {
+        // job2 depends on job1
+        mockGraph.getDependencies.mockImplementation((jobName: string) =>
+          new Set(jobName === 'job2' ? ['job1'] : [])
+        )
+        const options: DeployerOptions = {
+          ...deployerOptions,
+          networks: [{ ...mockNetwork2, onlyJobs: ['job2'], skipJobs: ['job1'] }]
+        }
+
+        const deployer = new Deployer(options)
+        await deployer.run()
+
+        const executedJobs = mockEngine.executeJob.mock.calls.map(call => call[0].name)
+        expect(executedJobs).toEqual(['job2'])
+      })
+
       it('should create correct output files in flat mode', async () => {
         const deployer = new Deployer({ ...deployerOptions, flatOutput: true })
         await deployer.run()
