@@ -1,0 +1,53 @@
+name: Publish
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Check tag is on master
+      run: git merge-base --is-ancestor "$GITHUB_SHA" origin/master
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        registry-url: 'https://registry.npmjs.org'
+
+    # npm stage publish needs npm >= 11.15.0
+    - name: Update npm
+      run: npm install -g npm@^11.15.0
+
+    - name: Install pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 10
+
+    - name: Check tag matches package.json version
+      run: |
+        version="v$(node -p "require('./package.json').version")"
+        if [ "$version" != "$GITHUB_REF_NAME" ]; then
+          echo "Tag $GITHUB_REF_NAME does not match package.json version $version"
+          exit 1
+        fi
+
+    - name: Install dependencies
+      run: pnpm install --frozen-lockfile
+
+    - name: Build
+      run: pnpm run build
+
+    - name: Stage publish
+      run: npm stage publish --ignore-scripts
