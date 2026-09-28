@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 2.1.0
 
 ### Added
 
 - Add `onlyJobs` and `skipJobs` to `networks.yaml` entries for filtering jobs per network by name pattern. `onlyJobs` keeps the transitive dependencies of the jobs it matches.
+
+See [#28](https://github.com/0xsequence/catapult/pull/28) for the complete changes.
 
 ## 2.0.0
 
