@@ -26,9 +26,9 @@ jobs:
         node-version: '22'
         registry-url: 'https://registry.npmjs.org'
 
-    # npm trusted publishing (OIDC) needs npm >= 11.5.1
+    # npm stage publish needs npm >= 11.15.0
     - name: Update npm
-      run: npm install -g npm@^11.5.1
+      run: npm install -g npm@^11.15.0
 
     - name: Install pnpm
       uses: pnpm/action-setup@v2
@@ -49,5 +49,5 @@ jobs:
     - name: Build
       run: pnpm run build
 
-    - name: Publish
-      run: npm publish --ignore-scripts
+    - name: Stage publish
+      run: npm stage publish --ignore-scripts
