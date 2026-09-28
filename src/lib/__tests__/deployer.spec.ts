@@ -259,6 +259,122 @@ describe('Deployer', () => {
         expect(usedNetwork.chainId).toBe(1)
       })
 
+      it('should skip jobs excluded by network job filters', async () => {
+        const options: DeployerOptions = {
+          ...deployerOptions,
+          networks: [mockNetwork1, { ...mockNetwork2, skipJobs: ['job2'] }]
+        }
+
+        const deployer = new Deployer(options)
+        await deployer.run()
+
+        const job2Networks = mockEngine.executeJob.mock.calls
+          .map((call, index) => ({ job: call[0].name, chainId: MockExecutionContext.mock.calls[index][0].chainId }))
+          .filter(c => c.job === 'job2')
+          .map(c => c.chainId)
+        expect(job2Networks).toEqual([1])
+      })
+
+      it('should run an onlyJobs job without its skipJobs dependency', async () => {
+        // job2 depends on job1
+        mockGraph.getDependencies.mockImplementation((jobName: string) =>
+          new Set(jobName === 'job2' ? ['job1'] : [])
+        )
+        const options: DeployerOptions = {
+          ...deployerOptions,
+          networks: [{ ...mockNetwork2, onlyJobs: ['job2'], skipJobs: ['job1'] }]
+        }
+
+        const deployer = new Deployer(options)
+        await deployer.run()
+
+        const executedJobs = mockEngine.executeJob.mock.calls.map(call => call[0].name)
+        expect(executedJobs).toEqual(['job2'])
+      })
+
+      describe('network and job filter combinations', () => {
+        // Each network filter crossed with each job filter, for a single job on polygon (137).
+        // The job runs only when both the network and the job allow it.
+        const networkFilters: { name: string; filters: Pick<Network, 'onlyJobs' | 'skipJobs'>; allows: boolean }[] = [
+          { name: 'no network filters', filters: {}, allows: true },
+          { name: 'empty onlyJobs and skipJobs', filters: { onlyJobs: [], skipJobs: [] }, allows: true },
+          { name: 'onlyJobs matching the job', filters: { onlyJobs: ['target*'] }, allows: true },
+          { name: 'onlyJobs not matching the job', filters: { onlyJobs: ['other-*'] }, allows: false },
+          { name: 'skipJobs matching the job', filters: { skipJobs: ['target'] }, allows: false },
+          { name: 'skipJobs not matching the job', filters: { skipJobs: ['other-*'] }, allows: true },
+          { name: 'onlyJobs and skipJobs both matching the job', filters: { onlyJobs: ['target*'], skipJobs: ['target'] }, allows: false },
+        ]
+        const jobFilters: { name: string; filters: Partial<Job>; allows: boolean }[] = [
+          { name: 'no job filters', filters: {}, allows: true },
+          { name: 'empty only_networks and skip_networks', filters: { only_networks: [], skip_networks: [] }, allows: true },
+          { name: 'only_networks including the network', filters: { only_networks: [137] }, allows: true },
+          { name: 'only_networks excluding the network', filters: { only_networks: [1] }, allows: false },
+          { name: 'skip_networks including the network', filters: { skip_networks: [137] }, allows: false },
+          { name: 'skip_networks excluding the network', filters: { skip_networks: [1] }, allows: true },
+          { name: 'only_networks and skip_networks both including the network', filters: { only_networks: [137], skip_networks: [137] }, allows: true },
+          { name: 'min_evm_version above the network evmVersion', filters: { min_evm_version: 'prague' }, allows: false },
+          { name: 'min_evm_version at the network evmVersion', filters: { min_evm_version: 'cancun' }, allows: true },
+        ]
+        const matrix = networkFilters.flatMap(n => jobFilters.map(j => ({
+          networkCase: n.name,
+          jobCase: j.name,
+          networkFilters: n.filters,
+          jobFilters: j.filters,
+          runs: n.allows && j.allows,
+        })))
+
+        it.each(matrix)('$networkCase + $jobCase: runs=$runs', async ({ networkFilters, jobFilters, runs }) => {
+          const job: Job = { ...mockJob1, name: 'target', ...jobFilters }
+          mockLoader.jobs = new Map([['target', job]])
+          mockGraph.getExecutionOrder.mockReturnValue(['target'])
+
+          const deployer = new Deployer({
+            ...deployerOptions,
+            networks: [{ ...mockNetwork2, evmVersion: 'cancun', ...networkFilters }]
+          })
+          await deployer.run()
+
+          expect(mockEngine.executeJob).toHaveBeenCalledTimes(runs ? 1 : 0)
+        })
+
+        describe('dependencies kept by onlyJobs', () => {
+          const runOnPolygon = async (depFilters: Partial<Job>, targetFilters: Partial<Job>): Promise<string[]> => {
+            mockLoader.jobs = new Map([
+              ['dep', { ...mockJob1, name: 'dep', ...depFilters }],
+              ['target', { ...mockJob1, name: 'target', depends_on: ['dep'], ...targetFilters }]
+            ])
+            mockGraph.getExecutionOrder.mockReturnValue(['dep', 'target'])
+            mockGraph.getDependencies.mockImplementation((jobName: string) =>
+              new Set(jobName === 'target' ? ['dep'] : [])
+            )
+
+            const deployer = new Deployer({
+              ...deployerOptions,
+              networks: [{ ...mockNetwork2, onlyJobs: ['target'] }]
+            })
+            await deployer.run()
+
+            return mockEngine.executeJob.mock.calls.map(call => call[0].name)
+          }
+
+          it('runs the dependency when it has no job filters', async () => {
+            expect(await runOnPolygon({}, {})).toEqual(['dep', 'target'])
+          })
+
+          it('skips the dependency when its skip_networks includes the network', async () => {
+            expect(await runOnPolygon({ skip_networks: [137] }, {})).toEqual(['target'])
+          })
+
+          it('skips the dependency when its only_networks excludes the network', async () => {
+            expect(await runOnPolygon({ only_networks: [1] }, {})).toEqual(['target'])
+          })
+
+          it('runs the dependency when the matched job is skipped by its own skip_networks', async () => {
+            expect(await runOnPolygon({}, { skip_networks: [137] })).toEqual(['dep'])
+          })
+        })
+      })
+
       it('should create correct output files in flat mode', async () => {
         const deployer = new Deployer({ ...deployerOptions, flatOutput: true })
         await deployer.run()

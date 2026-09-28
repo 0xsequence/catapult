@@ -239,6 +239,26 @@ Rules:
 - Else, if `skip_networks` is set and non-empty, the job is skipped on those chain IDs.
 - Otherwise, the job runs on all networks selected for the run (via `networks.yaml` or `--network`).
 
+#### Per-network job filters
+
+A network can restrict or exclude jobs by name in `networks.yaml`. Patterns support `*` and `?` wildcards:
+
+```yaml
+- name: "Monad"
+  chainId: 143
+  rpcUrl: "https://rpc.monad.xyz"
+  # Run only these jobs (plus their dependencies) on this network
+  onlyJobs: ["trails-*"]
+  # Skip these jobs on this network, applied after onlyJobs
+  skipJobs: ["trails-rc-1"]
+```
+
+Rules:
+- If `onlyJobs` is set, jobs it matches run along with their transitive dependencies; every other job is skipped on that network.
+- `skipJobs` then skips every job it matches, including dependencies pulled in by `onlyJobs`.
+- A pattern that matches no job matches nothing. With no `onlyJobs` matches, every job is skipped on that network.
+- Network job filters combine with the per-job filters above: a job runs only if both allow it.
+
 #### Minimum EVM version per job
 
 Jobs can declare a minimum EVM hardfork they require. When a network’s `evmVersion` is older than the job’s `min_evm_version`, the job is skipped on that network.

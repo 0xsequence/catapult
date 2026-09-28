@@ -27,6 +27,17 @@ export interface Network {
   evmVersion?: string
 
   /**
+   * Job name patterns allowed on this network (`*` and `?` wildcards). Matched jobs keep their
+   * dependencies; every other job is skipped.
+   */
+  onlyJobs?: string[]
+
+  /**
+   * Job name patterns skipped on this network (`*` and `?` wildcards). Applied after `onlyJobs`.
+   */
+  skipJobs?: string[]
+
+  /**
    * Integrator-owned metadata bag. Keys are not validated by Catapult.
    */
   params?: Record<string, unknown>

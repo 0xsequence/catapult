@@ -7,6 +7,7 @@ import { projectOption, noStdOption, verbosityOption } from './common'
 import { validateContractReferences, extractUsedContractReferences } from '../lib/validation/contract-references'
 import { setVerbosity } from '../index'
 import { resolveSelectedChainIds } from '../lib/network-selection'
+import { getNetworkExcludedJobs } from '../lib/network-job-filters'
 import { Template } from '../lib/types'
 
 interface DryRunOptions {
@@ -195,6 +196,13 @@ export function makeDryRunCommand(): Command {
       console.log(chalk.blue('\nExecution Plan:'))
       console.log(chalk.gray(`   - Target Networks: ${targetNetworks.map(n => `${n.name} (ChainID: ${n.chainId})`).join(', ')}`))
       console.log(chalk.gray(`   - Job Execution Order: ${jobExecutionPlan.join(' -> ')}`))
+      for (const network of targetNetworks) {
+        const excluded = getNetworkExcludedJobs(network, fullOrder, graph)
+        const skipped = jobExecutionPlan.filter(jobName => excluded.has(jobName))
+        if (skipped.length > 0) {
+          console.log(chalk.gray(`   - Skipped on ${network.name} (ChainID: ${network.chainId}) by network job filters: ${skipped.join(', ')}`))
+        }
+      }
       
       console.log(chalk.green.bold('\n✅ Dry run successful. All job and template definitions appear to be valid.'))
       

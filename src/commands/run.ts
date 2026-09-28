@@ -98,6 +98,8 @@ export function makeRunCommand(): Command {
             gasLimit: detectedNetwork.gasLimit || knownNetwork?.gasLimit,
             testnet: detectedNetwork.testnet !== undefined ? detectedNetwork.testnet : knownNetwork?.testnet,
             evmVersion: detectedNetwork.evmVersion || knownNetwork?.evmVersion,
+            onlyJobs: knownNetwork?.onlyJobs,
+            skipJobs: knownNetwork?.skipJobs,
             params: detectedNetwork.params || knownNetwork?.params,
           }
           

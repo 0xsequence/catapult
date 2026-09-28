@@ -149,3 +149,40 @@ describe('network-loader params', () => {
     await expect(loadNetworks(projectRoot)).rejects.toThrow(/Failed to load or parse networks.yaml/)
   })
 })
+
+describe('network-loader job filters', () => {
+  afterAll(async () => {
+    try {
+      await fs.rm(tmpDir, { recursive: true, force: true })
+    } catch {}
+  })
+
+  test('passes through onlyJobs and skipJobs', async () => {
+    const projectRoot = path.join(tmpDir, 'job-filters-valid')
+    const yaml = `
+- name: "MyNet"
+  chainId: 143
+  rpcUrl: "http://127.0.0.1:8545"
+  onlyJobs: ["trails-*"]
+  skipJobs: ["trails-rc-1"]
+`
+    await writeNetworksYaml(projectRoot, yaml)
+
+    const networks = await loadNetworks(projectRoot)
+    expect(networks[0].onlyJobs).toEqual(['trails-*'])
+    expect(networks[0].skipJobs).toEqual(['trails-rc-1'])
+  })
+
+  test('rejects skipJobs when not an array of strings', async () => {
+    const projectRoot = path.join(tmpDir, 'job-filters-invalid')
+    const yaml = `
+- name: "BadNet"
+  chainId: 143
+  rpcUrl: "http://127.0.0.1:8545"
+  skipJobs: "trails-*"
+`
+    await writeNetworksYaml(projectRoot, yaml)
+
+    await expect(loadNetworks(projectRoot)).rejects.toThrow(/Failed to load or parse networks.yaml/)
+  })
+})
