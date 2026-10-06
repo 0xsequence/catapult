@@ -39,6 +39,19 @@ process.on('uncaughtException', (error) => {
   process.exit(1)
 })
 
+// Long option aliases, rewritten to their canonical flag before parsing
+const OPTION_ALIASES = new Map([
+  ['--networks', '--network']
+])
+
+function mapAliases(argv: string[]): string[] {
+  return argv.map(arg => {
+    const [flag, ...value] = arg.split('=')
+    const canonical = OPTION_ALIASES.get(flag)
+    return canonical === undefined ? arg : [canonical, ...value].join('=')
+  })
+}
+
 async function main() {
   try {
     // Configure the main program
@@ -51,7 +64,7 @@ async function main() {
     setupCommands(program)
 
     // Parse arguments
-    await program.parseAsync(process.argv)
+    await program.parseAsync(mapAliases(process.argv))
   } catch (error) {
     deploymentEvents.emitEvent({
       type: 'cli_error',
