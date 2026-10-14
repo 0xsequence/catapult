@@ -34,4 +34,21 @@ describe('ExecutionContext', () => {
 
     getSignerSpy.mockRestore()
   })
+
+  it('does not emit an unhandled rejection when a promised signer is never resolved before dispose', async () => {
+    const getSignerSpy = jest.spyOn(ethers.JsonRpcProvider.prototype, 'getSigner')
+    getSignerSpy.mockRejectedValue(new Error('provider destroyed'))
+
+    const unhandled = jest.fn()
+    process.on('unhandledRejection', unhandled)
+
+    const context = new ExecutionContext(network, undefined, contractRepository)
+    await context.dispose()
+    await new Promise(resolve => setImmediate(resolve))
+
+    expect(unhandled).not.toHaveBeenCalled()
+
+    process.off('unhandledRejection', unhandled)
+    getSignerSpy.mockRestore()
+  })
 })
