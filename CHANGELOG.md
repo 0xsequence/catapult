@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.2.0
+
+### Added
+
+- Accept `--networks` as an alias of `--network`.
+
+### Fixed
+
+- Handle an unawaited `getSigner` promise in `ExecutionContext` that crashed `skip` condition evaluation.
+
+See [#29](https://github.com/0xsequence/catapult/pull/29) and [#30](https://github.com/0xsequence/catapult/pull/30) for the complete changes.
+
 ## 2.1.0
 
 ### Added
