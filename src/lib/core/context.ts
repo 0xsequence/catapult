@@ -43,7 +43,11 @@ export class ExecutionContext {
    } else if (network.rpcUrl) {
      // If no private key, but RPC URL is provided, get a signer from the provider.
      // This returns a Promise that we need to resolve on first use.
-     this.signer = this.provider.getSigner().then(signer => toDigestSigner(new ethers.NonceManager(signer))) // Keep as Promise
+    // If no action resolves the signer (job-level skip_condition skips every action) and
+    // dispose() destroys the provider, the pending eth_accounts would reject unhandled.
+    const signerPromise = this.provider.getSigner().then(signer => toDigestSigner(new ethers.NonceManager(signer)))
+    signerPromise.catch(() => {})
+    this.signer = signerPromise // Keep as Promise
    } else {
      throw new Error('A private key must be provided or an RPC URL must be configured to obtain a signer for the network.')
    }
